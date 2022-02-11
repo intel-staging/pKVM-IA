@@ -34,7 +34,7 @@ int vcmd_alloc_pasid(struct intel_iommu *iommu, u32 *pasid)
 	u64 res;
 
 	raw_spin_lock_irqsave(&iommu->register_lock, flags);
-	dmar_writeq(iommu->reg + DMAR_VCMD_REG, VCMD_CMD_ALLOC);
+	dmar_writeq(iommu, DMAR_VCMD_REG, VCMD_CMD_ALLOC);
 	IOMMU_WAIT_OP(iommu, DMAR_VCRSP_REG, dmar_readq,
 		      !(res & VCMD_VRSP_IP), res);
 	raw_spin_unlock_irqrestore(&iommu->register_lock, flags);
@@ -64,7 +64,7 @@ void vcmd_free_pasid(struct intel_iommu *iommu, u32 pasid)
 	u64 res;
 
 	raw_spin_lock_irqsave(&iommu->register_lock, flags);
-	dmar_writeq(iommu->reg + DMAR_VCMD_REG,
+	dmar_writeq(iommu, DMAR_VCMD_REG,
 		    VCMD_CMD_OPERAND(pasid) | VCMD_CMD_FREE);
 	IOMMU_WAIT_OP(iommu, DMAR_VCRSP_REG, dmar_readq,
 		      !(res & VCMD_VRSP_IP), res);
