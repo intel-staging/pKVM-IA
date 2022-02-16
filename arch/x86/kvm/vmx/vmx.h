@@ -586,4 +586,8 @@ static inline int vmx_get_instr_info_reg2(u32 vmx_instr_info)
 	return (vmx_instr_info >> 28) & 0xf;
 }
 
+#ifdef CONFIG_PKVM_INTEL
+int __init pkvm_init(void);
+#endif
+
 #endif /* __KVM_X86_VMX_H */

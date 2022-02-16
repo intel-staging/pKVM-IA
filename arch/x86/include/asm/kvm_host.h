@@ -1603,6 +1603,7 @@ struct kvm_x86_nested_ops {
 };
 
 struct kvm_x86_init_ops {
+	int (*pkvm_init)(void);
 	int (*cpu_has_kvm_support)(void);
 	int (*disabled_by_bios)(void);
 	int (*check_processor_compatibility)(void);

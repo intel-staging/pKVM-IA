@@ -8952,6 +8952,14 @@ int kvm_arch_init(void *opaque)
 		goto out;
 	}
 
+#ifdef CONFIG_PKVM_INTEL
+	r = ops->pkvm_init();
+	if (r) {
+		pr_err_ratelimited("kvm: pkvm init fail\n");
+		goto out;
+	}
+#endif
+
 	if (!ops->cpu_has_kvm_support()) {
 		pr_err_ratelimited("kvm: no hardware support for '%s'\n",
 				   ops->runtime_ops->name);

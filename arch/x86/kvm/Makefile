@@ -33,4 +33,5 @@ endif
 
 obj-$(CONFIG_KVM)	+= kvm.o
 obj-$(CONFIG_KVM_INTEL)	+= kvm-intel.o
+obj-$(CONFIG_PKVM_INTEL) += vmx/pkvm/
 obj-$(CONFIG_KVM_AMD)	+= kvm-amd.o
