@@ -756,4 +756,8 @@ static inline bool vmx_can_use_ipiv(struct kvm_vcpu *vcpu)
 	return  lapic_in_kernel(vcpu) && enable_ipiv;
 }
 
+#ifdef CONFIG_PKVM_INTEL
+int __init pkvm_init(void);
+#endif
+
 #endif /* __KVM_X86_VMX_H */
