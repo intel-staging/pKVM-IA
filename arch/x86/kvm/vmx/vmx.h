@@ -752,4 +752,8 @@ static inline bool guest_cpuid_has_evmcs(struct kvm_vcpu *vcpu)
 	       to_vmx(vcpu)->nested.enlightened_vmcs_enabled;
 }
 
+#ifdef CONFIG_PKVM_INTEL
+int __init pkvm_init(void);
+#endif
+
 #endif /* __KVM_X86_VMX_H */

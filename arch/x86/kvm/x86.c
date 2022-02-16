@@ -9312,6 +9312,11 @@ int kvm_arch_init(void *opaque)
 		return -EOPNOTSUPP;
 	}
 
+	if (ops->pkvm_init && ops->pkvm_init()) {
+		pr_err_ratelimited("kvm: pkvm init fail\n");
+		return -EOPNOTSUPP;
+	}
+
 	/*
 	 * KVM explicitly assumes that the guest has an FPU and
 	 * FXSAVE/FXRSTOR. For example, the KVM_GET_FPU explicitly casts the
