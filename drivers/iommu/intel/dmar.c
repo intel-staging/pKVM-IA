@@ -989,6 +989,9 @@ static int map_iommu(struct intel_iommu *iommu, u64 phys_addr)
 		warn_invalid_dmar(phys_addr, " returns all ones");
 		goto unmap;
 	}
+#ifdef CONFIG_PKVM_INTEL
+	pkvm_update_iommu_virtual_caps(&iommu->cap, &iommu->ecap);
+#endif
 	if (ecap_vcs(iommu->ecap))
 		iommu->vccap = dmar_readq(iommu, DMAR_VCCAP_REG);
 
