@@ -5,6 +5,7 @@
 
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <asm/trapnr.h>
 
 #include <pkvm.h>
 #include <vmx/vmx_lib.h>
@@ -12,6 +13,17 @@
 MODULE_LICENSE("GPL");
 
 struct pkvm_hyp *pkvm;
+
+struct gdt_page pkvm_gdt_page = {
+	.gdt = {
+		[GDT_ENTRY_KERNEL32_CS]		= GDT_ENTRY_INIT(0xc09b, 0, 0xfffff),
+		[GDT_ENTRY_KERNEL_CS]		= GDT_ENTRY_INIT(0xa09b, 0, 0xfffff),
+		[GDT_ENTRY_KERNEL_DS]		= GDT_ENTRY_INIT(0xc093, 0, 0xfffff),
+		[GDT_ENTRY_DEFAULT_USER32_CS]	= GDT_ENTRY_INIT(0xc0fb, 0, 0xfffff),
+		[GDT_ENTRY_DEFAULT_USER_DS]	= GDT_ENTRY_INIT(0xc0f3, 0, 0xfffff),
+		[GDT_ENTRY_DEFAULT_USER_CS]	= GDT_ENTRY_INIT(0xa0fb, 0, 0xfffff),
+	},
+};
 
 static void *pkvm_early_alloc_contig(int pages)
 {
@@ -75,9 +87,76 @@ static int pkvm_host_check_and_setup_vmx_cap(struct pkvm_hyp *pkvm)
 	return ret;
 }
 
+static void init_gdt(struct pkvm_pcpu *pcpu)
+{
+	pcpu->gdt_page = pkvm_gdt_page;
+}
+
+void noop_handler(void)
+{
+	/* To be added */
+}
+
+static void init_idt(struct pkvm_pcpu *pcpu)
+{
+	gate_desc *idt = pcpu->idt_page.idt;
+	struct idt_data d = {
+		.segment = __KERNEL_CS,
+		.bits.ist = 0,
+		.bits.zero = 0,
+		.bits.type = GATE_INTERRUPT,
+		.bits.dpl = 0,
+		.bits.p = 1,
+	};
+	gate_desc desc;
+	int i;
+
+	for (i = 0; i <= X86_TRAP_IRET; i++) {
+		d.vector = i;
+		d.bits.ist = 0;
+		d.addr = (const void *)noop_handler;
+		idt_init_desc(&desc, &d);
+		write_idt_entry(idt, i, &desc);
+	}
+}
+
+static void init_tss(struct pkvm_pcpu *pcpu)
+{
+	struct desc_struct *d = pcpu->gdt_page.gdt;
+	tss_desc tss;
+
+	set_tssldt_descriptor(&tss, (unsigned long)&pcpu->tss, DESC_TSS,
+			__KERNEL_TSS_LIMIT);
+
+	write_gdt_entry(d, GDT_ENTRY_TSS, &tss, DESC_TSS);
+}
+
+static int pkvm_setup_pcpu(struct pkvm_hyp *pkvm, int cpu)
+{
+	struct pkvm_pcpu *pcpu;
+
+	if (cpu >= CONFIG_NR_CPUS)
+		return -ENOMEM;
+
+	pcpu = pkvm_early_alloc_contig(PKVM_PCPU_PAGES);
+	if (!pcpu)
+		return -ENOMEM;
+
+	/* tmp use host cr3, switch to pkvm owned cr3 after de-privilege */
+	pcpu->cr3 = __read_cr3();
+
+	init_gdt(pcpu);
+	init_idt(pcpu);
+	init_tss(pcpu);
+
+	pkvm->pcpus[cpu] = pcpu;
+
+	return 0;
+}
+
 int __init pkvm_init(void)
 {
-	int ret = 0;
+	int ret = 0, cpu;
 
 	pkvm = pkvm_early_alloc_contig(PKVM_PAGES);
 	if (!pkvm) {
@@ -88,6 +167,12 @@ int __init pkvm_init(void)
 	ret = pkvm_host_check_and_setup_vmx_cap(pkvm);
 	if (ret)
 		goto fail1;
+
+	for_each_possible_cpu(cpu) {
+		ret = pkvm_setup_pcpu(pkvm, cpu);
+		if (ret)
+			goto fail1;
+	}
 
 	pkvm->num_cpus = num_possible_cpus();
 
