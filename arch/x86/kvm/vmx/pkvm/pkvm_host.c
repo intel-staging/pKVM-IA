@@ -154,6 +154,25 @@ static int pkvm_setup_pcpu(struct pkvm_hyp *pkvm, int cpu)
 	return 0;
 }
 
+static int pkvm_host_setup_vcpu(struct pkvm_hyp *pkvm, int cpu)
+{
+	struct pkvm_host_vcpu *pkvm_host_vcpu;
+
+	if (cpu >= CONFIG_NR_CPUS)
+		return -ENOMEM;
+
+	pkvm_host_vcpu = pkvm_early_alloc_contig(PKVM_HOST_VCPU_PAGES);
+	if (!pkvm_host_vcpu)
+		return -ENOMEM;
+
+	pkvm_host_vcpu->pcpu = pkvm->pcpus[cpu];
+	pkvm_host_vcpu->vmx.vcpu.cpu = cpu;
+
+	pkvm->host_vm.host_vcpus[cpu] = pkvm_host_vcpu;
+
+	return 0;
+}
+
 int __init pkvm_init(void)
 {
 	int ret = 0, cpu;
@@ -171,13 +190,27 @@ int __init pkvm_init(void)
 	for_each_possible_cpu(cpu) {
 		ret = pkvm_setup_pcpu(pkvm, cpu);
 		if (ret)
-			goto fail1;
+			goto fail2;
+		ret = pkvm_host_setup_vcpu(pkvm, cpu);
+		if (ret)
+			goto fail2;
 	}
 
 	pkvm->num_cpus = num_possible_cpus();
 
 	return 0;
 
+fail2:
+	for_each_possible_cpu(cpu) {
+		if (pkvm->host_vm.host_vcpus[cpu]) {
+			pkvm_early_free(pkvm->host_vm.host_vcpus[cpu], PKVM_HOST_VCPU_PAGES);
+			pkvm->host_vm.host_vcpus[cpu] = NULL;
+		}
+		if (pkvm->pcpus[cpu]) {
+			pkvm_early_free(pkvm->pcpus[cpu], PKVM_PCPU_PAGES);
+			pkvm->pcpus[cpu] = NULL;
+		}
+	}
 fail1:
 	pkvm_early_free(pkvm, PKVM_PAGES);
 fail:
