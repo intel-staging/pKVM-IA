@@ -22,6 +22,15 @@ struct pkvm_pcpu {
 	struct tss_struct tss;
 };
 
+struct pkvm_host_vcpu {
+	struct vcpu_vmx vmx;
+	struct pkvm_pcpu *pcpu;
+};
+
+struct pkvm_host_vm {
+	struct pkvm_host_vcpu *host_vcpus[CONFIG_NR_CPUS];
+};
+
 struct pkvm_hyp {
 	int num_cpus;
 
@@ -29,9 +38,12 @@ struct pkvm_hyp {
 	struct vmcs_config vmcs_config;
 
 	struct pkvm_pcpu *pcpus[CONFIG_NR_CPUS];
+
+	struct pkvm_host_vm host_vm;
 };
 
 #define PKVM_PAGES (ALIGN(sizeof(struct pkvm_hyp), PAGE_SIZE) >> PAGE_SHIFT)
 #define PKVM_PCPU_PAGES (ALIGN(sizeof(struct pkvm_pcpu), PAGE_SIZE) >> PAGE_SHIFT)
+#define PKVM_HOST_VCPU_PAGES (ALIGN(sizeof(struct pkvm_host_vcpu), PAGE_SIZE) >> PAGE_SHIFT)
 
 #endif
