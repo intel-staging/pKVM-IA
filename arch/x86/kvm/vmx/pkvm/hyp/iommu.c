@@ -260,6 +260,9 @@ static bool sync_shadow_context_entry(struct pgt_sync_data *sdata)
 
 		tmp.hi = guest_ce->hi;
 		tmp.lo = sdata->shadow_pa | (guest_ce->lo & 0xfff);
+
+		/* Clear DTE to make sure device TLB is disabled for security */
+		context_clear_dte(&tmp);
 	}
 
 	if (READ_ONCE(shadow_ce->hi) != tmp.hi) {
