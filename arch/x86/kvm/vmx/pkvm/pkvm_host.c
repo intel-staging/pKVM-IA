@@ -295,7 +295,7 @@ static void init_host_state_area(struct pkvm_host_vcpu *vcpu)
 	vmcs_writel(HOST_GS_BASE, a);
 
 	/*host RIP*/
-	vmcs_writel(HOST_RIP, (unsigned long)__pkvm_vmx_vmexit);
+	vmcs_writel(HOST_RIP, (unsigned long)pkvm_sym(__pkvm_vmx_vmexit));
 }
 
 static void init_execution_control(struct vcpu_vmx *vmx,
@@ -598,7 +598,7 @@ static noinline int pkvm_host_run_vcpu(struct pkvm_host_vcpu *vcpu)
 	 * if pkvm_main not return:
 	 * 	vmlaunch success: guest ret to vmentry_point
 	 */
-	ret = pkvm_main(&vcpu->vmx.vcpu);
+	ret = pkvm_sym(pkvm_main)(&vcpu->vmx.vcpu);
 	asm volatile(
 			"movq %0, %%rsp\n"
 			"vmentry_point:\n"
