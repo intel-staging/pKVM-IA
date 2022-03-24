@@ -14,6 +14,9 @@
 #define HYP_MEMBLOCK_REGIONS   128
 #define PKVM_PGTABLE_MAX_LEVELS		5U
 
+/* PKVM Hypercalls */
+#define PKVM_HC_INIT_FINALISE		1
+
 extern struct memblock_region pkvm_sym(hyp_memory)[];
 extern unsigned int pkvm_sym(hyp_memblock_nr);
 
