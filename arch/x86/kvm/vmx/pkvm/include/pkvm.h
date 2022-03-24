@@ -53,6 +53,16 @@ struct pkvm_hyp {
 	struct pkvm_host_vm host_vm;
 };
 
+struct pkvm_section {
+	unsigned long type;
+#define PKVM_RESERVED_MEMORY		0UL
+#define PKVM_CODE_DATA_SECTIONS		1UL
+#define KERNEL_DATA_SECTIONS		2UL
+	unsigned long addr;
+	unsigned long size;
+	u64 prot;
+};
+
 #define PKVM_PAGES (ALIGN(sizeof(struct pkvm_hyp), PAGE_SIZE) >> PAGE_SHIFT)
 #define PKVM_PCPU_PAGES (ALIGN(sizeof(struct pkvm_pcpu), PAGE_SIZE) >> PAGE_SHIFT)
 #define PKVM_HOST_VCPU_PAGES (ALIGN(sizeof(struct pkvm_host_vcpu), PAGE_SIZE) >> PAGE_SHIFT)
@@ -60,6 +70,9 @@ struct pkvm_hyp {
 #define PKVM_PERCPU_PAGES (PKVM_PCPU_PAGES + PKVM_HOST_VCPU_PAGES + PKVM_VMCS_PAGES)
 
 extern char __pkvm_text_start[], __pkvm_text_end[];
+extern char __pkvm_rodata_start[], __pkvm_rodata_end[];
+extern char __pkvm_data_start[], __pkvm_data_end[];
+extern char __pkvm_bss_start[], __pkvm_bss_end[];
 
 extern unsigned long pkvm_sym(__page_base_offset);
 extern unsigned long pkvm_sym(__symbol_base_offset);
