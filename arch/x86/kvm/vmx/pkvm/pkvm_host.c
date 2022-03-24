@@ -682,6 +682,108 @@ static int pkvm_host_deprivilege_cpus(struct pkvm_hyp *pkvm)
 	return p.ret;
 }
 
+static void do_pkvm_finalise(void *data)
+{
+	kvm_hypercall2(PKVM_HC_INIT_FINALISE, 0, 0);
+}
+
+static int pkvm_init_finalise(void)
+{
+	int ret, cpu;
+	int self = get_cpu();
+	struct pkvm_section sections[] = {
+		/*
+		 * NOTE: please ensure kernel section is put at the beginning,
+		 * as we do section mapping by the order, while kernel data
+		 * sections have overlap with pkvm ones, put the kernel section
+		 * after pkvm one will make pkvm section readonly!
+		 */
+		{
+			/*
+			 * Kernel section: addr is virtual, needed
+			 * for pkvm to access kernel alias symbol
+			 */
+			.type = KERNEL_DATA_SECTIONS,
+			.addr = (unsigned long)_sdata,
+			.size = (unsigned long)(_edata - _sdata),
+			.prot = (u64)pgprot_val(PAGE_KERNEL_RO),
+		},
+		{
+			/*
+			 * Kernel section: addr is virtual, needed
+			 * for pkvm to access kernel alias symbol
+			 */
+			.type = KERNEL_DATA_SECTIONS,
+			.addr = (unsigned long)__start_rodata,
+			.size = (unsigned long)(__end_rodata - __start_rodata),
+			.prot = (u64)pgprot_val(PAGE_KERNEL_RO),
+		},
+		{
+			/* PKVM reserved memory: addr is physical */
+			.type = PKVM_RESERVED_MEMORY,
+			.addr = (unsigned long)pkvm_mem_base,
+			.size = (unsigned long)pkvm_mem_size,
+			.prot = (u64)pgprot_val(PAGE_KERNEL),
+		},
+		{
+			/* PKVM section: addr is virtual */
+			.type = PKVM_CODE_DATA_SECTIONS,
+			.addr = (unsigned long)__pkvm_text_start,
+			.size = (unsigned long)(__pkvm_text_end - __pkvm_text_start),
+			.prot = (u64)pgprot_val(PAGE_KERNEL_EXEC),
+		},
+		{
+			/* PKVM section: addr is virtual */
+			.type = PKVM_CODE_DATA_SECTIONS,
+			.addr = (unsigned long)__pkvm_rodata_start,
+			.size = (unsigned long)(__pkvm_rodata_end - __pkvm_rodata_start),
+			.prot = (u64)pgprot_val(PAGE_KERNEL_RO),
+		},
+		{
+			/* PKVM section: addr is virtual */
+			.type = PKVM_CODE_DATA_SECTIONS,
+			.addr = (unsigned long)__pkvm_data_start,
+			.size = (unsigned long)(__pkvm_data_end - __pkvm_data_start),
+			.prot = (u64)pgprot_val(PAGE_KERNEL),
+		},
+		{
+			/* PKVM section: addr is virtual */
+			.type = PKVM_CODE_DATA_SECTIONS,
+			.addr = (unsigned long)__pkvm_bss_start,
+			.size = (unsigned long)(__pkvm_bss_end - __pkvm_bss_start),
+			.prot = (u64)pgprot_val(PAGE_KERNEL),
+		},
+	};
+
+	/*
+	 * First hypercall to recreate the pgtable for pkvm, and init
+	 * memory pool for later use.
+	 * Input parameters are only needed for first hypercall.
+	 */
+	ret = kvm_hypercall2(PKVM_HC_INIT_FINALISE,
+			(unsigned long)sections, ARRAY_SIZE(sections));
+
+	if (ret) {
+		pr_err("%s: pkvm finalise failed!\n", __func__);
+		goto out;
+	}
+
+	for_each_possible_cpu(cpu) {
+		if (cpu == self)
+			continue;
+
+		/*
+		 * Second hypercall to switch the mmu and ept pgtable.
+		 */
+		ret = smp_call_function_single(cpu, do_pkvm_finalise,
+					       NULL, true);
+	}
+out:
+	put_cpu();
+
+	return ret;
+}
+
 int __init pkvm_init(void)
 {
 	int ret = 0, cpu;
@@ -694,7 +796,7 @@ int __init pkvm_init(void)
 	if (!pkvm_mem_base) {
 		pr_err("pkvm required memory not get reseved!");
 		ret = -ENOMEM;
-		goto fail;
+		goto out;
 	}
 	pkvm_sym(pkvm_early_alloc_init)(__va(pkvm_mem_base),
 			pkvm_data_struct_pages(PKVM_GLOBAL_PAGES, PKVM_PERCPU_PAGES,
@@ -704,35 +806,35 @@ int __init pkvm_init(void)
 	pkvm = pkvm_sym(pkvm_hyp) = pkvm_sym(pkvm_early_alloc_contig)(PKVM_PAGES);
 	if (!pkvm) {
 		ret = -ENOMEM;
-		goto fail;
+		goto out;
 	}
 
 	ret = pkvm_host_check_and_setup_vmx_cap(pkvm);
 	if (ret)
-		goto fail;
+		goto out;
 
 	ret = pkvm_init_mmu(pkvm);
 	if (ret)
-		goto fail;
+		goto out;
 
 	for_each_possible_cpu(cpu) {
 		ret = pkvm_setup_pcpu(pkvm, cpu);
 		if (ret)
-			goto fail;
+			goto out;
 		ret = pkvm_host_setup_vcpu(pkvm, cpu);
 		if (ret)
-			goto fail;
+			goto out;
 	}
 
 	ret = pkvm_host_deprivilege_cpus(pkvm);
 	if (ret)
-		goto fail;
+		goto out;
 
 	pkvm->num_cpus = num_possible_cpus();
 
-	return 0;
+	return pkvm_init_finalise();
 
-fail:
+out:
 	pkvm_sym(pkvm_hyp) = NULL;
 	return ret;
 }

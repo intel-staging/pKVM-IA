@@ -12,6 +12,7 @@
 #include <pkvm.h>
 #include <gfp.h>
 
+#include "pkvm_hyp.h"
 #include "early_alloc.h"
 #include "pgtable.h"
 #include "ept.h"
@@ -151,5 +152,6 @@ int pkvm_host_ept_init(struct pkvm_pgtable_cap *cap,
 	if (ret)
 		return ret;
 
+	pkvm_hyp->host_vm.ept = &host_ept;
 	return pkvm_pgtable_init(&host_ept, &host_ept_mm_ops, &ept_ops, cap);
 }

@@ -10,6 +10,7 @@
 
 #include <pkvm.h>
 #include <gfp.h>
+#include "pkvm_hyp.h"
 #include "early_alloc.h"
 #include "pgtable.h"
 #include "mmu.h"
@@ -185,7 +186,7 @@ int pkvm_early_mmu_init(struct pkvm_pgtable_cap *cap,
 		void *mmu_pool_base, unsigned long mmu_pool_pages)
 {
 	pkvm_early_alloc_init(mmu_pool_base, mmu_pool_pages << PAGE_SHIFT);
-
+	pkvm_hyp->mmu = &hyp_mmu;
 	return pkvm_pgtable_init(&hyp_mmu, &pkvm_early_alloc_mm_ops, &mmu_ops, cap);
 }
 

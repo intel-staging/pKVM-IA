@@ -37,6 +37,7 @@ struct pkvm_host_vcpu {
 
 struct pkvm_host_vm {
 	struct pkvm_host_vcpu *host_vcpus[CONFIG_NR_CPUS];
+	struct pkvm_pgtable *ept;
 };
 
 struct pkvm_hyp {
@@ -48,9 +49,33 @@ struct pkvm_hyp {
 	struct pkvm_pgtable_cap mmu_cap;
 	struct pkvm_pgtable_cap ept_cap;
 
+	struct pkvm_pgtable *mmu;
+
 	struct pkvm_pcpu *pcpus[CONFIG_NR_CPUS];
 
 	struct pkvm_host_vm host_vm;
+};
+
+static inline struct pkvm_host_vcpu *vmx_to_pkvm_hvcpu(struct vcpu_vmx *vmx)
+{
+	return container_of(vmx, struct pkvm_host_vcpu, vmx);
+}
+
+static inline struct pkvm_host_vcpu *to_pkvm_hvcpu(struct kvm_vcpu *vcpu)
+{
+	struct vcpu_vmx *vmx = to_vmx(vcpu);
+
+	return vmx_to_pkvm_hvcpu(vmx);
+}
+
+struct pkvm_section {
+	unsigned long type;
+#define PKVM_RESERVED_MEMORY		0UL
+#define PKVM_CODE_DATA_SECTIONS		1UL
+#define KERNEL_DATA_SECTIONS		2UL
+	unsigned long addr;
+	unsigned long size;
+	u64 prot;
 };
 
 #define PKVM_PAGES (ALIGN(sizeof(struct pkvm_hyp), PAGE_SIZE) >> PAGE_SHIFT)
