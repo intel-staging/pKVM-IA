@@ -8,7 +8,7 @@ ccflags-y += -D__PKVM_HYP__
 
 lib-dir		:= lib
 
-pkvm-hyp-y	:= vmx_asm.o vmexit.o
+pkvm-hyp-y	:= vmx_asm.o vmexit.o memory.o
 
 pkvm-hyp-$(CONFIG_RETPOLINE)	+= $(lib-dir)/retpoline.o
 pkvm-hyp-$(CONFIG_DEBUG_LIST)	+= $(lib-dir)/list_debug.o
