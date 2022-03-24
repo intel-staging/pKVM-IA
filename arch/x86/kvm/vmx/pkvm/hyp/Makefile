@@ -6,7 +6,8 @@ ccflags-y += -fno-stack-protector
 ccflags-y += -D__DISABLE_EXPORTS
 ccflags-y += -D__PKVM_HYP__
 
-pkvm-hyp-obj	:= $(obj)/vmx_asm.o $(obj)/vmexit.o
+pkvm-hyp-obj	:= $(obj)/vmx_asm.o $(obj)/vmexit.o \
+		   $(obj)/memory.o
 
 lib-dir		:= $(obj)/lib
 ifdef CONFIG_RETPOLINE

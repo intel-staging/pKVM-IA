@@ -48,6 +48,20 @@ struct pkvm_hyp {
 #define PKVM_PCPU_PAGES (ALIGN(sizeof(struct pkvm_pcpu), PAGE_SIZE) >> PAGE_SHIFT)
 #define PKVM_HOST_VCPU_PAGES (ALIGN(sizeof(struct pkvm_host_vcpu), PAGE_SIZE) >> PAGE_SHIFT)
 
+/*
+ * pkvm relocate its own text/data sections to some page aligned
+ * memory area. When creating the page table for pkvm, only create
+ * mapping for its own sections so that the other kernel functions
+ * won't be used and make the pkvm to be self contained.
+ */
+extern char __pkvm_text_start[], __pkvm_text_end[];
+extern char __pkvm_rodata_start[], __pkvm_rodata_end[];
+extern char __pkvm_data_start[], __pkvm_data_end[];
+extern char __pkvm_bss_start[], __pkvm_bss_end[];
+
+extern unsigned long pkvm_sym(__page_base_offset);
+extern unsigned long pkvm_sym(__symbol_base_offset);
+
 PKVM_DECLARE(void, __pkvm_vmx_vmexit(void));
 PKVM_DECLARE(int, pkvm_main(struct kvm_vcpu *vcpu));
 
