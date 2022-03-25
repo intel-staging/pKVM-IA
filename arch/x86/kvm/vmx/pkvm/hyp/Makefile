@@ -18,10 +18,12 @@ pkvm-hyp-obj	:= $(obj)/vmx_asm.o $(obj)/vmexit.o \
 virt-dir	:= $(objtree)/$(KVM_PKVM)
 pkvm-hyp-obj	+= $(virt-dir)/page_alloc.o
 
+ifndef CONFIG_PKVM_INTEL_DEBUG
 lib-dir		:= $(obj)/lib
 pkvm-hyp-obj	+= $(lib-dir)/memset_64.o
 ifdef CONFIG_RETPOLINE
 pkvm-hyp-obj	+= $(lib-dir)/retpoline.o
+endif
 endif
 
 dir-obj		:= $(lib-dir) $(virt-dir)
@@ -30,7 +32,9 @@ pkvm-rename-obj 	:= $(patsubst %.o,%.pkvm.o,$(pkvm-hyp-obj))
 pkvm-obj		:= pkvm.o
 
 $(dir-obj): FORCE
+ifndef CONFIG_PKVM_INTEL_DEBUG
 	$(Q)mkdir -p $(lib-dir)
+endif
 	$(Q)mkdir -p $(virt-dir)
 
 %.pkvm.o: %.c $(dir-obj) FORCE
@@ -49,7 +53,11 @@ $(obj)/pkvm.o: $(obj)/pkvm.tmp.o FORCE
 	$(call if_changed,pkvmcopy)
 
 quiet_cmd_pkvmcopy = PKVMPCOPY $@
+ifdef CONFIG_PKVM_INTEL_DEBUG
+      cmd_pkvmcopy = $(OBJCOPY) --prefix-symbols= $< $@
+else
       cmd_pkvmcopy = $(OBJCOPY) --prefix-symbols=__pkvm_ --remove-section=.retpoline_sites --remove-section=.return_sites $< $@
+endif
 
 obj-$(CONFIG_PKVM_INTEL)	+= $(pkvm-obj)
 
