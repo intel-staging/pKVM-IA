@@ -6,6 +6,8 @@
 #include <pkvm.h>
 #include "vmexit.h"
 
+#include "debug.h"
+
 #define CR0	0
 #define CR3	3
 #define CR4	4
@@ -106,7 +108,7 @@ int pkvm_main(struct kvm_vcpu *vcpu)
 		bool skip_instruction = false;
 
 		if (__pkvm_vmx_vcpu_run(vcpu->arch.regs, launch)) {
-			pr_err("%s: CPU%d run_vcpu failed with error 0x%x\n",
+			pkvm_err("%s: CPU%d run_vcpu failed with error 0x%x\n",
 				__func__, vcpu->cpu, vmcs_read32(VM_INSTRUCTION_ERROR));
 			return -EINVAL;
 		}
@@ -122,18 +124,18 @@ int pkvm_main(struct kvm_vcpu *vcpu)
 			skip_instruction = true;
 			break;
 		case EXIT_REASON_CR_ACCESS:
-			pr_info("CPU%d vmexit_reason: CR_ACCESS.\n", vcpu->cpu);
+			pkvm_dbg("CPU%d vmexit_reason: CR_ACCESS.\n", vcpu->cpu);
 			handle_cr(vcpu);
 			skip_instruction = true;
 			break;
 		case EXIT_REASON_MSR_READ:
-			pr_info("CPU%d vmexit_reason: MSR_READ 0x%lx\n",
+			pkvm_dbg("CPU%d vmexit_reason: MSR_READ 0x%lx\n",
 					vcpu->cpu, vcpu->arch.regs[VCPU_REGS_RCX]);
 			handle_read_msr(vcpu);
 			skip_instruction = true;
 			break;
 		case EXIT_REASON_MSR_WRITE:
-			pr_info("CPU%d vmexit_reason: MSR_WRITE 0x%lx\n",
+			pkvm_dbg("CPU%d vmexit_reason: MSR_WRITE 0x%lx\n",
 					vcpu->cpu, vcpu->arch.regs[VCPU_REGS_RCX]);
 			handle_write_msr(vcpu);
 			skip_instruction = true;
@@ -143,7 +145,7 @@ int pkvm_main(struct kvm_vcpu *vcpu)
 			skip_instruction = true;
 			break;
 		default:
-			pr_info("CPU%d: Unsupported vmexit reason 0x%x.\n", vcpu->cpu, vmx->exit_reason.full);
+			pkvm_dbg("CPU%d: Unsupported vmexit reason 0x%x.\n", vcpu->cpu, vmx->exit_reason.full);
 			skip_instruction = true;
 			break;
 		}

@@ -5,6 +5,8 @@
 #ifndef _PKVM_VMX_OPS_H_
 #define _PKVM_VMX_OPS_H_
 
+#include "debug.h"
+
 static __always_inline unsigned long __vmcs_readl(unsigned long field)
 {
 	unsigned long value;
@@ -20,7 +22,7 @@ static __always_inline unsigned long __vmcs_readl(unsigned long field)
 	return value;
 
 do_fail:
-	pr_err("pkvm: vmread failed: field=%lx\n", field);
+	pkvm_err("pkvm: vmread failed: field=%lx\n", field);
 	return 0;
 #else
 	asm volatile ("vmread %%rdx, %%rax "
@@ -57,29 +59,29 @@ static __always_inline unsigned long vmcs_readl(unsigned long field)
 
 static inline void pkvm_vmwrite_error(unsigned long field, unsigned long value)
 {
-	pr_err("pkvm: vmwrite failed: field=%lx val=%lx err=%d\n",
+	pkvm_err("pkvm: vmwrite failed: field=%lx val=%lx err=%d\n",
 			field, value, vmcs_read32(VM_INSTRUCTION_ERROR));
 }
 
 static inline void pkvm_vmclear_error(struct vmcs *vmcs, u64 phys_addr)
 {
-	pr_err("pkvm: vmclear failed: %p/%llx\n", vmcs, phys_addr);
+	pkvm_err("pkvm: vmclear failed: %p/%llx\n", vmcs, phys_addr);
 }
 
 static inline void pkvm_vmptrld_error(struct vmcs *vmcs, u64 phys_addr)
 {
-	pr_err("pkvm: vmptrld failed: %p/%llx\n", vmcs, phys_addr);
+	pkvm_err("pkvm: vmptrld failed: %p/%llx\n", vmcs, phys_addr);
 }
 
 static inline void pkvm_invvpid_error(unsigned long ext, u16 vpid, gva_t gva)
 {
-	pr_err("pkvm: invvpid failed: ext=0x%lx vpid=%u gva=0x%lx\n",
+	pkvm_err("pkvm: invvpid failed: ext=0x%lx vpid=%u gva=0x%lx\n",
 			ext, vpid, gva);
 }
 
 static inline void pkvm_invept_error(unsigned long ext, u64 eptp, gpa_t gpa)
 {
-	pr_err("pkvm: invept failed: ext=0x%lx eptp=%llx gpa=0x%llx\n",
+	pkvm_err("pkvm: invept failed: ext=0x%lx eptp=%llx gpa=0x%llx\n",
 			ext, eptp, gpa);
 }
 
