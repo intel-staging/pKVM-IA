@@ -159,7 +159,7 @@ int pkvm_main(struct kvm_vcpu *vcpu)
 	int launch = 1;
 
 	do {
-		bool skip_instruction = false;
+		bool skip_instruction = false, guest_exit = false;
 
 		if (__pkvm_vmx_vcpu_run(vcpu->arch.regs, launch)) {
 			pkvm_err("%s: CPU%d run_vcpu failed with error 0x%x\n",
@@ -174,86 +174,106 @@ int pkvm_main(struct kvm_vcpu *vcpu)
 		vmx->exit_reason.full = vmcs_read32(VM_EXIT_REASON);
 		vmx->exit_qualification = vmcs_readl(EXIT_QUALIFICATION);
 
-		switch (vmx->exit_reason.full) {
-		case EXIT_REASON_CPUID:
-			handle_cpuid(vcpu);
-			skip_instruction = true;
-			break;
-		case EXIT_REASON_CR_ACCESS:
-			pkvm_dbg("CPU%d vmexit_reason: CR_ACCESS.\n", vcpu->cpu);
-			handle_cr(vcpu);
-			skip_instruction = true;
-			break;
-		case EXIT_REASON_MSR_READ:
-			pkvm_dbg("CPU%d vmexit_reason: MSR_READ 0x%lx\n",
-					vcpu->cpu, vcpu->arch.regs[VCPU_REGS_RCX]);
-			handle_read_msr(vcpu);
-			skip_instruction = true;
-			break;
-		case EXIT_REASON_MSR_WRITE:
-			pkvm_dbg("CPU%d vmexit_reason: MSR_WRITE 0x%lx\n",
-					vcpu->cpu, vcpu->arch.regs[VCPU_REGS_RCX]);
-			handle_write_msr(vcpu);
-			skip_instruction = true;
-			break;
-		case EXIT_REASON_VMON:
-			pkvm_dbg("CPU%d vmexit reason: VMXON.\n", vcpu->cpu);
-			handle_vmxon(vcpu);
-			skip_instruction = true;
-			break;
-		case EXIT_REASON_VMOFF:
-			pkvm_dbg("CPU%d vmexit reason: VMXOFF.\n", vcpu->cpu);
-			handle_vmxoff(vcpu);
-			skip_instruction = true;
-			break;
-		case EXIT_REASON_VMPTRLD:
-			pkvm_dbg("CPU%d vmexit reason: VMPTRLD.\n", vcpu->cpu);
-			handle_vmptrld(vcpu);
-			skip_instruction = true;
-			break;
-		case EXIT_REASON_VMCLEAR:
-			pkvm_dbg("CPU%d vmexit reason: VMCLEAR.\n", vcpu->cpu);
-			handle_vmclear(vcpu);
-			skip_instruction = true;
-			break;
-		case EXIT_REASON_VMREAD:
-			pkvm_dbg("CPU%d vmexit reason: WMREAD.\n", vcpu->cpu);
-			handle_vmread(vcpu);
-			skip_instruction = true;
-			break;
-		case EXIT_REASON_VMWRITE:
-			pkvm_dbg("CPU%d vmexit reason: VMWRITE.\n", vcpu->cpu);
-			handle_vmwrite(vcpu);
-			skip_instruction = true;
-			break;
-		case EXIT_REASON_XSETBV:
-			handle_xsetbv(vcpu);
-			skip_instruction = true;
-			break;
-		case EXIT_REASON_VMCALL:
-			vcpu->arch.regs[VCPU_REGS_RAX] = handle_vmcall(vcpu);
-			skip_instruction = true;
-			break;
-		case EXIT_REASON_EPT_VIOLATION:
-			if (handle_host_ept_violation(vmcs_read64(GUEST_PHYSICAL_ADDRESS)))
+		if (is_guest_mode(vcpu)) {
+			guest_exit = true;
+			nested_vmexit(vcpu);
+		} else {
+			switch (vmx->exit_reason.full) {
+			case EXIT_REASON_CPUID:
+				handle_cpuid(vcpu);
 				skip_instruction = true;
-			break;
-		case EXIT_REASON_INTERRUPT_WINDOW:
-			handle_irq_window(vcpu);
-			break;
-		default:
-			pkvm_dbg("CPU%d: Unsupported vmexit reason 0x%x.\n", vcpu->cpu, vmx->exit_reason.full);
-			skip_instruction = true;
-			break;
+				break;
+			case EXIT_REASON_CR_ACCESS:
+				pkvm_dbg("CPU%d vmexit_reason: CR_ACCESS.\n", vcpu->cpu);
+				handle_cr(vcpu);
+				skip_instruction = true;
+				break;
+			case EXIT_REASON_MSR_READ:
+				pkvm_dbg("CPU%d vmexit_reason: MSR_READ 0x%lx\n",
+						vcpu->cpu, vcpu->arch.regs[VCPU_REGS_RCX]);
+				handle_read_msr(vcpu);
+				skip_instruction = true;
+				break;
+			case EXIT_REASON_MSR_WRITE:
+				pkvm_dbg("CPU%d vmexit_reason: MSR_WRITE 0x%lx\n",
+						vcpu->cpu, vcpu->arch.regs[VCPU_REGS_RCX]);
+				handle_write_msr(vcpu);
+				skip_instruction = true;
+				break;
+			case EXIT_REASON_VMLAUNCH:
+				handle_vmlaunch(vcpu);
+				break;
+			case EXIT_REASON_VMRESUME:
+				handle_vmresume(vcpu);
+				break;
+			case EXIT_REASON_VMON:
+				pkvm_dbg("CPU%d vmexit reason: VMXON.\n", vcpu->cpu);
+				handle_vmxon(vcpu);
+				skip_instruction = true;
+				break;
+			case EXIT_REASON_VMOFF:
+				pkvm_dbg("CPU%d vmexit reason: VMXOFF.\n", vcpu->cpu);
+				handle_vmxoff(vcpu);
+				skip_instruction = true;
+				break;
+			case EXIT_REASON_VMPTRLD:
+				pkvm_dbg("CPU%d vmexit reason: VMPTRLD.\n", vcpu->cpu);
+				handle_vmptrld(vcpu);
+				skip_instruction = true;
+				break;
+			case EXIT_REASON_VMCLEAR:
+				pkvm_dbg("CPU%d vmexit reason: VMCLEAR.\n", vcpu->cpu);
+				handle_vmclear(vcpu);
+				skip_instruction = true;
+				break;
+			case EXIT_REASON_VMREAD:
+				pkvm_dbg("CPU%d vmexit reason: WMREAD.\n", vcpu->cpu);
+				handle_vmread(vcpu);
+				skip_instruction = true;
+				break;
+			case EXIT_REASON_VMWRITE:
+				pkvm_dbg("CPU%d vmexit reason: VMWRITE.\n", vcpu->cpu);
+				handle_vmwrite(vcpu);
+				skip_instruction = true;
+				break;
+			case EXIT_REASON_XSETBV:
+				handle_xsetbv(vcpu);
+				skip_instruction = true;
+				break;
+			case EXIT_REASON_VMCALL:
+				vcpu->arch.regs[VCPU_REGS_RAX] = handle_vmcall(vcpu);
+				skip_instruction = true;
+				break;
+			case EXIT_REASON_EPT_VIOLATION:
+				if (handle_host_ept_violation(vmcs_read64(GUEST_PHYSICAL_ADDRESS)))
+					skip_instruction = true;
+				break;
+			case EXIT_REASON_INTERRUPT_WINDOW:
+				handle_irq_window(vcpu);
+				break;
+			default:
+				pkvm_dbg("CPU%d: Unsupported vmexit reason 0x%x.\n", vcpu->cpu, vmx->exit_reason.full);
+				skip_instruction = true;
+				break;
+			}
 		}
 
-		/* now only need vmresume */
-		launch = 0;
+		if (is_guest_mode(vcpu)) {
+			/*
+			 * L2 VMExit -> L2 VMEntry: vmresume
+			 * L1 VMExit -> L2 VMEntry: vmlaunch
+			 * as vmcs02 is clear every time
+			 */
+			launch = guest_exit ? 0 : 1;
+		} else {
+			handle_pending_events(vcpu);
+
+			/* pkvm_host only need vmresume */
+			launch = 0;
+		}
 
 		if (skip_instruction)
 			skip_emulated_instruction();
-
-		handle_pending_events(vcpu);
 
 		native_write_cr2(vcpu->arch.cr2);
 	} while (1);
