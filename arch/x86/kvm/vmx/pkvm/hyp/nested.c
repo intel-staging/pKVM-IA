@@ -450,6 +450,15 @@ static void copy_shadow_fields_vmcs12_to_vmcs02(struct vcpu_vmx *vmx, struct vmc
 	}
 }
 
+/* current vmcs is vmcs01*/
+static void save_vmcs01_fields_for_emulation(struct vcpu_vmx *vmx)
+{
+	vmx->vcpu.arch.efer = vmcs_read64(GUEST_IA32_EFER);
+	vmx->vcpu.arch.pat = vmcs_read64(GUEST_IA32_PAT);
+	vmx->vcpu.arch.dr7 = vmcs_readl(GUEST_DR7);
+	vmx->nested.pre_vmenter_debugctl = vmcs_read64(GUEST_IA32_DEBUGCTL);
+}
+
 /* current vmcs is vmcs02*/
 static u64 emulate_field_for_vmcs02(struct vcpu_vmx *vmx, u16 field, u64 virt_val)
 {
@@ -505,6 +514,66 @@ static void sync_vmcs12_dirty_fields_to_vmcs02(struct vcpu_vmx *vmx, struct vmcs
 	}
 }
 
+/* current vmcs is vmcs02*/
+static void update_vmcs02_fields_for_emulation(struct vcpu_vmx *vmx, struct vmcs12 *vmcs12)
+{
+	/* L1 host wishes to use its own MSRs for L2 guest?
+	 * vmcs02 shall use such guest states in vmcs01 as its guest states
+	 */
+	if ((vmcs12->vm_entry_controls & VM_ENTRY_LOAD_IA32_EFER) != VM_ENTRY_LOAD_IA32_EFER)
+		vmcs_write64(GUEST_IA32_EFER, vmx->vcpu.arch.efer);
+	if ((vmcs12->vm_entry_controls & VM_ENTRY_LOAD_IA32_PAT) != VM_ENTRY_LOAD_IA32_PAT)
+		vmcs_write64(GUEST_IA32_PAT, vmx->vcpu.arch.pat);
+	if ((vmcs12->vm_entry_controls & VM_ENTRY_LOAD_DEBUG_CONTROLS) != VM_ENTRY_LOAD_DEBUG_CONTROLS) {
+		vmcs_writel(GUEST_DR7, vmx->vcpu.arch.dr7);
+		vmcs_write64(GUEST_IA32_DEBUGCTL, vmx->nested.pre_vmenter_debugctl);
+	}
+}
+
+/* current vmcs is vmcs01, set vmcs01 guest state with vmcs02 host state */
+static void prepare_vmcs01_guest_state(struct vcpu_vmx *vmx, struct vmcs12 *vmcs12)
+{
+	vmcs_writel(GUEST_CR0, vmcs12->host_cr0);
+	vmcs_writel(GUEST_CR3, vmcs12->host_cr3);
+	vmcs_writel(GUEST_CR4, vmcs12->host_cr4);
+
+	vmcs_writel(GUEST_SYSENTER_ESP, vmcs12->host_ia32_sysenter_esp);
+	vmcs_writel(GUEST_SYSENTER_EIP, vmcs12->host_ia32_sysenter_eip);
+	vmcs_write32(GUEST_SYSENTER_CS, vmcs12->host_ia32_sysenter_cs);
+
+	/* Both cases want vmcs01 to take EFER/PAT from L2
+	 * 1. L1 host wishes to load its own MSRs on L2 guest VMExit
+	 *    such vmcs12's host states shall be set as vmcs01's guest states
+	 * 2. L1 host wishes to keep use MSRs from L2 guest after its VMExit
+	 *    such vmcs02's guest state shall be set as vmcs01's guest states
+	 *    the vmcs02's guest state were recorded in vmcs12 host
+	 *
+	 * For case 1, IA32_PERF_GLOBAL_CTRL is separately checked.
+	 */
+	vmcs_write64(GUEST_IA32_EFER, vmcs12->host_ia32_efer);
+	vmcs_write64(GUEST_IA32_PAT, vmcs12->host_ia32_pat);
+	if (vmcs12->vm_exit_controls & VM_EXIT_LOAD_IA32_PERF_GLOBAL_CTRL)
+		vmcs_write64(GUEST_IA32_PERF_GLOBAL_CTRL, vmcs12->host_ia32_perf_global_ctrl);
+
+	vmcs_write16(GUEST_CS_SELECTOR, vmcs12->host_cs_selector);
+	vmcs_write16(GUEST_DS_SELECTOR, vmcs12->host_ds_selector);
+	vmcs_write16(GUEST_ES_SELECTOR, vmcs12->host_es_selector);
+	vmcs_write16(GUEST_FS_SELECTOR, vmcs12->host_fs_selector);
+	vmcs_write16(GUEST_GS_SELECTOR, vmcs12->host_gs_selector);
+	vmcs_write16(GUEST_SS_SELECTOR, vmcs12->host_ss_selector);
+	vmcs_write16(GUEST_TR_SELECTOR, vmcs12->host_tr_selector);
+
+	vmcs_writel(GUEST_FS_BASE, vmcs12->host_fs_base);
+	vmcs_writel(GUEST_GS_BASE, vmcs12->host_gs_base);
+	vmcs_writel(GUEST_TR_BASE, vmcs12->host_tr_base);
+	vmcs_writel(GUEST_GDTR_BASE, vmcs12->host_gdtr_base);
+	vmcs_writel(GUEST_IDTR_BASE, vmcs12->host_idtr_base);
+
+	vmcs_writel(GUEST_RIP, vmcs12->host_rip);
+	vmcs_writel(GUEST_RSP, vmcs12->host_rsp);
+	vmcs_writel(GUEST_RFLAGS, 0x2);
+}
+
 static void nested_release_vmcs12(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
@@ -536,6 +605,38 @@ static void nested_release_vmcs12(struct kvm_vcpu *vcpu)
 	pkvm_hvcpu->current_shadow_vcpu = NULL;
 
 	put_shadow_vcpu(cur_shadow_vcpu->shadow_vcpu_handle);
+}
+
+static void nested_vmx_run(struct kvm_vcpu *vcpu, bool launch)
+{
+	struct vcpu_vmx *vmx = to_vmx(vcpu);
+	struct pkvm_host_vcpu *pkvm_hvcpu = to_pkvm_hvcpu(vcpu);
+	struct shadow_vcpu_state *cur_shadow_vcpu = pkvm_hvcpu->current_shadow_vcpu;
+	struct vmcs *vmcs02 = (struct vmcs *)cur_shadow_vcpu->vmcs02;
+	struct vmcs12 *vmcs12 = (struct vmcs12 *)cur_shadow_vcpu->cached_vmcs12;
+
+	if (vmx->nested.current_vmptr == INVALID_GPA) {
+		nested_vmx_result(VMfailInvalid, 0);
+	} else if (vmcs12->launch_state == launch) {
+		/* VMLAUNCH_NONCLEAR_VMCS or VMRESUME_NONLAUNCHED_VMCS */
+		nested_vmx_result(VMfailValid,
+			launch ? VMXERR_VMLAUNCH_NONCLEAR_VMCS : VMXERR_VMRESUME_NONLAUNCHED_VMCS);
+	} else {
+		/* save vmcs01 guest state for possible emulation */
+		save_vmcs01_fields_for_emulation(vmx);
+
+		/* switch to vmcs02 */
+		vmcs_clear_track(vmx, vmcs02);
+		clear_shadow_indicator(vmcs02);
+		vmcs_load_track(vmx, vmcs02);
+
+		sync_vmcs12_dirty_fields_to_vmcs02(vmx, vmcs12);
+
+		update_vmcs02_fields_for_emulation(vmx, vmcs12);
+
+		/* mark guest mode */
+		vcpu->arch.hflags |= HF_GUEST_MASK;
+	}
 }
 
 int handle_vmxon(struct kvm_vcpu *vcpu)
@@ -805,6 +906,54 @@ int handle_vmread(struct kvm_vcpu *vcpu)
 			}
 		}
 	}
+
+	return 0;
+}
+
+int handle_vmresume(struct kvm_vcpu *vcpu)
+{
+	if (check_vmx_permission(vcpu))
+		nested_vmx_run(vcpu, false);
+
+	return 0;
+}
+
+int handle_vmlaunch(struct kvm_vcpu *vcpu)
+{
+	if (check_vmx_permission(vcpu))
+		nested_vmx_run(vcpu, true);
+
+	return 0;
+}
+
+int nested_vmexit(struct kvm_vcpu *vcpu)
+{
+	struct vcpu_vmx *vmx = to_vmx(vcpu);
+	struct pkvm_host_vcpu *pkvm_hvcpu = to_pkvm_hvcpu(vcpu);
+	struct shadow_vcpu_state *cur_shadow_vcpu = pkvm_hvcpu->current_shadow_vcpu;
+	struct vmcs *vmcs02 = (struct vmcs *)cur_shadow_vcpu->vmcs02;
+	struct vmcs12 *vmcs12 = (struct vmcs12 *)cur_shadow_vcpu->cached_vmcs12;
+
+	/* clear guest mode if need switch back to host */
+	vcpu->arch.hflags &= ~HF_GUEST_MASK;
+
+	/* L1 host wishes to keep use MSRs from L2 guest after its VMExit?
+	 * save vmcs02 guest state for later vmcs01 guest state preparation
+	 */
+	if ((vmcs12->vm_exit_controls & VM_EXIT_LOAD_IA32_EFER) != VM_EXIT_LOAD_IA32_EFER)
+		vmcs12->host_ia32_efer = vmcs_read64(GUEST_IA32_EFER);
+	if ((vmcs12->vm_exit_controls & VM_EXIT_LOAD_IA32_PAT) != VM_EXIT_LOAD_IA32_PAT)
+		vmcs12->host_ia32_pat = vmcs_read64(GUEST_IA32_PAT);
+
+	if (!vmcs12->launch_state)
+		vmcs12->launch_state = 1;
+
+	/* switch to vmcs01 */
+	vmcs_clear_track(vmx, vmcs02);
+	set_shadow_indicator(vmcs02);
+	vmcs_load_track(vmx, vmx->loaded_vmcs->vmcs);
+
+	prepare_vmcs01_guest_state(vmx, vmcs12);
 
 	return 0;
 }
