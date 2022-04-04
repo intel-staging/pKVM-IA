@@ -251,6 +251,11 @@ int pkvm_main(struct kvm_vcpu *vcpu)
 			case EXIT_REASON_INTERRUPT_WINDOW:
 				handle_irq_window(vcpu);
 				break;
+			case EXIT_REASON_INVEPT:
+			case EXIT_REASON_INVVPID:
+				ept_sync_global();
+				skip_instruction = true;
+				break;
 			default:
 				pkvm_dbg("CPU%d: Unsupported vmexit reason 0x%x.\n", vcpu->cpu, vmx->exit_reason.full);
 				skip_instruction = true;
