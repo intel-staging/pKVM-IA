@@ -11,6 +11,9 @@ int handle_vmptrld(struct kvm_vcpu *vcpu);
 int handle_vmclear(struct kvm_vcpu *vcpu);
 int handle_vmwrite(struct kvm_vcpu *vcpu);
 int handle_vmread(struct kvm_vcpu *vcpu);
+int handle_vmresume(struct kvm_vcpu *vcpu);
+int handle_vmlaunch(struct kvm_vcpu *vcpu);
+int nested_vmexit(struct kvm_vcpu *vcpu);
 void pkvm_init_nest(void);
 
 #endif
