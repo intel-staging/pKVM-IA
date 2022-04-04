@@ -149,6 +149,12 @@ static struct shadow_vmcs_field shadow_read_write_fields[] = {
 };
 static int max_shadow_read_write_fields =
 	ARRAY_SIZE(shadow_read_write_fields);
+static struct shadow_vmcs_field emulated_fields[] = {
+#define EMULATED_FIELD_RW(x, y) { x, offsetof(struct vmcs12, y) },
+#include "pkvm_nested_vmcs_fields.h"
+};
+static int max_emulated_fields =
+	ARRAY_SIZE(emulated_fields);
 
 static void init_vmcs_shadow_fields(void)
 {
@@ -199,6 +205,22 @@ static void init_vmcs_shadow_fields(void)
 		shadow_read_write_fields[j++] = entry;
 	}
 	max_shadow_read_write_fields = j;
+}
+
+static void init_emulated_vmcs_fields(void)
+{
+	int i, j;
+
+	for (i = j = 0; i < max_emulated_fields; i++) {
+		struct shadow_vmcs_field entry = emulated_fields[i];
+		u16 field = entry.encoding;
+
+		if (!has_vmcs_field(field))
+			continue;
+
+		emulated_fields[j++] = entry;
+	}
+	max_emulated_fields = j;
 }
 
 static void nested_vmx_result(enum VMXResult result, int error_number)
@@ -384,4 +406,5 @@ int handle_vmxoff(struct kvm_vcpu *vcpu)
 void pkvm_init_nest(void)
 {
 	init_vmcs_shadow_fields();
+	init_emulated_vmcs_fields();
 }
