@@ -2,16 +2,54 @@
 /*
  * Copyright (C) 2022 Intel Corporation
  */
-#if !defined(SHADOW_FIELD_RW) && !defined(SHADOW_FIELD_RO)
+#if !defined(EMULATED_FIELD_RW) && !defined(SHADOW_FIELD_RW) && !defined(SHADOW_FIELD_RO)
 BUILD_BUG_ON(1)
 #endif
 
+#ifndef EMULATED_FIELD_RW
+#define EMULATED_FIELD_RW(x, y)
+#endif
 #ifndef SHADOW_FIELD_RW
 #define SHADOW_FIELD_RW(x, y)
 #endif
 #ifndef SHADOW_FIELD_RO
 #define SHADOW_FIELD_RO(x, y)
 #endif
+
+/*
+ * Emulated fields for vmcs02:
+ *
+ * These fields are recorded in cached_vmcs12, and should be emulated to
+ * real value in vmcs02 before vmcs01 active.
+ */
+/* 16-bits */
+EMULATED_FIELD_RW(VIRTUAL_PROCESSOR_ID, virtual_processor_id)
+
+/* 32-bits */
+EMULATED_FIELD_RW(VM_EXIT_CONTROLS, vm_exit_controls)
+EMULATED_FIELD_RW(VM_ENTRY_CONTROLS, vm_entry_controls)
+
+/* 64-bits, what about their HIGH 32 fields?  */
+EMULATED_FIELD_RW(IO_BITMAP_A, io_bitmap_a)
+EMULATED_FIELD_RW(IO_BITMAP_B, io_bitmap_b)
+EMULATED_FIELD_RW(MSR_BITMAP, msr_bitmap)
+EMULATED_FIELD_RW(VM_EXIT_MSR_STORE_ADDR, vm_exit_msr_store_addr)
+EMULATED_FIELD_RW(VM_EXIT_MSR_LOAD_ADDR, vm_exit_msr_load_addr)
+EMULATED_FIELD_RW(VM_ENTRY_MSR_LOAD_ADDR, vm_entry_msr_load_addr)
+EMULATED_FIELD_RW(XSS_EXIT_BITMAP, xss_exit_bitmap)
+EMULATED_FIELD_RW(POSTED_INTR_DESC_ADDR, posted_intr_desc_addr)
+EMULATED_FIELD_RW(PML_ADDRESS, pml_address)
+EMULATED_FIELD_RW(VM_FUNCTION_CONTROL, vm_function_control)
+EMULATED_FIELD_RW(EPT_POINTER, ept_pointer)
+EMULATED_FIELD_RW(EOI_EXIT_BITMAP0, eoi_exit_bitmap0)
+EMULATED_FIELD_RW(EOI_EXIT_BITMAP1, eoi_exit_bitmap1)
+EMULATED_FIELD_RW(EOI_EXIT_BITMAP2, eoi_exit_bitmap2)
+EMULATED_FIELD_RW(EOI_EXIT_BITMAP3, eoi_exit_bitmap3)
+EMULATED_FIELD_RW(EPTP_LIST_ADDRESS, eptp_list_address)
+EMULATED_FIELD_RW(VMREAD_BITMAP, vmread_bitmap)
+EMULATED_FIELD_RW(VMWRITE_BITMAP, vmwrite_bitmap)
+EMULATED_FIELD_RW(ENCLS_EXITING_BITMAP, encls_exiting_bitmap)
+EMULATED_FIELD_RW(VMCS_LINK_POINTER, vmcs_link_pointer)
 
 /*
  * Shadow fields for vmcs02:
@@ -152,5 +190,6 @@ SHADOW_FIELD_RO(GUEST_LINEAR_ADDRESS, guest_linear_address)
 SHADOW_FIELD_RO(GUEST_PHYSICAL_ADDRESS, guest_physical_address)
 SHADOW_FIELD_RO(GUEST_PHYSICAL_ADDRESS_HIGH, guest_physical_address)
 
+#undef EMULATED_FIELD_RW
 #undef SHADOW_FIELD_RW
 #undef SHADOW_FIELD_RO
