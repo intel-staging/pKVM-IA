@@ -136,7 +136,112 @@ static __init int pkvm_enable_vmx(struct pkvm_host_vcpu *vcpu)
 	return pkvm_cpu_vmxon(phys_addr);
 }
 
-static __init int pkvm_host_init_vmx(struct pkvm_host_vcpu *vcpu)
+static inline u32 get_ar(u16 sel)
+{
+	u32 access_rights;
+
+	if (sel == 0) {
+		access_rights = 0x10000;
+	} else {
+		asm ("lar %%ax, %%rax\n"
+				: "=a"(access_rights) : "a"(sel));
+		access_rights = access_rights >> 8;
+		access_rights = access_rights & 0xf0ff;
+	}
+
+	return access_rights;
+}
+
+#define init_guestsegment(seg, SEG, base, limit)		\
+	do  {							\
+		u16 sel;					\
+		u32 ar;						\
+								\
+		savesegment(seg, sel);				\
+		ar = get_ar(sel);				\
+		vmcs_write16(GUEST_##SEG##_SELECTOR, sel);	\
+		vmcs_write32(GUEST_##SEG##_AR_BYTES, ar);	\
+		vmcs_writel(GUEST_##SEG##_BASE, base);		\
+		vmcs_write32(GUEST_##SEG##_LIMIT, limit);	\
+	} while (0)
+
+static __init void init_guest_state_area_from_native(int cpu)
+{
+	u16 ldtr;
+	struct desc_ptr dt;
+	unsigned long msrl;
+	u32 high, low;
+
+	/* load CR regiesters */
+	vmcs_writel(GUEST_CR0, read_cr0() & ~X86_CR0_TS);
+	vmcs_writel(GUEST_CR3, __read_cr3());
+	vmcs_writel(GUEST_CR4, native_read_cr4());
+
+	/* load cs/ss/ds/es */
+	init_guestsegment(cs, CS, 0x0, 0xffffffff);
+	init_guestsegment(ss, SS, 0x0, 0xffffffff);
+	init_guestsegment(ds, DS, 0x0, 0xffffffff);
+	init_guestsegment(es, ES, 0x0, 0xffffffff);
+
+	/* load fs/gs */
+	rdmsrl(MSR_FS_BASE, msrl);
+	init_guestsegment(fs, FS, msrl, 0xffffffff);
+	rdmsrl(MSR_GS_BASE, msrl);
+	init_guestsegment(gs, GS, msrl, 0xffffffff);
+
+	/* load GDTR */
+	native_store_gdt(&dt);
+	vmcs_writel(GUEST_GDTR_BASE, dt.address);
+	vmcs_write32(GUEST_GDTR_LIMIT, dt.size);
+
+	/* load TR */
+	vmcs_write16(GUEST_TR_SELECTOR, GDT_ENTRY_TSS*8);
+	vmcs_write32(GUEST_TR_AR_BYTES, get_ar(GDT_ENTRY_TSS*8));
+	vmcs_writel(GUEST_TR_BASE, (unsigned long)&get_cpu_entry_area(cpu)->tss.x86_tss);
+	vmcs_write32(GUEST_TR_LIMIT, __KERNEL_TSS_LIMIT);
+
+	/* load LDTR */
+	store_ldt(ldtr);
+	vmcs_write16(GUEST_LDTR_SELECTOR, ldtr);
+	vmcs_write32(GUEST_LDTR_AR_BYTES, 0x10000);
+	vmcs_writel(GUEST_LDTR_BASE, 0x0);
+	vmcs_write32(GUEST_LDTR_LIMIT, 0xffffffff);
+
+	store_idt(&dt);
+	vmcs_writel(GUEST_IDTR_BASE, dt.address);
+	vmcs_write32(GUEST_IDTR_LIMIT, dt.size);
+
+	/* set MSRs */
+	vmcs_write64(GUEST_IA32_DEBUGCTL, 0);
+
+	rdmsr(MSR_IA32_SYSENTER_CS, low, high);
+	vmcs_write32(GUEST_SYSENTER_CS, low);
+
+	rdmsrl(MSR_IA32_SYSENTER_ESP, msrl);
+	vmcs_writel(GUEST_SYSENTER_ESP, msrl);
+
+	rdmsrl(MSR_IA32_SYSENTER_EIP, msrl);
+	vmcs_writel(GUEST_SYSENTER_EIP, msrl);
+
+	rdmsrl(MSR_EFER, msrl);
+	vmcs_write64(GUEST_IA32_EFER, msrl);
+
+	rdmsrl(MSR_IA32_CR_PAT, msrl);
+	vmcs_write64(GUEST_IA32_PAT, msrl);
+}
+
+static __init void init_guest_state_area(struct pkvm_host_vcpu *vcpu, int cpu)
+{
+	init_guest_state_area_from_native(cpu);
+
+	/*Guest non register state*/
+	vmcs_write32(GUEST_ACTIVITY_STATE, GUEST_ACTIVITY_ACTIVE);
+	vmcs_write32(GUEST_INTERRUPTIBILITY_INFO, 0);
+	vmcs_writel(GUEST_PENDING_DBG_EXCEPTIONS, 0);
+	vmcs_write64(VMCS_LINK_POINTER, -1ull);
+}
+
+static __init int pkvm_host_init_vmx(struct pkvm_host_vcpu *vcpu, int cpu)
 {
 	struct vcpu_vmx *vmx = &vcpu->vmx;
 	int ret;
@@ -155,6 +260,11 @@ static __init int pkvm_host_init_vmx(struct pkvm_host_vcpu *vcpu)
 		pr_err("%s: No page for msr_bitmap\n", __func__);
 		return -ENOMEM;
 	}
+
+	vmx->loaded_vmcs = &vmx->vmcs01;
+	vmcs_load(vmx->loaded_vmcs->vmcs);
+
+	init_guest_state_area(vcpu, cpu);
 
 	return ret;
 }
@@ -339,7 +449,7 @@ static __init void pkvm_host_deprivilege_cpu(void *data)
 
 	enable_feature_control();
 
-	ret = pkvm_host_init_vmx(vcpu);
+	ret = pkvm_host_init_vmx(vcpu, cpu);
 	if (ret) {
 		pr_err("%s: init vmx failed\n", __func__);
 		goto out;
