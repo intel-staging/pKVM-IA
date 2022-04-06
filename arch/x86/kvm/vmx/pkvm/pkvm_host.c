@@ -297,6 +297,42 @@ static void init_host_state_area(struct pkvm_host_vcpu *vcpu)
 	/*TODO: add HOST_RIP */
 }
 
+static void init_execution_control(struct vcpu_vmx *vmx,
+			    struct vmcs_config *vmcs_config_ptr,
+			    struct vmx_capability *vmx_cap)
+{
+	pin_controls_set(vmx, vmcs_config_ptr->pin_based_exec_ctrl);
+	exec_controls_set(vmx, vmcs_config_ptr->cpu_based_exec_ctrl);
+	secondary_exec_controls_set(vmx, vmcs_config_ptr->cpu_based_2nd_exec_ctrl);
+	/* disable EPT first, will enable after EPT pgtable created */
+	secondary_exec_controls_clearbit(vmx, SECONDARY_EXEC_ENABLE_EPT);
+
+	vmcs_write32(CR3_TARGET_COUNT, 0);
+
+	vmcs_write32(EXCEPTION_BITMAP, 0);
+
+	vmcs_write64(MSR_BITMAP, __pa(vmx->vmcs01.msr_bitmap));
+
+	/*guest owns the entire bits*/
+	vmcs_writel(CR0_GUEST_HOST_MASK, 0);
+
+	vmcs_writel(CR4_GUEST_HOST_MASK, X86_CR4_VMXE);
+}
+
+static void init_vmexit_control(struct vcpu_vmx *vmx, struct vmcs_config *vmcs_config_ptr)
+{
+	vm_exit_controls_set(vmx, vmcs_config_ptr->vmexit_ctrl);
+	vmcs_write32(VM_EXIT_MSR_STORE_COUNT, 0);
+}
+
+static void init_vmentry_control(struct vcpu_vmx *vmx, struct vmcs_config *vmcs_config_ptr)
+{
+	vm_entry_controls_set(vmx, vmcs_config_ptr->vmentry_ctrl);
+	vmcs_write32(VM_ENTRY_INTR_INFO_FIELD, 0);
+	vmcs_write32(VM_ENTRY_MSR_LOAD_COUNT, 0);
+	vmcs_write32(VM_ENTRY_INTR_INFO_FIELD, 0);
+}
+
 static int pkvm_host_init_vmx(struct pkvm_host_vcpu *vcpu, int cpu)
 {
 	struct vcpu_vmx *vmx = &vcpu->vmx;
@@ -322,6 +358,9 @@ static int pkvm_host_init_vmx(struct pkvm_host_vcpu *vcpu, int cpu)
 
 	init_guest_state_area(vcpu, cpu);
 	init_host_state_area(vcpu);
+	init_execution_control(vmx, &pkvm->vmcs_config, &pkvm->vmx_cap);
+	init_vmexit_control(vmx, &pkvm->vmcs_config);
+	init_vmentry_control(vmx, &pkvm->vmcs_config);
 
 	return ret;
 }
