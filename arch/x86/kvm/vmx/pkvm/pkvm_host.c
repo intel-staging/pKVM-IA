@@ -47,22 +47,12 @@ u64 pkvm_total_reserve_pages(void)
 	return total;
 }
 
-static void *pkvm_early_alloc_contig(int pages)
-{
-	return alloc_pages_exact(pages << PAGE_SHIFT, GFP_KERNEL | __GFP_ZERO);
-}
-
-static void pkvm_early_free(void *ptr, int pages)
-{
-	free_pages_exact(ptr, pages << PAGE_SHIFT);
-}
-
 static struct vmcs *pkvm_alloc_vmcs(struct vmcs_config *vmcs_config_ptr)
 {
 	struct vmcs *vmcs;
 	int pages = ALIGN(vmcs_config_ptr->size, PAGE_SIZE) >> PAGE_SHIFT;
 
-	vmcs = pkvm_early_alloc_contig(pages);
+	vmcs = pkvm_sym(pkvm_early_alloc_contig)(pages);
 	if (!vmcs)
 		return NULL;
 
@@ -70,13 +60,6 @@ static struct vmcs *pkvm_alloc_vmcs(struct vmcs_config *vmcs_config_ptr)
 	vmcs->hdr.revision_id = vmcs_config_ptr->revision_id; /* vmcs revision id */
 
 	return vmcs;
-}
-
-static void pkvm_free_vmcs(void *vmcs, struct vmcs_config *vmcs_config_ptr)
-{
-	int pages = ALIGN(vmcs_config_ptr->size, PAGE_SIZE) >> PAGE_SHIFT;
-
-	pkvm_early_free(vmcs, pages);
 }
 
 static void vmxon_setup_revid(void *vmxon_region)
@@ -140,7 +123,7 @@ static int pkvm_enable_vmx(struct pkvm_host_vcpu *vcpu)
 {
 	u64 phys_addr;
 
-	vcpu->vmxarea = pkvm_early_alloc_contig(1);
+	vcpu->vmxarea = pkvm_sym(pkvm_early_alloc_page)();
 	if (!vcpu->vmxarea)
 		return -ENOMEM;
 
@@ -349,7 +332,7 @@ static int pkvm_host_init_vmx(struct pkvm_host_vcpu *vcpu, int cpu)
 	if (!vmx->vmcs01.vmcs)
 		return -ENOMEM;
 
-	vmx->vmcs01.msr_bitmap = pkvm_early_alloc_contig(1);
+	vmx->vmcs01.msr_bitmap = pkvm_sym(pkvm_early_alloc_page)();
 	if (!vmx->vmcs01.msr_bitmap) {
 		pr_err("%s: No page for msr_bitmap\n", __func__);
 		return -ENOMEM;
@@ -373,15 +356,11 @@ static void pkvm_host_deinit_vmx(struct pkvm_host_vcpu *vcpu)
 
 	pkvm_cpu_vmxoff();
 
-	if (vmx->vmcs01.vmcs) {
-		pkvm_free_vmcs(vmx->vmcs01.vmcs, &pkvm->vmcs_config);
+	if (vmx->vmcs01.vmcs)
 		vmx->vmcs01.vmcs = NULL;
-	}
 
-	if (vmx->vmcs01.msr_bitmap) {
-		pkvm_early_free(vmx->vmcs01.msr_bitmap, 1);
+	if (vmx->vmcs01.msr_bitmap)
 		vmx->vmcs01.msr_bitmap = NULL;
-	}
 }
 
 static int pkvm_host_check_and_setup_vmx_cap(struct pkvm_hyp *pkvm)
@@ -502,7 +481,7 @@ static int pkvm_setup_pcpu(struct pkvm_hyp *pkvm, int cpu)
 	if (cpu >= CONFIG_NR_CPUS)
 		return -ENOMEM;
 
-	pcpu = pkvm_early_alloc_contig(PKVM_PCPU_PAGES);
+	pcpu = pkvm_sym(pkvm_early_alloc_contig)(PKVM_PCPU_PAGES);
 	if (!pcpu)
 		return -ENOMEM;
 
@@ -525,7 +504,7 @@ static int pkvm_host_setup_vcpu(struct pkvm_hyp *pkvm, int cpu)
 	if (cpu >= CONFIG_NR_CPUS)
 		return -ENOMEM;
 
-	pkvm_host_vcpu = pkvm_early_alloc_contig(PKVM_HOST_VCPU_PAGES);
+	pkvm_host_vcpu = pkvm_sym(pkvm_early_alloc_contig)(PKVM_HOST_VCPU_PAGES);
 	if (!pkvm_host_vcpu)
 		return -ENOMEM;
 
@@ -690,7 +669,16 @@ int __init pkvm_init(void)
 {
 	int ret = 0, cpu;
 
-	pkvm = pkvm_early_alloc_contig(PKVM_PAGES);
+	if (!pkvm_mem_base) {
+		pr_err("pkvm required memory not get reseved!");
+		ret = -ENOMEM;
+		goto fail;
+	}
+	pkvm_sym(pkvm_early_alloc_init)(__va(pkvm_mem_base),
+			pkvm_data_struct_pages(PKVM_GLOBAL_PAGES, PKVM_PERCPU_PAGES,
+				num_possible_cpus()) << PAGE_SHIFT);
+
+	pkvm = pkvm_sym(pkvm_early_alloc_contig)(PKVM_PAGES);
 	if (!pkvm) {
 		ret = -ENOMEM;
 		goto fail;
@@ -698,42 +686,29 @@ int __init pkvm_init(void)
 
 	ret = pkvm_host_check_and_setup_vmx_cap(pkvm);
 	if (ret)
-		goto fail1;
+		goto fail;
 
 	ret = pkvm_init_mmu();
 	if (ret)
-		goto fail1;
+		goto fail;
 
 	for_each_possible_cpu(cpu) {
 		ret = pkvm_setup_pcpu(pkvm, cpu);
 		if (ret)
-			goto fail2;
+			goto fail;
 		ret = pkvm_host_setup_vcpu(pkvm, cpu);
 		if (ret)
-			goto fail2;
+			goto fail;
 	}
 
 	ret = pkvm_host_deprivilege_cpus(pkvm);
 	if (ret)
-		goto fail2;
+		goto fail;
 
 	pkvm->num_cpus = num_possible_cpus();
 
 	return 0;
 
-fail2:
-	for_each_possible_cpu(cpu) {
-		if (pkvm->host_vm.host_vcpus[cpu]) {
-			pkvm_early_free(pkvm->host_vm.host_vcpus[cpu], PKVM_HOST_VCPU_PAGES);
-			pkvm->host_vm.host_vcpus[cpu] = NULL;
-		}
-		if (pkvm->pcpus[cpu]) {
-			pkvm_early_free(pkvm->pcpus[cpu], PKVM_PCPU_PAGES);
-			pkvm->pcpus[cpu] = NULL;
-		}
-	}
-fail1:
-	pkvm_early_free(pkvm, PKVM_PAGES);
 fail:
 	return ret;
 }

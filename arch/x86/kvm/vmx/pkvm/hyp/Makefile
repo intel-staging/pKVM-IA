@@ -10,7 +10,7 @@ ccflags-y += -D__DISABLE_EXPORTS
 ccflags-y += -D__PKVM_HYP__
 
 pkvm-hyp-obj	:= $(obj)/vmx_asm.o $(obj)/vmexit.o \
-		   $(obj)/memory.o
+		   $(obj)/memory.o $(obj)/early_alloc.o
 
 virt-dir	:= $(objtree)/$(KVM_PKVM)
 pkvm-hyp-obj	+= $(virt-dir)/page_alloc.o
