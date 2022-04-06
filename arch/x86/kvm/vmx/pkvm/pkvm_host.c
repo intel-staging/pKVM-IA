@@ -245,6 +245,58 @@ static noinline void init_guest_state_area(struct pkvm_host_vcpu *vcpu, int cpu)
 	vmcs_write64(VMCS_LINK_POINTER, -1ull);
 }
 
+static void init_contant_host_state_area(struct pkvm_pcpu *pcpu)
+{
+	unsigned long a;
+
+	vmcs_writel(HOST_CR0, read_cr0() & ~X86_CR0_TS);
+	vmcs_writel(HOST_CR3, pcpu->cr3);
+	vmcs_writel(HOST_CR4, native_read_cr4());
+
+	vmcs_write16(HOST_CS_SELECTOR, __KERNEL_CS);
+	vmcs_write16(HOST_SS_SELECTOR, __KERNEL_DS);
+	vmcs_write16(HOST_DS_SELECTOR, __KERNEL_DS);
+	vmcs_write16(HOST_ES_SELECTOR, 0);
+	vmcs_write16(HOST_TR_SELECTOR, GDT_ENTRY_TSS*8);
+	vmcs_write16(HOST_FS_SELECTOR, 0);
+	vmcs_write16(HOST_GS_SELECTOR, 0);
+	vmcs_writel(HOST_FS_BASE, 0);
+	vmcs_writel(HOST_GS_BASE, 0);
+
+	vmcs_writel(HOST_TR_BASE, (unsigned long)&pcpu->tss);
+	vmcs_writel(HOST_GDTR_BASE, (unsigned long)(&pcpu->gdt_page));
+	vmcs_writel(HOST_IDTR_BASE, (unsigned long)(&pcpu->idt_page));
+
+	/* MSR area */
+	rdmsrl(MSR_EFER, a);
+	vmcs_write64(HOST_IA32_EFER, a);
+
+	rdmsrl(MSR_IA32_CR_PAT, a);
+	vmcs_write64(HOST_IA32_PAT, a);
+}
+
+static void init_host_state_area(struct pkvm_host_vcpu *vcpu)
+{
+	struct pkvm_pcpu *pcpu = vcpu->pcpu;
+	u16 selector;
+	unsigned long a;
+
+	init_contant_host_state_area(pcpu);
+
+	/* we still need fs/gs as pkvm still run kernel functions now */
+	savesegment(fs, selector);
+	vmcs_write16(HOST_FS_SELECTOR, selector);
+	rdmsrl(MSR_FS_BASE, a);
+	vmcs_writel(HOST_FS_BASE, a);
+
+	savesegment(gs, selector);
+	vmcs_write16(HOST_GS_SELECTOR, selector);
+	rdmsrl(MSR_GS_BASE, a);
+	vmcs_writel(HOST_GS_BASE, a);
+
+	/*TODO: add HOST_RIP */
+}
+
 static int pkvm_host_init_vmx(struct pkvm_host_vcpu *vcpu, int cpu)
 {
 	struct vcpu_vmx *vmx = &vcpu->vmx;
@@ -269,6 +321,7 @@ static int pkvm_host_init_vmx(struct pkvm_host_vcpu *vcpu, int cpu)
 	vmcs_load(vmx->loaded_vmcs->vmcs);
 
 	init_guest_state_area(vcpu, cpu);
+	init_host_state_area(vcpu);
 
 	return ret;
 }
