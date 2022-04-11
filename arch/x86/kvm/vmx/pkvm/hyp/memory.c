@@ -13,6 +13,7 @@
 
 unsigned long __page_base_offset;
 unsigned long __symbol_base_offset;
+unsigned long __x86_clflush_size;
 
 unsigned int pkvm_memblock_nr;
 struct memblock_region pkvm_memory[PKVM_MEMBLOCK_REGIONS];
@@ -294,4 +295,37 @@ bool find_mem_range(unsigned long addr, struct mem_range *range)
 bool mem_range_included(struct mem_range *child, struct mem_range *parent)
 {
 	return parent->start <= child->start && child->end <= parent->end;
+}
+
+static void pkvm_clflush_cache_range_opt(void *vaddr, unsigned int size)
+{
+	const unsigned long clflush_size = __x86_clflush_size;
+	void *p = (void *)((unsigned long)vaddr & ~(clflush_size - 1));
+	void *vend = vaddr + size;
+
+	if (p >= vend)
+		return;
+
+	for (; p < vend; p += clflush_size)
+		clflushopt(p);
+}
+
+/**
+ * pkvm_clflush_cache_range - flush a cache range with clflush
+ * which is implemented refer to clflush_cache_range() in kernel.
+ *
+ * @vaddr:	virtual start address
+ * @size:	number of bytes to flush
+ */
+void pkvm_clflush_cache_range(void *vaddr, unsigned int size)
+{
+	/*
+	 * clflush is an unordered instruction which needs fencing
+	 * with MFENCE or SFENCE to avoid ordering issue. Put a mb()
+	 * before the clflush.
+	 */
+	mb();
+	pkvm_clflush_cache_range_opt(vaddr, size);
+	/* And also put another one after. */
+	mb();
 }

@@ -43,4 +43,6 @@ struct mem_range {
 bool find_mem_range(unsigned long addr, struct mem_range *range);
 bool mem_range_included(struct mem_range *child, struct mem_range *parent);
 
+void pkvm_clflush_cache_range(void *vaddr, unsigned int size);
+
 #endif
