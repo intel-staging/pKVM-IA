@@ -19,6 +19,7 @@
 #include "vmx.h"
 #include "nested.h"
 #include "debug.h"
+#include "iommu.h"
 
 void *pkvm_vmemmap_base;
 void *pkvm_mmu_pgt_base;
@@ -287,6 +288,10 @@ int __pkvm_init_finalise(struct kvm_vcpu *vcpu, struct pkvm_section sections[],
 
 	ret = protect_pkvm_pages(tmp_sections, section_sz,
 			pkvm_mem_base, pkvm_mem_size);
+	if (ret)
+		goto out;
+
+	ret = pkvm_init_iommu();
 	if (ret)
 		goto out;
 

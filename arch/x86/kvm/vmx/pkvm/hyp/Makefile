@@ -15,7 +15,8 @@ pkvm-hyp-obj	:= $(obj)/vmx_asm.o $(obj)/vmexit.o \
 		   $(obj)/ept.o $(obj)/pkvm.o \
 		   $(obj)/idt.o $(obj)/irq.o \
 		   $(obj)/init_finalise.o $(obj)/nested.o \
-		   $(obj)/vmx.o $(obj)/vmsr.o
+		   $(obj)/vmx.o $(obj)/vmsr.o \
+		   $(obj)/iommu.o
 
 virt-dir	:= $(objtree)/$(KVM_PKVM)
 pkvm-hyp-obj	+= $(virt-dir)/page_alloc.o
