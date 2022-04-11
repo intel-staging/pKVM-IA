@@ -19,6 +19,7 @@
 #include "vmx.h"
 #include "nested.h"
 #include "debug.h"
+#include "iommu.h"
 #include "mem_protect.h"
 #include "lapic.h"
 
@@ -300,6 +301,10 @@ int __pkvm_init_finalise(struct kvm_vcpu *vcpu, struct pkvm_section sections[],
 
 	ret = protect_pkvm_pages(tmp_sections, section_sz,
 			hyp_mem_base, hyp_mem_size);
+	if (ret)
+		goto out;
+
+	ret = pkvm_init_iommu();
 	if (ret)
 		goto out;
 
