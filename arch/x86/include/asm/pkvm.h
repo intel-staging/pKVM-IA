@@ -16,6 +16,9 @@
 #define PKVM_HC_TEARDOWN_SHADOW_VCPU	5
 #define PKVM_HC_MMIO_ACCESS		6
 
+/* 15bits for PASID */
+#define PKVM_MAX_PASID	0x8000
+
 #ifdef CONFIG_PKVM_INTEL
 DECLARE_PER_CPU_READ_MOSTLY(bool, pkvm_enabled);
 

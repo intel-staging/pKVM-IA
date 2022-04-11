@@ -24,6 +24,7 @@
 void *pkvm_vmemmap_base;
 void *pkvm_mmu_pgt_base;
 void *host_ept_pgt_base;
+static void *iommu_mem_base;
 
 static int divide_memory_pool(phys_addr_t phys, unsigned long size)
 {
@@ -48,6 +49,12 @@ static int divide_memory_pool(phys_addr_t phys, unsigned long size)
 	nr_pages = host_ept_pgtable_pages();
 	host_ept_pgt_base = pkvm_early_alloc_contig(nr_pages);
 	if (!host_ept_pgt_base)
+		return -ENOMEM;
+
+	nr_pages = pkvm_iommu_pages(PKVM_MAX_PASID, PKVM_MAX_PASID_PDEV_NUM,
+				    PKVM_MAX_PDEV_NUM, PKVM_MAX_IOMMU_NUM);
+	iommu_mem_base = pkvm_early_alloc_contig(nr_pages);
+	if (!iommu_mem_base)
 		return -ENOMEM;
 
 	return 0;
@@ -235,6 +242,14 @@ static int protect_pkvm_pages(const struct pkvm_section sections[],
 	return 0;
 }
 
+static int create_iommu(void)
+{
+	int nr_pages = pkvm_iommu_pages(PKVM_MAX_PASID, PKVM_MAX_PASID_PDEV_NUM,
+					PKVM_MAX_PDEV_NUM, PKVM_MAX_IOMMU_NUM);
+
+	return pkvm_init_iommu(pkvm_virt_to_phys(iommu_mem_base), nr_pages);
+}
+
 #define TMP_SECTION_SZ	16UL
 int __pkvm_init_finalise(struct kvm_vcpu *vcpu, struct pkvm_section sections[],
 			 int section_sz)
@@ -291,7 +306,7 @@ int __pkvm_init_finalise(struct kvm_vcpu *vcpu, struct pkvm_section sections[],
 	if (ret)
 		goto out;
 
-	ret = pkvm_init_iommu();
+	ret = create_iommu();
 	if (ret)
 		goto out;
 

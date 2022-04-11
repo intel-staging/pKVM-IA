@@ -5,6 +5,7 @@
 #include <linux/intel-iommu.h>
 #include <pkvm_spinlock.h>
 #include <pkvm.h>
+#include <gfp.h>
 #include "pkvm_hyp.h"
 #include "memory.h"
 #include "mmu.h"
@@ -25,11 +26,16 @@ struct pkvm_iommu {
 
 static struct pkvm_iommu iommus[PKVM_MAX_IOMMU_NUM];
 
-int pkvm_init_iommu(void)
+static struct pkvm_pool iommu_pool;
+
+int pkvm_init_iommu(unsigned long mem_base, unsigned long nr_pages)
 {
 	struct pkvm_iommu_info *info = &pkvm_hyp->iommu_infos[0];
 	struct pkvm_iommu *piommu = &iommus[0];
-	int i, ret;
+	int i, ret = pkvm_pool_init(&iommu_pool, mem_base >> PAGE_SHIFT, nr_pages, 0);
+
+	if (ret)
+		return ret;
 
 	for (i = 0; i < PKVM_MAX_IOMMU_NUM; piommu++, info++, i++) {
 		if (!info->reg_phys)
