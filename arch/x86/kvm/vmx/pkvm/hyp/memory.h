@@ -46,4 +46,6 @@ int write_gpa(struct kvm_vcpu *vcpu, gpa_t gpa, void *addr, unsigned int bytes);
 
 u64 get_max_physaddr_bits(void);
 
+void pkvm_clflush_cache_range(void *vaddr, unsigned int size);
+
 #endif
