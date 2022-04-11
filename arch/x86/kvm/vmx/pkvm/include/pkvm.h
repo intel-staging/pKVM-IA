@@ -10,6 +10,7 @@
 #include <vmx/vmx.h>
 
 #define STACK_SIZE SZ_16K
+#define PKVM_MAX_IOMMU_NUM	32
 
 struct pkvm_pgtable_cap {
 	int level;
@@ -46,6 +47,11 @@ struct pkvm_host_vm {
 	struct pkvm_pgtable *ept;
 };
 
+struct pkvm_iommu_info {
+	u64 reg_phys;
+	u64 reg_size;
+};
+
 struct pkvm_hyp {
 	int num_cpus;
 
@@ -60,6 +66,17 @@ struct pkvm_hyp {
 	struct pkvm_pcpu *pcpus[CONFIG_NR_CPUS];
 
 	struct pkvm_host_vm host_vm;
+
+	struct pkvm_iommu_info iommu_infos[PKVM_MAX_IOMMU_NUM];
+
+	/*
+	 * IOMMU works in nested translation mode with sharing
+	 * the EPT as second-level page table. So the page table
+	 * level and large page size should be supported by both
+	 * EPT and IOMMU.
+	 */
+	int ept_iommu_pgt_level;
+	int ept_iommu_pgsz_mask;
 };
 
 static inline struct pkvm_host_vcpu *vmx_to_pkvm_hvcpu(struct vcpu_vmx *vmx)

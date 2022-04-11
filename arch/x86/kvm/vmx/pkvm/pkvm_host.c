@@ -5,6 +5,8 @@
 
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/dmar.h>
+#include <../drivers/iommu/intel/iommu.h>
 #include <asm/trapnr.h>
 #include <asm/kvm_pkvm.h>
 
@@ -39,6 +41,122 @@ static struct gdt_page pkvm_gdt_page = {
 		[GDT_ENTRY_KERNEL_DS]		= GDT_ENTRY_INIT(0xc093, 0, 0xfffff),
 	},
 };
+
+static int check_and_init_iommu(struct pkvm_hyp *pkvm)
+{
+	struct pkvm_iommu_info *info;
+	struct dmar_drhd_unit *drhd;
+	int pgsz_mask = 1 << PG_LEVEL_4K;
+	int pgt_level = 0;
+	void __iomem *addr;
+	u64 reg_size;
+	u64 cap, ecap;
+	int index = 0;
+
+/* matches with IOMMU cap SAGAW bits */
+#define PGT_4LEVEL	BIT(2)
+#define PGT_5LEVEL	BIT(3)
+
+	/*
+	 * IOMMU will use nested translation which reuse EPT
+	 * as the second-level page table. So IOMMU and EPT
+	 * should use a both supported page table level and
+	 * page size.
+	 */
+	if (pkvm->vmx_cap.ept & VMX_EPT_PAGE_WALK_4_BIT)
+		pgt_level |= PGT_4LEVEL;
+
+	if (pkvm->vmx_cap.ept & VMX_EPT_PAGE_WALK_5_BIT)
+		pgt_level |= PGT_5LEVEL;
+
+	if (pkvm->vmx_cap.ept & VMX_EPT_2MB_PAGE_BIT)
+		pgsz_mask |= 1 << PG_LEVEL_2M;
+
+	if ((pkvm->vmx_cap.ept & VMX_EPT_1GB_PAGE_BIT))
+		pgsz_mask |= 1 << PG_LEVEL_1G;
+
+	for_each_drhd_unit(drhd) {
+		int level = 0, mask = 1 << PG_LEVEL_4K;
+
+		if (index >= PKVM_MAX_IOMMU_NUM) {
+			pr_err("pkvm: too many IOMMU devices to be supported\n");
+			return -ENOMEM;
+		}
+
+		if (!drhd->reg_base_addr) {
+			pr_err("pkvm: dmar unit not valid\n");
+			return -EINVAL;
+		}
+
+		/*
+		 * pkvm requires host IOMMU driver to work in scalable mode with
+		 * first-level translation.
+		 */
+		if ((readl(drhd->iommu->reg + DMAR_GSTS_REG) & DMA_GSTS_TES) &&
+			(readq(drhd->iommu->reg + DMAR_RTADDR_REG) &
+			 GENMASK_ULL(11, 10)) != DMA_RTADDR_SMT) {
+			pr_err("pkvm: drhd reg_base 0x%llx: scalable mode not enabled\n",
+				drhd->reg_base_addr);
+			return -EINVAL;
+		}
+
+		addr = ioremap(drhd->reg_base_addr, VTD_PAGE_SIZE);
+		if (!addr) {
+			pr_err("pkvm: failed to map drhd reg physical addr 0x%llx\n",
+				drhd->reg_base_addr);
+			return -EINVAL;
+		}
+
+		info = &pkvm->iommu_infos[index];
+		cap = readq(addr + DMAR_CAP_REG);
+		ecap = readq(addr + DMAR_ECAP_REG);
+		iounmap(addr);
+
+		/* pkvm requires to use nested translation */
+		if (!ecap_nest(ecap)) {
+			pr_err("pkvm: drhd reg_base 0x%llx: nested translation not supported\n",
+				drhd->reg_base_addr);
+			return -EINVAL;
+		}
+
+		info->reg_phys = drhd->reg_base_addr;
+		reg_size = max_t(u64, ecap_max_iotlb_offset(ecap),
+				 cap_max_fault_reg_offset(cap));
+		info->reg_size = max_t(u64, reg_size, VTD_PAGE_SIZE);
+
+		if (cap_sagaw(cap) & PGT_4LEVEL)
+			level |= PGT_4LEVEL;
+		if (cap_sagaw(cap) & PGT_5LEVEL)
+			level |= PGT_5LEVEL;
+
+		if (cap_super_page_val(cap) & BIT(0))
+			mask |= 1 << PG_LEVEL_2M;
+		if (cap_super_page_val(cap) & BIT(1))
+			mask |= 1 << PG_LEVEL_1G;
+
+		/* Get the both supported page table level */
+		pgt_level = min(pgt_level, level);
+		pgsz_mask = min(pgsz_mask, mask);
+
+		index++;
+	}
+
+	/*
+	 * There may be no supported page table level for both IOMMU and EPT.
+	 * But there will always be both supported page size, which is 4K.
+	 */
+	if (pgt_level == 0) {
+		pr_err("pkvm: no common page table level for IOMMU and EPT\n");
+		return -EINVAL;
+	}
+
+	/* By default to use 4level */
+	pkvm->ept_iommu_pgt_level = pgt_level & PGT_4LEVEL ? 4 : 5;
+
+	pkvm->ept_iommu_pgsz_mask = pgsz_mask;
+
+	return 0;
+}
 
 u64 hyp_total_reserve_pages(void)
 {
@@ -458,9 +576,13 @@ static __init int pkvm_init_mmu(struct pkvm_hyp *pkvm)
 	pkvm->mmu_cap.allowed_pgsz = pgsz_mask;
 	pkvm->mmu_cap.table_prot = (u64)_KERNPG_TABLE_NOENC;
 
-	/* record ept pgtable cap for later ept pgtable build */
-	pkvm->ept_cap.level = pkvm->vmx_cap.ept & VMX_EPT_PAGE_WALK_4_BIT ? 4 : 5;
-	pkvm->ept_cap.allowed_pgsz = pgsz_mask;
+	/*
+	 * Use IOMMU acknowledged level and page size mask for
+	 * EPT as IOMMU will use EPT as its second-level page
+	 * table in nested translation.
+	 */
+	pkvm->ept_cap.level = pkvm->ept_iommu_pgt_level;
+	pkvm->ept_cap.allowed_pgsz = pkvm->ept_iommu_pgsz_mask;
 	pkvm->ept_cap.table_prot = VMX_EPT_RWX_MASK;
 
 	/*
@@ -984,6 +1106,10 @@ __init int pkvm_init(void)
 	}
 
 	ret = pkvm_host_check_and_setup_vmx_cap(pkvm);
+	if (ret)
+		goto out;
+
+	ret = check_and_init_iommu(pkvm);
 	if (ret)
 		goto out;
 
