@@ -125,6 +125,29 @@ static inline int hyp_pre_reserve_check(void)
 	return 0;
 }
 
+/* Calculate the total pages for Scalable IOMMU */
+static inline unsigned long pkvm_iommu_pages(int max_pasid, int nr_pasid_pdev,
+					     int nr_pdev, int nr_iommu)
+{
+	unsigned long res = 0;
+
+	/* PASID page table pages for each PASID capable pdev */
+	res += ((max_pasid >> 6) + (max_pasid >> 15)) * nr_pasid_pdev;
+	/* PASID page table pages (PASID dir + PASID table) for each normal pdev */
+	res += 2 * nr_pdev;
+	/*
+	 * Context table page count is the minumal value of
+	 * total pdev number and 256 bus * 2 (in scalable mode).
+	 * Each pdev may require a context page if its bdf is
+	 * discrete enough.
+	 */
+	res += min(256 * 2, nr_pasid_pdev + nr_pdev);
+	/* Root pages for each IOMMU */
+	res += nr_iommu;
+
+	return res;
+}
+
 /*
  * Calculate the total pages for shadow EPT with assumptions:
  * 1. there is no shared memory between each VMs (normal or protected).

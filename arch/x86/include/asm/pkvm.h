@@ -23,6 +23,9 @@
 #define PKVM_GHC_SHARE_MEM		PKVM_GHC_NUM(1)
 #define PKVM_GHC_UNSHARE_MEM		PKVM_GHC_NUM(2)
 
+/* 15bits for PASID */
+#define PKVM_MAX_PASID	0x8000
+
 #ifdef CONFIG_PKVM_INTEL
 DECLARE_PER_CPU_READ_MOSTLY(bool, pkvm_enabled);
 
