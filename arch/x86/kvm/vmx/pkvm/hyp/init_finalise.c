@@ -297,7 +297,9 @@ switch_pgt:
 	pcpu->cr3 = pkvm_hyp->mmu->root_pa;
 
 	/* enable ept */
-	eptp = pkvm_construct_eptp(pkvm_hyp->host_vm.ept->root_pa, &pkvm_hyp->vmx_cap);
+	eptp = pkvm_construct_eptp(pkvm_hyp->host_vm.ept->root_pa,
+			pkvm_hyp->host_vm.ept->level,
+			&pkvm_hyp->vmx_cap);
 	secondary_exec_controls_setbit(&pkvm_host_vcpu->vmx, SECONDARY_EXEC_ENABLE_EPT);
 	vmcs_write64(EPT_POINTER, eptp);
 
