@@ -5,7 +5,7 @@
 #ifndef _PKVM_IOMMU_H_
 #define _PKVM_IOMMU_H_
 
-int pkvm_init_iommu(void);
+int pkvm_init_iommu(unsigned long mem_base, unsigned long nr_pages);
 unsigned long pkvm_access_iommu(bool is_read, int len, unsigned long reg, unsigned long val);
 
 #endif
