@@ -14,6 +14,7 @@
 
 unsigned long __page_base_offset;
 unsigned long __symbol_base_offset;
+unsigned long __x86_clflush_size;
 static u8 max_physaddr_bits;
 
 unsigned int hyp_memblock_nr;
@@ -321,4 +322,37 @@ u64 get_max_physaddr_bits(void)
 	}
 
 	return max_physaddr_bits;
+}
+
+static void pkvm_clflush_cache_range_opt(void *vaddr, unsigned int size)
+{
+	const unsigned long clflush_size = __x86_clflush_size;
+	void *p = (void *)((unsigned long)vaddr & ~(clflush_size - 1));
+	void *vend = vaddr + size;
+
+	if (p >= vend)
+		return;
+
+	for (; p < vend; p += clflush_size)
+		clflushopt(p);
+}
+
+/**
+ * pkvm_clflush_cache_range - flush a cache range with clflush
+ * which is implemented refer to clflush_cache_range() in kernel.
+ *
+ * @vaddr:	virtual start address
+ * @size:	number of bytes to flush
+ */
+void pkvm_clflush_cache_range(void *vaddr, unsigned int size)
+{
+	/*
+	 * clflush is an unordered instruction which needs fencing
+	 * with MFENCE or SFENCE to avoid ordering issue. Put a mb()
+	 * before the clflush.
+	 */
+	mb();
+	pkvm_clflush_cache_range_opt(vaddr, size);
+	/* And also put another one after. */
+	mb();
 }

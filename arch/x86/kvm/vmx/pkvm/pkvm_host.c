@@ -631,6 +631,12 @@ static __init int pkvm_init_mmu(struct pkvm_hyp *pkvm)
 	pkvm_sym(__page_base_offset) = (unsigned long)__va(0);
 	pkvm_sym(__symbol_base_offset) = (unsigned long)__pkvm_text_start - __pa_symbol(__pkvm_text_start);
 
+	/*
+	 * __x86_clflush_size stores the clflush size for
+	 * pkvm to do the clfush at runtime.
+	 */
+	pkvm_sym(__x86_clflush_size) = boot_cpu_data.x86_clflush_size;
+
 	return 0;
 }
 
