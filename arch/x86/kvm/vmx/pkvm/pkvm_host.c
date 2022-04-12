@@ -1014,6 +1014,8 @@ static __init int pkvm_init_finalise(void)
 		ret = smp_call_function_single(cpu, do_pkvm_finalise,
 					       NULL, true);
 	}
+
+	ret = kvm_hypercall0(PKVM_HC_ACTIVATE_IOMMU);
 out:
 	put_cpu();
 
