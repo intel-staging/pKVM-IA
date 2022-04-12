@@ -15,6 +15,7 @@
 #define PKVM_HC_TEARDOWN_SHADOW_VM	4
 #define PKVM_HC_TEARDOWN_SHADOW_VCPU	5
 #define PKVM_HC_MMIO_ACCESS		6
+#define PKVM_HC_ACTIVATE_IOMMU		7
 
 /*
  * 15bits for PASID, DO NOT change it, based on it,
