@@ -115,6 +115,9 @@ static unsigned long handle_vmcall(struct kvm_vcpu *vcpu)
 	case PKVM_HC_MMIO_ACCESS:
 		ret = pkvm_access_iommu(a0, a1, a2, a3);
 		break;
+	case PKVM_HC_ACTIVATE_IOMMU:
+		ret = pkvm_activate_iommu();
+		break;
 	case PKVM_HC_TLB_REMOTE_FLUSH_RANGE:
 		nested_invalidate_shadow_ept(a0, a1, a2);
 		break;
