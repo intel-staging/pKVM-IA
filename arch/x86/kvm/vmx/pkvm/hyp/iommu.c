@@ -1026,6 +1026,21 @@ static void set_root_table(struct pkvm_iommu *iommu)
 	flush_iotlb(iommu, 0, 0, 0, DMA_TLB_GLOBAL_FLUSH);
 }
 
+static void enable_translation(struct pkvm_iommu *iommu)
+{
+	void __iomem *reg = iommu->iommu.reg;
+	u32 sts;
+
+	if (iommu->iommu.gcmd & DMA_GCMD_TE)
+		return;
+
+	iommu->iommu.gcmd |= DMA_GCMD_TE;
+
+	writel(iommu->iommu.gcmd, reg + DMAR_GCMD_REG);
+
+	PKVM_IOMMU_WAIT_OP(reg + DMAR_GSTS_REG, readl, (sts & DMA_GSTS_TES), sts);
+}
+
 static int activate_iommu(struct pkvm_iommu *iommu)
 {
 	unsigned long vaddr = 0, vaddr_end = IOMMU_MAX_VADDR;
@@ -1053,6 +1068,15 @@ static int activate_iommu(struct pkvm_iommu *iommu)
 		goto free_shadow;
 
 	set_root_table(iommu);
+
+	/*
+	 * It is possible that some of the IOMMU devices doesn't have memory
+	 * remapping translation enabled by the host IOMMU driver during boot
+	 * time, so pkvm IOMMU driver needs to make sure enabling this to
+	 * guarantee the IO isolation from the devices behind this IOMMU.
+	 *
+	 */
+	enable_translation(iommu);
 
 	iommu->activated = true;
 	root_tbl_walk(iommu);
