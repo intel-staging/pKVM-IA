@@ -533,6 +533,80 @@ static void enable_feature_control(void)
 		wrmsrl(MSR_IA32_FEAT_CTL, old | test_bits);
 }
 
+#define savegpr(gpr, value) 		\
+	asm("mov %%" #gpr ",%0":"=r" (value) : : "memory")
+
+static noinline int pkvm_host_run_vcpu(struct pkvm_host_vcpu *vcpu)
+{
+	u64 guest_rsp, host_rsp;
+	unsigned long *regs = vcpu->vmx.vcpu.arch.regs;
+	volatile int ret = 0;
+
+	/*
+	 * prepare to RUN vcpu:
+	 *
+	 * - record gprs in vcpu.arch.regs[]:
+	 *
+	 * - record below guest vmcs fields:
+	 * 	GUSET_RFLAGS - read from native
+	 *
+	 * - record below guest vmcs fields:
+	 * 	GUSET_RFLAGS - read from native
+	 * 	GUEST_RSP - read from native
+	 * 	GUEST_RIP - vmentry_point
+	 *
+	 * - switch RSP to host_rsp
+	 */
+	savegpr(rax, regs[__VCPU_REGS_RAX]);
+	savegpr(rcx, regs[__VCPU_REGS_RCX]);
+	savegpr(rdx, regs[__VCPU_REGS_RDX]);
+	savegpr(rbx, regs[__VCPU_REGS_RBX]);
+	savegpr(rbp, regs[__VCPU_REGS_RBP]);
+	savegpr(rsi, regs[__VCPU_REGS_RSI]);
+	savegpr(rdi, regs[__VCPU_REGS_RDI]);
+	savegpr(r8, regs[__VCPU_REGS_R8]);
+	savegpr(r9, regs[__VCPU_REGS_R9]);
+	savegpr(r10, regs[__VCPU_REGS_R10]);
+	savegpr(r11, regs[__VCPU_REGS_R11]);
+	savegpr(r12, regs[__VCPU_REGS_R12]);
+	savegpr(r13, regs[__VCPU_REGS_R13]);
+	savegpr(r14, regs[__VCPU_REGS_R14]);
+	savegpr(r15, regs[__VCPU_REGS_R15]);
+	host_rsp = (u64)vcpu->pcpu->stack + STACK_SIZE;
+	asm volatile(
+		"pushfq\n"
+		"popq %%rax\n"
+		"movq %1, %%rdx\n"
+		"vmwrite %%rax, %%rdx\n"
+		"movq %%rsp, %%rax\n"
+		"movq %2, %%rdx\n"
+		"vmwrite %%rax, %%rdx\n"
+		"movq %%rax, %0\n"
+		"movq $vmentry_point, %%rax\n"
+		"movq %3, %%rdx\n"
+		"vmwrite %%rax, %%rdx\n"
+		"movq %4, %%rsp\n"
+		: "=m"(guest_rsp)
+		: "i"(GUEST_RFLAGS), "i"(GUEST_RSP) , "i"(GUEST_RIP), "m"(host_rsp)
+		: "rax", "rdx", "memory");
+
+	/*
+	 * call pkvm_main to do vmlaunch.
+	 *
+	 * if pkvm_main return:
+	 * 	vmlaunch fail - switch back to guest_rsp
+	 * if pkvm_main not return:
+	 * 	vmlaunch success: guest ret to vmentry_point
+	 */
+	ret = pkvm_main(&vcpu->vmx.vcpu);
+	asm volatile(
+			"movq %0, %%rsp\n"
+			"vmentry_point:\n"
+			: : "m"(guest_rsp) :);
+
+	return ret;
+}
+
 static void pkvm_host_deprivilege_cpu(void *data)
 {
 	struct pkvm_deprivilege_param *p = data;
@@ -551,13 +625,18 @@ static void pkvm_host_deprivilege_cpu(void *data)
 		goto out;
 	}
 
-	/* TODO:KICK to RUN vcpu. let's directly go with out(return failure) now */
+	ret = pkvm_host_run_vcpu(vcpu);
+	if (ret == 0) {
+		pr_info("%s: CPU%d in guest mode\n", __func__, cpu);
+		goto ok;
+	}
 
 out:
-	p->ret = -ENOTSUPP;
+	p->ret = ret;
 	pkvm_host_deinit_vmx(vcpu);
 	pr_err("%s: failed to deprivilege CPU%d\n", __func__, cpu);
 
+ok:
 	local_irq_restore(flags);
 
 	put_cpu();

@@ -48,5 +48,6 @@ struct pkvm_hyp {
 #define PKVM_HOST_VCPU_PAGES (ALIGN(sizeof(struct pkvm_host_vcpu), PAGE_SIZE) >> PAGE_SHIFT)
 
 void __pkvm_vmx_vmexit(void);
+int pkvm_main(struct kvm_vcpu *vcpu);
 
 #endif
