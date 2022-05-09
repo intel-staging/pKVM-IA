@@ -4,9 +4,39 @@
  */
 #include <linux/bitfield.h>
 #include <pkvm.h>
+#include <gfp.h>
 #include "pkvm_hyp.h"
 #include "mem_protect.h"
 #include "pgtable.h"
+#include "ept.h"
+
+struct check_walk_data {
+	enum pkvm_page_state	desired;
+};
+
+enum pkvm_component_id {
+	PKVM_ID_HYP,
+	PKVM_ID_HOST,
+};
+
+struct pkvm_mem_trans_desc {
+	enum pkvm_component_id	id;
+	union {
+		struct {
+			u64	addr;
+		} host;
+
+		struct {
+			u64	addr;
+		} hyp;
+	};
+};
+
+struct pkvm_mem_transition {
+	u64				size;
+	struct pkvm_mem_trans_desc	initiator;
+	struct pkvm_mem_trans_desc	completer;
+};
 
 static u64 pkvm_init_invalid_leaf_owner(pkvm_id owner_id)
 {
@@ -30,6 +60,176 @@ static int host_ept_set_owner_locked(phys_addr_t addr, u64 size, pkvm_id owner_i
 	 * will be helpful to check the right page transition.
 	 */
 	ret = pkvm_pgtable_annotate(pkvm_hyp->host_vm.ept, addr, size, annotation);
+
+	return ret;
+}
+
+static int
+__check_page_state_walker(struct pkvm_pgtable *pgt, unsigned long vaddr,
+			  unsigned long vaddr_end, int level, void *ptep,
+			  unsigned long flags, struct pgt_flush_data *flush_data,
+			  void *const arg)
+{
+	struct check_walk_data *data = arg;
+
+	return pkvm_getstate(*(u64 *)ptep) == data->desired ? 0 : -EPERM;
+}
+
+static int check_page_state_range(struct pkvm_pgtable *pgt, u64 addr, u64 size,
+				  enum pkvm_page_state state)
+{
+	struct check_walk_data data = {
+		.desired		= state,
+	};
+	struct pkvm_pgtable_walker walker = {
+		.cb		= __check_page_state_walker,
+		.flags		= PKVM_PGTABLE_WALK_LEAF,
+		.arg		= &data,
+	};
+
+	return pgtable_walk(pgt, addr, size, &walker);
+}
+
+static int __host_check_page_state_range(u64 addr, u64 size,
+					 enum pkvm_page_state state)
+{
+	return check_page_state_range(pkvm_hyp->host_vm.ept, addr, size, state);
+}
+
+static pkvm_id __pkvm_owner_id(const struct pkvm_mem_trans_desc *desc)
+{
+	switch (desc->id) {
+	case PKVM_ID_HYP:
+		return OWNER_ID_HYP;
+	default:
+		WARN_ON(1);
+		return OWNER_ID_INV;
+	}
+}
+
+static pkvm_id completer_owner_id(const struct pkvm_mem_transition *tx)
+{
+	return __pkvm_owner_id(&tx->completer);
+}
+
+static int host_request_donation(const struct pkvm_mem_transition *tx)
+{
+	u64 addr = tx->initiator.host.addr;
+	u64 size = tx->size;
+
+	return __host_check_page_state_range(addr, size, PKVM_PAGE_OWNED);
+}
+
+static int check_donation(const struct pkvm_mem_transition *tx)
+{
+	int ret;
+
+	switch (tx->initiator.id) {
+	case PKVM_ID_HOST:
+		ret = host_request_donation(tx);
+		break;
+	default:
+		ret = -EINVAL;
+	}
+
+	if (ret)
+		return ret;
+
+	switch (tx->completer.id) {
+	case PKVM_ID_HYP:
+		ret = 0;
+		break;
+	default:
+		ret = -EINVAL;
+	}
+
+	return ret;
+}
+
+static int host_initiate_donation(const struct pkvm_mem_transition *tx)
+{
+	pkvm_id owner_id = completer_owner_id(tx);
+	u64 addr = tx->initiator.host.addr;
+	u64 size = tx->size;
+
+	if (owner_id == OWNER_ID_INV)
+		return -EINVAL;
+	else
+		return host_ept_set_owner_locked(addr, size, owner_id);
+}
+
+static int __do_donate(const struct pkvm_mem_transition *tx)
+{
+	int ret;
+
+	switch (tx->initiator.id) {
+	case PKVM_ID_HOST:
+		ret = host_initiate_donation(tx);
+		break;
+	default:
+		ret = -EINVAL;
+	}
+
+	if (ret)
+		return ret;
+
+	switch (tx->completer.id) {
+	case PKVM_ID_HYP:
+		ret = 0;
+		break;
+	default:
+		ret = -EINVAL;
+	}
+
+	return ret;
+}
+
+/*
+ * do_donate - the page owner transfer ownership to another component.
+ *
+ * Initiator: OWNED	=> NO_PAGE
+ * Completer: NO_APGE	=> OWNED
+ *
+ * The special component is pkvm_hyp. Since pkvm_hyp can access all the
+ * memory, nothing needs to be done if the page owner is transferred to
+ * hyp or hyp transfers the ownership to other entities.
+ */
+static int do_donate(const struct pkvm_mem_transition *donation)
+{
+	int ret;
+
+	ret = check_donation(donation);
+	if (ret)
+		return ret;
+
+	return WARN_ON(__do_donate(donation));
+}
+
+int __pkvm_host_donate_hyp(u64 hpa, u64 size)
+{
+	int ret;
+	u64 hyp_addr = (u64)__pkvm_va(hpa);
+	struct pkvm_mem_transition donation = {
+		.size		= size,
+		.initiator	= {
+			.id	= PKVM_ID_HOST,
+			.host	= {
+				.addr	= hpa,
+			},
+		},
+		.completer	= {
+			.id	= PKVM_ID_HYP,
+			.hyp	= {
+				.addr = hyp_addr,
+			},
+		},
+	};
+
+	host_ept_lock();
+
+	ret = do_donate(&donation);
+
+	host_ept_unlock();
 
 	return ret;
 }

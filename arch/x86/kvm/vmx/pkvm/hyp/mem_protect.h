@@ -53,4 +53,19 @@ typedef u32 pkvm_id;
 #define OWNER_ID_HOST	1UL
 #define OWNER_ID_INV	(~(u32)0UL)
 
+/*
+ * __pkvm_host_donate_hyp() - Donate pages from host to hyp, then host cannot
+ * access these donated pages.
+ *
+ * @hpa:	Start hpa of being donated pages, must be continuous.
+ * @size:	The size of memory to be donated.
+ *
+ * A range of pages [hpa, hpa + size) will be donated from host to hyp. And
+ * this will unmap these pages from host ept and set the page owner as hyp_id
+ * in the pte in host ept. For hyp mmu, it will do nothing as hyp mmu can
+ * access all the memory by default, but modifying host ept is necessary because
+ * a page used by pkvm is private and can't be accessed by host.
+ */
+int __pkvm_host_donate_hyp(u64 hpa, u64 size);
+
 #endif
