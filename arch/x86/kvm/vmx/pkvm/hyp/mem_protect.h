@@ -52,4 +52,19 @@ static const pkvm_id pkvm_hyp_id = 0;
 
 int host_ept_set_owner(phys_addr_t addr, u64 size, pkvm_id owner_id);
 
+/*
+ * __pkvm_host_donate_hyp() - Donate pages from host to hyp, then host cannot
+ * access these donated pages.
+ *
+ * @hpa:	Start hpa of being donated pages, must be continues.
+ * @size:	The size of memory to being donated.
+ *
+ * A range of pages [hpa, hpa + size) will be donated from host to hyp. And
+ * this will unmap these pages from host ept and set the page owner as hyp_id
+ * in the pte in host ept. For hyp mmu, it will do nothing, due to hyp mmu can
+ * access the all memory by default, but modify host ept is necessary because a
+ * page used by pkvm is private and can't be accessed by host.
+ */
+int __pkvm_host_donate_hyp(u64 hpa, u64 size);
+
 #endif
