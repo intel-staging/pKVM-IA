@@ -131,6 +131,40 @@ static inline int hyp_pre_reserve_check(void)
 	return 0;
 }
 
+/*
+ * Calculate the total pages for shadow EPT with assumptions:
+ * 1. there is no shared memory between each VMs (normal or protected).
+ * 2. all VMs total memory size is no larger than the platform memory size.
+ * 3. the virtual MMIO range for each VM is no larger than 1G.
+ */
+static inline unsigned long pkvm_shadow_ept_pgtable_pages(int nr_vm)
+{
+	unsigned long pgtable_pages = __pkvm_pgtable_total_pages();
+	unsigned long res;
+
+	res = pgtable_pages;
+
+	/*
+	 * Above 'res' covered enough pages for a shadow EPT to create all
+	 * possible levels mapping for the whole platform memory size. The pages
+	 * reserved for lvl-1 mapping (usually 4K size) actually can be shared
+	 * among all VM shadow EPTs as their occupied memory are partitioned
+	 * according to the assumption. While for lvl-2,3,4 or possible lvl-5
+	 * mappings, above 'res' pages only covered for one shadow EPT, we need
+	 * reserve more for other 'nr_vm -1' VMs.
+	 *
+	 * The lvl-2 to lvl-5 pages for one VM's shadow EPT can be approximately
+	 * got by:
+	 *     __pkvm_pgtable_total_pages()/PTRS_PER_PTE
+	 */
+	res += DIV_ROUND_UP(pgtable_pages, PTRS_PER_PTE) * (nr_vm - 1);
+
+	/* Allow 1 GiB for MMIO mappings for each VM */
+	 res += __pkvm_pgtable_max_pages(SZ_1G >> PAGE_SHIFT) * nr_vm;
+
+	return res;
+}
+
 u64 hyp_total_reserve_pages(void);
 
 int pkvm_init_shadow_vm(struct kvm *kvm);
