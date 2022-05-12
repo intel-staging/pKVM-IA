@@ -145,6 +145,47 @@ static inline unsigned long pkvm_iommu_pages(int max_pasid, int nr_pasid_pdev,
 	return res;
 }
 
+/*
+ * Calculate the total pages for shadow EPT. The assumptions are that:
+ * 1. There are no shared memory between normal VMs or between secure VMs.
+ * 2. The normal VM or secure VM memory size is no larger than the platform
+ * memory size.
+ * 3. The virtual MMIO range for each VM is no larger than 1G.
+ * With these assumptions, can reserve enough memory for normal VMs and
+ * secure VMs.
+ * 4. Each VM only have one shadow EPT. This will make vSMM mode and non-vSMM
+ * mode sharing the same shadow EPT for a VM, which brings security weakness for
+ * the vSMM mode.
+ */
+static inline unsigned long pkvm_shadow_ept_pgtable_pages(int nr_vm)
+{
+	unsigned long pgtable_pages = __pkvm_pgtable_total_pages();
+	unsigned long res;
+
+	/*
+	 * Reserve enough pages to map all the platform memory in shadow
+	 * EPT. With assumption#1 and assumption#4, these pages are enough
+	 * for all VMs.
+	 */
+	res = pgtable_pages;
+
+	/*
+	 * There are multiple VMs. Although the total pages can be calculated
+	 * through __pkvm_pgtable_total_pages() to map all the memory, this is
+	 * enough to satisfy the level1 page table pages for all VMs but not
+	 * enough to satisfy the level2:level5 page table pages. Each VM will
+	 * require its own level2:level5 pages. Because __pkvm_pgtable_total_pages
+	 * has already allocated 1 level2:level5, so we just minus 1 from total
+	 * number of VMs. And multiple with 2 considerring SMM mode.
+	 */
+	res += __pkvm_pgtable_max_pages(pgtable_pages) * (nr_vm - 1) * 2;
+
+	/* Allow 1 GiB for MMIO mappings for each VM */
+	 res += __pkvm_pgtable_max_pages(SZ_1G >> PAGE_SHIFT) * nr_vm;
+
+	return res;
+}
+
 u64 pkvm_total_reserve_pages(void);
 
 int pkvm_init_shadow_vm(struct kvm *kvm);

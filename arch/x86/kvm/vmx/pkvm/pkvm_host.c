@@ -219,6 +219,7 @@ u64 pkvm_total_reserve_pages(void)
 	total += pkvm_iommu_pages(PKVM_MAX_PASID, PKVM_PASIDDEV_NUM,
 				  PKVM_PDEV_NUM, PKVM_IOMMU_NUM,
 				  PKVM_IOMMU_QI_SIZE);
+	total += pkvm_shadow_ept_pgtable_pages(PKVM_MAX_VM_NUM);
 
 	return total;
 }
