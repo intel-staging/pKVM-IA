@@ -26,6 +26,7 @@ void *pkvm_vmemmap_base;
 void *pkvm_mmu_pgt_base;
 void *host_ept_pgt_base;
 static void *iommu_mem_base;
+static void *shadow_ept_base;
 
 static int divide_memory_pool(phys_addr_t phys, unsigned long size)
 {
@@ -57,6 +58,12 @@ static int divide_memory_pool(phys_addr_t phys, unsigned long size)
 				    PKVM_QI_DESC_ALIGNED_SIZE + PKVM_QI_DESC_STATUS_ALIGNED_SIZE);
 	iommu_mem_base = pkvm_early_alloc_contig(nr_pages);
 	if (!iommu_mem_base)
+		return -ENOMEM;
+
+	nr_pages = pkvm_shadow_ept_pgtable_pages(PKVM_MAX_NORMAL_VM_NUM +
+						 PKVM_MAX_SECURE_VM_NUM);
+	shadow_ept_base = pkvm_early_alloc_contig(nr_pages);
+	if (!shadow_ept_base)
 		return -ENOMEM;
 
 	return 0;
@@ -315,6 +322,12 @@ int __pkvm_init_finalise(struct kvm_vcpu *vcpu, struct pkvm_section sections[],
 		goto out;
 
 	pkvm_init_nest();
+
+	ret = pkvm_shadow_ept_pool_init(shadow_ept_base,
+					pkvm_shadow_ept_pgtable_pages(PKVM_MAX_NORMAL_VM_NUM +
+								      PKVM_MAX_SECURE_VM_NUM));
+	if (ret)
+		goto out;
 
 	pkvm_init = true;
 
