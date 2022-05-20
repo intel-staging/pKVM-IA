@@ -173,7 +173,7 @@ int pkvm_main(struct kvm_vcpu *vcpu)
 	int launch = 1;
 
 	do {
-		bool skip_instruction = false;
+		bool skip_instruction = false, guest_exit = false;
 
 		if (__pkvm_vmx_vcpu_run(vcpu->arch.regs, launch)) {
 			pkvm_err("%s: CPU%d run_vcpu failed with error 0x%x\n",
@@ -189,6 +189,7 @@ int pkvm_main(struct kvm_vcpu *vcpu)
 		vmx->exit_qualification = vmcs_readl(EXIT_QUALIFICATION);
 
 		if (is_guest_mode(vcpu)) {
+			guest_exit = true;
 			nested_vmexit(vcpu);
 		} else {
 			switch (vmx->exit_reason.full) {
@@ -280,8 +281,12 @@ int pkvm_main(struct kvm_vcpu *vcpu)
 		}
 
 		if (is_guest_mode(vcpu)) {
-			/* vmcs01 is clear every time */
-			launch = 1;
+			/*
+			 * L2 VMExit -> L2 VMEntry: vmresume
+			 * L1 VMExit -> L2 VMEntry: vmlaunch
+			 * as vmcs02 is clear every time
+			 */
+			launch = guest_exit ? 0 : 1;
 		} else {
 			handle_pending_events(vcpu);
 
