@@ -10,9 +10,11 @@
 #include "memory.h"
 #include "pgtable.h"
 #include "pkvm_hyp.h"
+#include "cpu.h"
 
 unsigned long __page_base_offset;
 unsigned long __symbol_base_offset;
+static u8 max_physaddr_bits;
 
 unsigned int hyp_memblock_nr;
 struct memblock_region hyp_memory[HYP_MEMBLOCK_REGIONS];
@@ -284,4 +286,23 @@ int read_gpa(struct kvm_vcpu *vcpu, gpa_t gpa, void *addr, unsigned int bytes)
 int write_gpa(struct kvm_vcpu *vcpu, gpa_t gpa, void *addr, unsigned int bytes)
 {
 	return copy_gpa(vcpu, gpa, addr, bytes, false);
+}
+
+u64 get_max_physaddr_bits(void)
+{
+	u32 eax, ebx, ecx, edx;
+
+	if (max_physaddr_bits)
+		return max_physaddr_bits;
+
+	eax = 0x80000000;
+	ecx = 0;
+	native_cpuid(&eax, &ebx, &ecx, &edx);
+	if (eax >= 0x80000008) {
+		eax = 0x80000008;
+		native_cpuid(&eax, &ebx, &ecx, &edx);
+		max_physaddr_bits = (u8)eax & 0xff;
+	}
+
+	return max_physaddr_bits;
 }
