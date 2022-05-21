@@ -32,4 +32,6 @@ int write_gva(struct kvm_vcpu *vcpu, gva_t gva, void *addr,
 int read_gpa(struct kvm_vcpu *vcpu, gpa_t gpa, void *addr, unsigned int bytes);
 int write_gpa(struct kvm_vcpu *vcpu, gpa_t gpa, void *addr, unsigned int bytes);
 
+u64 get_max_physaddr_bits(void);
+
 #endif
