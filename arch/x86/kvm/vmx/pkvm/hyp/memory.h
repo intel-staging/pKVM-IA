@@ -45,4 +45,5 @@ bool mem_range_included(struct mem_range *child, struct mem_range *parent);
 
 void pkvm_clflush_cache_range(void *vaddr, unsigned int size);
 
+u64 get_max_physaddr_bits(void);
 #endif

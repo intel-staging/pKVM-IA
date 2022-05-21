@@ -10,10 +10,12 @@
 #include "memory.h"
 #include "pgtable.h"
 #include "pkvm_hyp.h"
+#include "cpu.h"
 
 unsigned long __page_base_offset;
 unsigned long __symbol_base_offset;
 unsigned long __x86_clflush_size;
+static u8 max_physaddr_bits;
 
 unsigned int pkvm_memblock_nr;
 struct memblock_region pkvm_memory[PKVM_MEMBLOCK_REGIONS];
@@ -328,4 +330,23 @@ void pkvm_clflush_cache_range(void *vaddr, unsigned int size)
 	pkvm_clflush_cache_range_opt(vaddr, size);
 	/* And also put another one after. */
 	mb();
+}
+
+u64 get_max_physaddr_bits(void)
+{
+	u32 eax, ebx, ecx, edx;
+
+	if (max_physaddr_bits)
+		return max_physaddr_bits;
+
+	eax = 0x80000000;
+	ecx = 0;
+	native_cpuid(&eax, &ebx, &ecx, &edx);
+	if (eax >= 0x80000008) {
+		eax = 0x80000008;
+		native_cpuid(&eax, &ebx, &ecx, &edx);
+		max_physaddr_bits = (u8)eax & 0xff;
+	}
+
+	return max_physaddr_bits;
 }
