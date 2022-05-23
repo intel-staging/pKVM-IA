@@ -21,21 +21,23 @@ pkvm-hyp-obj	+= $(virt-dir)/page_alloc.o
 
 ifndef CONFIG_PKVM_INTEL_DEBUG
 lib-dir		:= $(obj)/lib
+lib2-dir	:= $(objtree)/lib
 pkvm-hyp-obj	+= $(lib-dir)/memset_64.o
 pkvm-hyp-obj	+= $(lib-dir)/memcpy_64.o
+pkvm-hyp-obj	+= $(lib2-dir)/find_bit.o
 ifdef CONFIG_RETPOLINE
 pkvm-hyp-obj	+= $(lib-dir)/retpoline.o
 endif
 endif
 
-dir-obj		:= $(lib-dir) $(virt-dir)
+dir-obj		:= $(lib-dir) $(lib2-dir) $(virt-dir)
 
 pkvm-rename-obj 	:= $(patsubst %.o,%.pkvm.o,$(pkvm-hyp-obj))
 pkvm-obj		:= pkvm.o
 
 $(dir-obj): FORCE
 ifndef CONFIG_PKVM_INTEL_DEBUG
-	$(Q)mkdir -p $(lib-dir)
+	$(Q)mkdir -p $(lib-dir) $(lib2-dir)
 endif
 	$(Q)mkdir -p $(virt-dir)
 
