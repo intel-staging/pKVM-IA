@@ -7,6 +7,7 @@
 
 #include "pgtable.h"
 #include "memory.h"
+#include "mem_protect.h"
 #include "debug.h"
 
 struct pgt_walk_data {
@@ -128,6 +129,10 @@ static int pgtable_map_try_leaf(struct pkvm_pgtable *pgt, unsigned long vaddr,
 	}
 
 	if (pgtable_pte_is_counted(old)) {
+		/* if just modify the page state, do set_pte directly */
+		if (!((old ^ new) & ~PKVM_PAGE_STATE_PROT_MASK))
+			goto set_pte;
+
 		if (pgt_ops->pgt_entry_present(ptep)) {
 			pgtable_set_entry(pgt_ops, mm_ops, ptep, 0);
 			flush_data->flushtlb |= true;
@@ -138,6 +143,7 @@ static int pgtable_map_try_leaf(struct pkvm_pgtable *pgt, unsigned long vaddr,
 	if (pgtable_pte_is_counted(new))
 		mm_ops->get_page(ptep);
 
+set_pte:
 	pgtable_set_entry(pgt_ops, mm_ops, ptep, new);
 	if (pkvm_phys_is_valid(data->phys))
 		data->phys += page_level_size(level);
@@ -173,6 +179,10 @@ static int pgtable_map_walk_leaf(struct pkvm_pgtable *pgt,
 		return -ENOMEM;
 
 	if (pgt_ops->pgt_entry_huge(ptep)) {
+		u64 prot = pgt_ops->pgt_entry_to_prot(ptep);
+
+		prot = pkvm_mkstate(prot, pkvm_getstate(*(u64 *)ptep));
+
 		/*
 		 * Split the large mapping and reuse the
 		 * large mapping's prot. The translation
@@ -182,8 +192,7 @@ static int pgtable_map_walk_leaf(struct pkvm_pgtable *pgt,
 		mm_ops->put_page(ptep);
 		pgtable_split(pgt_ops, mm_ops, ALIGN_DOWN(vaddr, size),
 			      pgt_ops->pgt_entry_to_phys(ptep),
-			      size, page, level - 1,
-			      pgt_ops->pgt_entry_to_prot(ptep));
+			      size, page, level - 1, prot);
 	}
 
 	mm_ops->get_page(ptep);
@@ -281,10 +290,13 @@ static int pgtable_unmap_cb(struct pkvm_pgtable *pgt, unsigned long vaddr,
 		/*
 		 * if is huge pte, then split and goto next level.
 		 */
+		u64 prot = pgt_ops->pgt_entry_to_prot(ptep);
 		void *page = mm_ops->zalloc_page();
 
 		if (!page)
 			return -ENOMEM;
+
+		prot = pkvm_mkstate(prot, pkvm_getstate(*(u64 *)ptep));
 		/*
 		 * Split the large mapping and reuse the
 		 * large mapping's prot. The translation
@@ -293,8 +305,7 @@ static int pgtable_unmap_cb(struct pkvm_pgtable *pgt, unsigned long vaddr,
 		 */
 		pgtable_split(pgt_ops, mm_ops, ALIGN_DOWN(vaddr, size),
 			      pgt_ops->pgt_entry_to_phys(ptep),
-			      size, page, level - 1,
-			      pgt_ops->pgt_entry_to_prot(ptep));
+			      size, page, level - 1, prot);
 		pgtable_set_entry(pgt_ops, mm_ops, ptep,
 				pgt->table_prot | mm_ops->virt_to_phys(page));
 		return 0;
