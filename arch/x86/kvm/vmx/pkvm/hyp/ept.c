@@ -101,6 +101,11 @@ static int ept_level_to_entries(int level)
 	return PT64_ENT_PER_PAGE;
 }
 
+static u64 ept_level_page_mask(int level)
+{
+	return (~((1UL << PT64_LEVEL_SHIFT(level)) - 1));
+}
+
 static unsigned long ept_level_to_size(int level)
 {
 	return KVM_HPAGE_SIZE(level);
@@ -118,6 +123,7 @@ struct pkvm_pgtable_ops ept_ops = {
 	.pgt_entry_to_phys = ept_entry_to_phys,
 	.pgt_entry_to_prot = ept_entry_to_prot,
 	.pgt_entry_to_index = ept_entry_to_index,
+	.pgt_level_page_mask = ept_level_page_mask,
 	.pgt_entry_is_leaf = ept_entry_is_leaf,
 	.pgt_level_entry_size = ept_level_entry_size,
 	.pgt_level_to_entries = ept_level_to_entries,
@@ -153,5 +159,5 @@ int pkvm_host_ept_init(struct pkvm_pgtable_cap *cap,
 		return ret;
 
 	pkvm_hyp->host_vm.ept = &host_ept;
-	return pkvm_pgtable_init(&host_ept, &host_ept_mm_ops, &ept_ops, cap);
+	return pkvm_pgtable_init(&host_ept, &host_ept_mm_ops, &ept_ops, cap, true);
 }

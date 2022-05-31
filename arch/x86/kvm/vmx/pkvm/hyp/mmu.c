@@ -111,6 +111,11 @@ static void mmu_set_entry(void *ptep, u64 pte)
 	native_set_pte((pte_t *)ptep, native_make_pte(pte));
 }
 
+static u64 mmu_level_page_mask(int level)
+{
+	return (~((1UL << PT64_LEVEL_SHIFT(level)) - 1));
+}
+
 struct pkvm_pgtable_ops mmu_ops = {
 	.pgt_entry_present = mmu_entry_present,
 	.pgt_entry_huge = mmu_entry_huge,
@@ -118,6 +123,7 @@ struct pkvm_pgtable_ops mmu_ops = {
 	.pgt_entry_to_phys = mmu_entry_to_phys,
 	.pgt_entry_to_prot = mmu_entry_to_prot,
 	.pgt_entry_to_index = mmu_entry_to_index,
+	.pgt_level_page_mask = mmu_level_page_mask,
 	.pgt_entry_is_leaf = mmu_entry_is_leaf,
 	.pgt_level_entry_size = mmu_level_entry_size,
 	.pgt_level_to_entries = mmu_level_to_entries,
@@ -195,7 +201,7 @@ int pkvm_early_mmu_init(struct pkvm_pgtable_cap *cap,
 {
 	pkvm_early_alloc_init(mmu_pool_base, mmu_pool_pages << PAGE_SHIFT);
 	pkvm_hyp->mmu = &hyp_mmu;
-	return pkvm_pgtable_init(&hyp_mmu, &pkvm_early_alloc_mm_ops, &mmu_ops, cap);
+	return pkvm_pgtable_init(&hyp_mmu, &pkvm_early_alloc_mm_ops, &mmu_ops, cap, true);
 }
 
 /* later mmu init after vmemmap ready, switch to buddy allocator */
