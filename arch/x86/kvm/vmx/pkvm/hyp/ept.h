@@ -22,5 +22,15 @@ int handle_host_ept_violation(unsigned long gpa);
 int pkvm_shadow_ept_pool_init(void *ept_pool_base, unsigned long ept_pool_pages);
 int pkvm_shadow_ept_init(struct shadow_ept_desc *desc);
 void pkvm_shadow_ept_deinit(struct shadow_ept_desc *desc);
+void pkvm_guest_ept_init(struct shadow_vcpu_state *shadow_vcpu, u64 guest_eptp);
+void pkvm_guest_ept_deinit(struct shadow_vcpu_state *shadow_vcpu);
 
+static inline bool is_valid_eptp(u64 eptp)
+{
+	if (!eptp || (eptp == INVALID_GPA))
+		return false;
+
+	/* TODO: other bits check */
+	return true;
+}
 #endif

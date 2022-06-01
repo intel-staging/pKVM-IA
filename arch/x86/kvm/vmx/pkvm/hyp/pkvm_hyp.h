@@ -41,6 +41,9 @@ struct shadow_vcpu_state {
 
 	struct vcpu_vmx vmx;
 
+	/* represents for the virtual EPT configured by kvm-high */
+	struct pkvm_pgtable vept;
+
 	/* assume vmcs02 is one page */
 	u8 vmcs02[PAGE_SIZE] __aligned(PAGE_SIZE);
 	u8 cached_vmcs12[VMCS12_SIZE] __aligned(PAGE_SIZE);
