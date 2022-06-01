@@ -9,6 +9,7 @@
 #include "nested.h"
 #include "cpu.h"
 #include "vmx.h"
+#include "ept.h"
 #include "debug.h"
 
 /*
@@ -704,6 +705,18 @@ static void nested_vmx_run(struct kvm_vcpu *vcpu, bool launch)
 	}
 }
 
+static void setup_guest_ept(struct shadow_vcpu_state *shadow_vcpu, u64 guest_eptp)
+{
+	struct vmcs12 *vmcs12 = (struct vmcs12 *)shadow_vcpu->cached_vmcs12;
+
+	if (!is_valid_eptp(guest_eptp))
+		pkvm_guest_ept_deinit(shadow_vcpu);
+	else if (vmcs12->ept_pointer != guest_eptp) {
+		pkvm_guest_ept_deinit(shadow_vcpu);
+		pkvm_guest_ept_init(shadow_vcpu, guest_eptp);
+	}
+}
+
 int handle_vmxon(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
@@ -907,6 +920,9 @@ int handle_vmwrite(struct kvm_vcpu *vcpu)
 			 */
 			if (field >= GUEST_ES_AR_BYTES && field <= GUEST_TR_AR_BYTES)
 				value &= 0x1f0ff;
+
+			if (field == EPT_POINTER)
+				setup_guest_ept(cur_shadow_vcpu, value);
 
 			vmcs12_write_any(vmcs12, field, offset, value);
 

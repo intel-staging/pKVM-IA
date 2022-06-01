@@ -73,6 +73,12 @@ void *host_gpa2hva(unsigned long gpa)
 	return pkvm_phys_to_virt(gpa);
 }
 
+unsigned long host_gpa2hpa(unsigned long gpa)
+{
+	/* Host VM is using identity mapping so GPA == HPA */
+	return gpa;
+}
+
 extern struct pkvm_pgtable_ops mmu_ops;
 static struct pkvm_mm_ops mm_ops = {
 	.phys_to_virt = host_gpa2hva,
