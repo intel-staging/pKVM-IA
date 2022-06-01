@@ -360,3 +360,43 @@ int pkvm_shadow_ept_init(struct shadow_ept_desc *desc)
 
 	return 0;
 }
+
+/*
+ * virtual_ept_mm_ops is used as the ops for the ept constructed by
+ * KVM high in host.
+ * The physical address in this ept is the host VM GPA, which is
+ * the same with HPA.
+ */
+struct pkvm_mm_ops virtual_ept_mm_ops = {
+	.phys_to_virt = host_gpa2hva,
+};
+
+void pkvm_guest_ept_deinit(struct shadow_vcpu_state *shadow_vcpu)
+{
+	struct pkvm_pgtable *vept = &shadow_vcpu->vept;
+
+	memset(vept, 0, sizeof(struct pkvm_pgtable));
+}
+
+void pkvm_guest_ept_init(struct shadow_vcpu_state *shadow_vcpu, u64 guest_eptp)
+{
+	struct pkvm_pgtable_cap cap = {
+		.level = 4,
+		.allowed_pgsz = 1 << PG_LEVEL_4K,
+		.table_prot = VMX_EPT_RWX_MASK,
+	};
+
+	/*
+	 * TODO: we just assume guest will use page level the HW supported,
+	 * it actually need align with KVM high
+	 */
+	if ((guest_eptp & VMX_EPTP_PWL_MASK) == VMX_EPTP_PWL_5)
+		cap.level = 5;
+	if (vmx_ept_has_2m_page())
+		cap.allowed_pgsz |= 1 << PG_LEVEL_2M;
+	if (vmx_ept_has_1g_page())
+		cap.allowed_pgsz |= 1 << PG_LEVEL_1G;
+
+	pkvm_pgtable_init(&shadow_vcpu->vept, &virtual_ept_mm_ops, &ept_ops, &cap, false);
+	shadow_vcpu->vept.root_pa = host_gpa2hpa(guest_eptp & PT64_BASE_ADDR_MASK);
+}
