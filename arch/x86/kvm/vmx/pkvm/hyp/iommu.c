@@ -68,6 +68,7 @@ struct pgt_sync_data {
 	int level;
 	u64 iommu_ecap;
 	u64 shadow_pa;
+	struct pkvm_pgtable *spgt;
 };
 
 static void *iommu_zalloc_page(void)
@@ -85,17 +86,32 @@ static void iommu_put_page(void *vaddr)
 	hyp_put_page(&iommu_pool, vaddr);
 }
 
+static void iommu_flush_cache(void *ptep, unsigned int size)
+{
+	pkvm_clflush_cache_range(ptep, size);
+}
+
 static struct pkvm_mm_ops viommu_mm_ops = {
 	.phys_to_virt = host_gpa2hva,
 };
 
-static struct pkvm_mm_ops iommu_mm_ops = {
+static struct pkvm_mm_ops iommu_pw_coherency_mm_ops = {
 	.phys_to_virt = pkvm_phys_to_virt,
 	.virt_to_phys = pkvm_virt_to_phys,
 	.zalloc_page = iommu_zalloc_page,
 	.get_page = iommu_get_page,
 	.put_page = iommu_put_page,
 	.page_count = hyp_page_count,
+};
+
+static struct pkvm_mm_ops iommu_pw_noncoherency_mm_ops = {
+	.phys_to_virt = pkvm_phys_to_virt,
+	.virt_to_phys = pkvm_virt_to_phys,
+	.zalloc_page = iommu_zalloc_page,
+	.get_page = iommu_get_page,
+	.put_page = iommu_put_page,
+	.page_count = hyp_page_count,
+	.flush_cache = iommu_flush_cache,
 };
 
 static bool iommu_paging_entry_present(void *ptep)
@@ -347,26 +363,41 @@ static bool sync_shadow_pasid_table_entry(struct pgt_sync_data *sdata)
 
 static bool iommu_paging_sync_entry(struct pgt_sync_data *sdata)
 {
+	bool ret = false;
+	struct pkvm_pgtable *spgt = sdata->spgt;
+
 	switch (sdata->level) {
 	case IOMMU_PASID_TABLE:
-		return sync_shadow_pasid_table_entry(sdata);
+		ret = sync_shadow_pasid_table_entry(sdata);
+		break;
 	case IOMMU_PASID_DIR:
-		return sync_shadow_pasid_dir_entry(sdata);
+		ret = sync_shadow_pasid_dir_entry(sdata);
+		break;
 	case IOMMU_SM_CONTEXT:
-		return sync_shadow_context_entry(sdata);
+		ret = sync_shadow_context_entry(sdata);
+		break;
 	case IOMMU_SM_ROOT:
-		return sync_root_entry(sdata);
+		ret = sync_root_entry(sdata);
+		break;
 	default:
 		break;
 	}
 
-	return false;
+	if (ret) {
+		int entry_size = spgt->pgt_ops->pgt_level_entry_size(sdata->level);
+
+		if (entry_size && spgt->mm_ops->flush_cache)
+			spgt->mm_ops->flush_cache(sdata->shadow_ptep, entry_size);
+	}
+
+	return ret;
 }
 
 static int initialize_iommu_pgt(struct pkvm_iommu *iommu)
 {
 	struct pkvm_pgtable *pgt = &iommu->pgt;
 	struct pkvm_pgtable *vpgt = &iommu->viommu.pgt;
+	static struct pkvm_mm_ops *iommu_mm_ops;
 	struct pkvm_pgtable_cap cap;
 	u64 grt_pa = readq(iommu->iommu.reg + DMAR_RTADDR_REG) & VTD_PAGE_MASK;
 	int ret;
@@ -378,7 +409,20 @@ static int initialize_iommu_pgt(struct pkvm_iommu *iommu)
 	if (ret)
 		return ret;
 
-	ret = pkvm_pgtable_init(pgt, &iommu_mm_ops, &iommu_paging_ops, &cap, true);
+	/*
+	 * For the IOMMU without Page-Walk Coherency, should use
+	 * iommu_pw_noncoherency_mm_ops to flush CPU cache when
+	 * modifying any remapping structure entry.
+	 *
+	 * For the IOMMU with Page-Walk Coherency, can use
+	 * iommu_pw_coherency_mm_ops to skip the CPU cache flushing.
+	 */
+	if (!ecap_coherent(iommu->iommu.ecap))
+		iommu_mm_ops = &iommu_pw_noncoherency_mm_ops;
+	else
+		iommu_mm_ops = &iommu_pw_coherency_mm_ops;
+
+	ret = pkvm_pgtable_init(pgt, iommu_mm_ops, &iommu_paging_ops, &cap, true);
 	if (!ret) {
 		/*
 		 * Hold additional reference count to make
@@ -448,6 +492,7 @@ static int free_shadow_cb(struct pkvm_pgtable *pgt, unsigned long vaddr,
 
 	sync_data.shadow_ptep = ptep;
 	sync_data.level = level;
+	sync_data.spgt = pgt;
 
 	/* Un-present a present PASID Table entry */
 	if (level == IOMMU_PASID_TABLE) {
@@ -511,6 +556,7 @@ static int init_sync_data(struct pgt_sync_data *sync_data,
 	sync_data->shadow_ptep += idx * entry_size;
 
 	sync_data->level = level;
+	sync_data->spgt = spgt;
 	sync_data->iommu_ecap = iommu->iommu.ecap;
 	sync_data->shadow_pa = 0;
 
