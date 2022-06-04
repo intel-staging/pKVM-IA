@@ -16,6 +16,7 @@ struct pkvm_mm_ops {
 	void (*get_page)(void *vaddr);
 	void (*put_page)(void *vaddr);
 	void (*flush_tlb)(struct pkvm_pgtable *pgt);
+	void (*flush_cache)(void *vaddr, unsigned int size);
 };
 
 struct pkvm_pgtable_ops {
