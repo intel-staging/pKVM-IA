@@ -278,21 +278,8 @@ static void init_contant_host_state_area(struct pkvm_pcpu *pcpu)
 static void init_host_state_area(struct pkvm_host_vcpu *vcpu)
 {
 	struct pkvm_pcpu *pcpu = vcpu->pcpu;
-	u16 selector;
-	unsigned long a;
 
 	init_contant_host_state_area(pcpu);
-
-	/* we still need fs/gs as pkvm still run kernel functions now */
-	savesegment(fs, selector);
-	vmcs_write16(HOST_FS_SELECTOR, selector);
-	rdmsrl(MSR_FS_BASE, a);
-	vmcs_writel(HOST_FS_BASE, a);
-
-	savesegment(gs, selector);
-	vmcs_write16(HOST_GS_SELECTOR, selector);
-	rdmsrl(MSR_GS_BASE, a);
-	vmcs_writel(HOST_GS_BASE, a);
 
 	/*host RIP*/
 	vmcs_writel(HOST_RIP, (unsigned long)pkvm_sym(__pkvm_vmx_vmexit));
