@@ -711,6 +711,9 @@ static int free_shadow(struct pkvm_iommu *iommu, unsigned long vaddr,
 	 * To free the shadow IOMMU page table, walks the shadow IOMMU
 	 * page table.
 	 */
+	if (!(iommu->viommu.vreg.gsts & DMA_GSTS_TES))
+		return 0;
+
 	return iommu_pgtable_walk(&iommu->pgt, vaddr, vaddr_end, &walker);
 }
 
@@ -726,7 +729,7 @@ static int sync_shadow(struct pkvm_iommu *iommu, unsigned long vaddr,
 	};
 	int ret, retry_cnt = 0;
 
-	if (!iommu->viommu.pgt.root_pa)
+	if (!(iommu->viommu.vreg.gsts & DMA_GSTS_TES))
 		return 0;
 
 retry:
@@ -797,7 +800,7 @@ static int create_qi_desc(struct pkvm_iommu *iommu)
 	viommu->vreg.iq_head = readq(reg + DMAR_IQH_REG);
 	viommu->vreg.iq_tail = readq(reg + DMAR_IQT_REG);
 
-	if (readq(reg + DMAR_GSTS_REG) & DMA_GSTS_QIES) {
+	if (viommu->vreg.gsts & DMA_GSTS_QIES) {
 		struct qi_desc *wait_desc;
 		u64 iqa = viommu->iqa;
 		int shift = IQ_DESC_SHIFT(iqa);
@@ -1044,6 +1047,24 @@ static void enable_translation(struct pkvm_iommu *iommu)
 	PKVM_IOMMU_WAIT_OP(reg + DMAR_GSTS_REG, readl, (sts & DMA_GSTS_TES), sts);
 }
 
+static void initialize_viommu_reg(struct pkvm_iommu *iommu)
+{
+	struct viommu_reg *vreg = &iommu->viommu.vreg;
+	void __iomem *reg_base = iommu->iommu.reg;
+
+	vreg->cap = readq(reg_base + DMAR_CAP_REG);
+	vreg->ecap = readq(reg_base + DMAR_ECAP_REG);
+	pkvm_update_iommu_virtual_caps(&vreg->cap, &vreg->ecap);
+
+	vreg->gsts = readl(reg_base + DMAR_GSTS_REG);
+	vreg->rta = readq(reg_base + DMAR_RTADDR_REG);
+
+	pkvm_dbg("%s: iommu phys reg 0x%llx cap 0x%llx ecap 0x%llx gsts 0x%x rta 0x%llx\n",
+		 __func__, iommu->iommu.reg_phys, vreg->cap, vreg->ecap, vreg->gsts, vreg->rta);
+
+	/* Invalidate Queue regs are updated when create descriptor */
+}
+
 static int activate_iommu(struct pkvm_iommu *iommu)
 {
 	unsigned long vaddr = 0, vaddr_end = IOMMU_MAX_VADDR;
@@ -1061,6 +1082,8 @@ static int activate_iommu(struct pkvm_iommu *iommu)
 	ret = initialize_iommu_pgt(iommu);
 	if (ret)
 		goto out;
+
+	initialize_viommu_reg(iommu);
 
 	ret = sync_shadow(iommu, vaddr, vaddr_end, 0);
 	if (ret)
@@ -1327,6 +1350,171 @@ static int handle_qi_invalidation(struct pkvm_iommu *iommu, unsigned long val)
 	return ret;
 }
 
+static void handle_gcmd_te(struct pkvm_iommu *iommu, bool en)
+{
+	unsigned long vaddr = 0, vaddr_end = IOMMU_MAX_VADDR;
+	struct pkvm_viommu *viommu = &iommu->viommu;
+
+	if (en) {
+		viommu->vreg.gsts |= DMA_GSTS_TES;
+		/*
+		 * Sync shadow page table to emulate Translation enable.
+		 */
+		if (sync_shadow(iommu, vaddr, vaddr_end, 0))
+			return;
+		pkvm_dbg("pkvm: %s: enable TE\n", __func__);
+		goto out;
+	}
+
+	/*
+	 * Free shadow to emulate Translation disable.
+	 *
+	 * Not really disable translation as still
+	 * need to protect agains the device.
+	 */
+	free_shadow(iommu, vaddr, vaddr_end);
+	viommu->vreg.gsts &= ~DMA_GSTS_TES;
+	pkvm_dbg("pkvm: %s: disable TE\n", __func__);
+out:
+	flush_context_cache(iommu, 0, 0, 0, DMA_CCMD_GLOBAL_INVL);
+	flush_pasid_cache(iommu, 0, QI_PC_GLOBAL, 0);
+	flush_iotlb(iommu, 0, 0, 0, DMA_TLB_GLOBAL_FLUSH);
+
+	root_tbl_walk(iommu);
+}
+
+static void handle_gcmd_srtp(struct pkvm_iommu *iommu)
+{
+	struct viommu_reg *vreg = &iommu->viommu.vreg;
+	struct pkvm_pgtable *vpgt = &iommu->viommu.pgt;
+
+	vreg->gsts &= ~DMA_GSTS_RTPS;
+
+	/* Set the root table phys address from vreg */
+	vpgt->root_pa = vreg->rta & VTD_PAGE_MASK;
+
+	pkvm_dbg("pkvm: %s: set SRTP val 0x%llx\n", __func__, vreg->rta);
+
+	if (vreg->gsts & DMA_GSTS_TES) {
+		unsigned long vaddr = 0, vaddr_end = IOMMU_MAX_VADDR;
+
+		/* TE is already enabled, sync shadow */
+		if (sync_shadow(iommu, vaddr, vaddr_end, 0))
+			return;
+
+		flush_context_cache(iommu, 0, 0, 0, DMA_CCMD_GLOBAL_INVL);
+		flush_pasid_cache(iommu, 0, QI_PC_GLOBAL, 0);
+		flush_iotlb(iommu, 0, 0, 0, DMA_TLB_GLOBAL_FLUSH);
+	}
+
+	vreg->gsts |= DMA_GSTS_RTPS;
+
+	root_tbl_walk(iommu);
+}
+
+static void handle_gcmd_qie(struct pkvm_iommu *iommu, bool en)
+{
+	struct viommu_reg *vreg = &iommu->viommu.vreg;
+
+	if (en) {
+		if (vreg->iq_tail != 0) {
+			pkvm_err("pkvm: Queue invalidation descriptor tail is not zero\n");
+			return;
+		}
+
+		/* Update the iqa from vreg */
+		iommu->viommu.iqa = vreg->iqa;
+		vreg->iq_head = 0;
+		vreg->gsts |= DMA_GSTS_QIES;
+		pkvm_dbg("pkvm: %s: enabled QI\n", __func__);
+		return;
+	}
+
+	if (vreg->iq_head != vreg->iq_tail) {
+		pkvm_err("pkvm: Queue invalidation descriptor is not empty yet\n");
+		return;
+	}
+
+	vreg->iq_head = 0;
+	vreg->gsts &= ~DMA_GSTS_QIES;
+	pkvm_dbg("pkvm: %s: disabled QI\n", __func__);
+}
+
+static void handle_gcmd_direct(struct pkvm_iommu *iommu, u32 val)
+{
+	struct viommu_reg *vreg = &iommu->viommu.vreg;
+	unsigned long changed = ((vreg->gsts ^ val) & DMAR_GCMD_DIRECT) &
+				DMAR_GSTS_EN_BITS;
+	unsigned long set = (val & DMAR_GCMD_DIRECT) & ~DMAR_GSTS_EN_BITS;
+	u32 cmd, gcmd, sts;
+	int bit;
+
+	if ((changed | set) & DMAR_GCMD_PROTECTED) {
+		pkvm_dbg("pkvm:%s touching protected bits changed 0x%lx set 0x%lx\n",
+			 __func__, changed, set);
+		return;
+	}
+
+	if (changed) {
+		pkvm_dbg("pkvm: %s: changed 0x%lx\n", __func__, changed);
+		gcmd = READ_ONCE(iommu->iommu.gcmd);
+		for_each_set_bit(bit, &changed, BITS_PER_BYTE * sizeof(vreg->gsts)) {
+			cmd = 1 << bit;
+			if (val & cmd) {
+				/* enable */
+				gcmd |= cmd;
+				writel(gcmd, iommu->iommu.reg + DMAR_GCMD_REG);
+				PKVM_IOMMU_WAIT_OP(iommu->iommu.reg + DMAR_GSTS_REG,
+						   readl, (sts & cmd), sts);
+				vreg->gsts |= cmd;
+				pkvm_dbg("pkvm: %s: enable cmd bit %d\n", __func__, bit);
+			} else {
+				/* disable */
+				gcmd &= ~cmd;
+				writel(gcmd, iommu->iommu.reg + DMAR_GCMD_REG);
+				PKVM_IOMMU_WAIT_OP(iommu->iommu.reg + DMAR_GSTS_REG,
+						   readl, !(sts & cmd), sts);
+				vreg->gsts &= ~cmd;
+				pkvm_dbg("pkvm: %s: disable cmd bit %d\n", __func__, bit);
+			}
+		}
+		WRITE_ONCE(iommu->iommu.gcmd, gcmd);
+	}
+
+	if (set) {
+		pkvm_dbg("pkvm: %s: set 0x%lx\n", __func__, set);
+		gcmd = READ_ONCE(iommu->iommu.gcmd);
+		for_each_set_bit(bit, &set, BITS_PER_BYTE * sizeof(vreg->gsts)) {
+			cmd = 1 << bit;
+			vreg->gsts &= ~cmd;
+			writel(gcmd | cmd, iommu->iommu.reg + DMAR_GCMD_REG);
+			PKVM_IOMMU_WAIT_OP(iommu->iommu.reg + DMAR_GSTS_REG,
+					   readl, (sts & cmd), sts);
+			vreg->gsts |= cmd;
+			pkvm_dbg("pkvm: %s: set cmd bit %d\n", __func__, bit);
+		}
+	}
+}
+
+static void handle_global_cmd(struct pkvm_iommu *iommu, u32 val)
+{
+	u32 changed = iommu->viommu.vreg.gsts ^ val;
+
+	pkvm_dbg("pkvm: iommu%d: handle gcmd val 0x%x gsts 0x%x changed 0x%x\n",
+		  iommu->iommu.seq_id, val, iommu->viommu.vreg.gsts, changed);
+
+	if (changed & DMA_GCMD_TE)
+		handle_gcmd_te(iommu, !!(val & DMA_GCMD_TE));
+
+	if (val & DMA_GCMD_SRTP)
+		handle_gcmd_srtp(iommu);
+
+	if (changed & DMA_GCMD_QIE)
+		handle_gcmd_qie(iommu, !!(val & DMA_GCMD_QIE));
+
+	handle_gcmd_direct(iommu, val);
+}
+
 static struct pkvm_iommu *find_iommu_by_reg_phys(unsigned long phys)
 {
 	struct pkvm_iommu *iommu;
@@ -1385,6 +1573,30 @@ static unsigned long access_iommu_mmio(struct pkvm_iommu *iommu, bool is_read,
 
 	/* Only need to emulate part of the MMIO */
 	switch (offset) {
+	case DMAR_CAP_REG:
+		if (is_read)
+			ret = viommu->vreg.cap;
+		break;
+	case DMAR_ECAP_REG:
+		if (is_read)
+			ret = viommu->vreg.ecap;
+		break;
+	case DMAR_GCMD_REG:
+		if (is_read)
+			ret = 0;
+		else
+			handle_global_cmd(iommu, val);
+		break;
+	case DMAR_GSTS_REG:
+		if (is_read)
+			ret = viommu->vreg.gsts;
+		break;
+	case DMAR_RTADDR_REG:
+		if (is_read)
+			ret = viommu->vreg.rta;
+		else
+			viommu->vreg.rta = val;
+		break;
 	case DMAR_IQA_REG:
 		if (is_read)
 			ret = viommu->vreg.iqa;
@@ -1398,8 +1610,12 @@ static unsigned long access_iommu_mmio(struct pkvm_iommu *iommu, bool is_read,
 	case DMAR_IQT_REG:
 		if (is_read)
 			ret = viommu->vreg.iq_tail;
-		else
-			ret = handle_qi_invalidation(iommu, val);
+		else {
+			if (viommu->vreg.gsts & DMA_GSTS_QIES)
+				ret = handle_qi_invalidation(iommu, val);
+			else
+				viommu->vreg.iq_tail = val;
+		}
 		break;
 	default:
 		/* Not emulated MMIO can directly goes to hardware */
