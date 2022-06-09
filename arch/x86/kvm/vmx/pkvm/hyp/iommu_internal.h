@@ -14,6 +14,10 @@
 #define PKVM_QI_DESC_STATUS_ALIGNED_SIZE	ALIGN(QI_LENGTH * sizeof(int), PAGE_SIZE)
 
 struct viommu_reg {
+	u64 cap;
+	u64 ecap;
+	u32 gsts;
+	u64 rta;
 	u64 iq_head;
 	u64 iq_tail;
 	u64 iqa;
@@ -72,6 +76,11 @@ enum sm_level {
 #define DMAR_GSTS_EN_BITS	(DMA_GCMD_TE | DMA_GCMD_EAFL | \
 				 DMA_GCMD_QIE | DMA_GCMD_IRE | \
 				 DMA_GCMD_CFI)
+#define DMAR_GCMD_PROTECTED	(DMA_GCMD_TE | DMA_GCMD_SRTP | \
+				 DMA_GCMD_QIE)
+#define DMAR_GCMD_DIRECT	(DMA_GCMD_SFL | DMA_GCMD_EAFL | \
+				 DMA_GCMD_WBF | DMA_GCMD_IRE | \
+				 DMA_GCMD_SIRTP | DMA_GCMD_CFI)
 
 #define PKVM_IOMMU_WAIT_OP(offset, op, cond, sts)			\
 do {									\
