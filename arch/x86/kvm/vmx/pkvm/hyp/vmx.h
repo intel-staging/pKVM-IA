@@ -20,17 +20,31 @@ static inline bool vmx_has_ept_execute_only(void)
 	return vmx_ept_capability_check(VMX_EPT_EXECUTE_ONLY_BIT);
 }
 
-static inline u64 pkvm_construct_eptp(unsigned long root_hpa, int level,
-				      struct vmx_capability *vmx_cap)
+static inline bool vmx_ept_has_4levels(void)
+{
+	return vmx_ept_capability_check(VMX_EPT_PAGE_WALK_4_BIT);
+}
+
+static inline bool vmx_ept_has_5levels(void)
+{
+	return vmx_ept_capability_check(VMX_EPT_PAGE_WALK_5_BIT);
+}
+
+static inline bool vmx_ept_has_mt_wb(void)
+{
+	return vmx_ept_capability_check(VMX_EPTP_WB_BIT);
+}
+
+static inline u64 pkvm_construct_eptp(unsigned long root_hpa, int level)
 {
 	u64 eptp = 0;
 
-	if ((level == 4) && (vmx_cap->ept & VMX_EPT_PAGE_WALK_4_BIT))
+	if ((level == 4) && vmx_ept_has_4levels())
 		eptp = VMX_EPTP_PWL_4;
-	else if ((level == 5) && (vmx_cap->ept & VMX_EPT_PAGE_WALK_5_BIT))
+	else if ((level == 5) && vmx_ept_has_5levels())
 		eptp = VMX_EPTP_PWL_5;
 
-	if (vmx_cap->ept & VMX_EPTP_WB_BIT)
+	if (vmx_ept_has_mt_wb())
 		eptp |= VMX_EPTP_MT_WB;
 
 	eptp |= (root_hpa & PAGE_MASK);
