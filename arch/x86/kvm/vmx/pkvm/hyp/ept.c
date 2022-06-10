@@ -165,6 +165,26 @@ void pkvm_host_ept_destroy(void)
 	pkvm_pgtable_destroy(&host_ept);
 }
 
+int host_ept_create_idmap_locked(u64 addr, u64 size, int pgsz_mask, u64 prot)
+{
+	return pkvm_pgtable_map(&host_ept, addr, addr, size, pgsz_mask, prot);
+}
+
+/*
+ * host_ept_create_idmap() - create the identity mapping for host ept
+ * @addr: GPA in host ept, and GPA == HPA.
+ */
+int host_ept_create_idmap(u64 addr, u64 size, int pgsz_mask, u64 prot)
+{
+	int ret;
+
+	pkvm_spin_lock(&host_ept_lock);
+	ret = host_ept_create_idmap_locked(addr, size, pgsz_mask, prot);
+	pkvm_spin_unlock(&host_ept_lock);
+
+	return ret;
+}
+
 static void reset_rsvds_bits_mask_ept(struct rsvd_bits_validate *rsvd_check,
 				      u64 pa_bits_rsvd, bool execonly,
 				      int huge_page_level)
