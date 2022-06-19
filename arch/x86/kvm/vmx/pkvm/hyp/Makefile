@@ -10,6 +10,8 @@ pkvm-hyp-obj	:= $(obj)/vmx_asm.o $(obj)/vmexit.o \
 		   $(obj)/memory.o
 
 lib-dir		:= $(obj)/lib
+
+pkvm-hyp-obj	+= $(lib-dir)/memset_64.o
 ifdef CONFIG_RETPOLINE
 pkvm-hyp-obj	+= $(lib-dir)/retpoline.o
 endif
