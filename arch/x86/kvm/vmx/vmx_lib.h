@@ -2,6 +2,7 @@
 #ifndef __KVM_X86_VMX_LIB_H
 #define __KVM_X86_VMX_LIB_H
 
+#ifndef __PKVM_HYP__
 struct vmcs_config_setting {
 	u32 cpu_based_exec_ctrl_min;
 	u32 cpu_based_exec_ctrl_opt;
@@ -160,4 +161,22 @@ static inline int __setup_vmcs_config(struct vmcs_config *vmcs_conf,
 
 	return 0;
 }
+#endif /* !__PKVM_HYP__*/
+
+static inline void _vmx_enable_irq_window(struct vcpu_vmx *vmx)
+{
+	exec_controls_setbit(vmx, CPU_BASED_INTR_WINDOW_EXITING);
+}
+
+static inline void _vmx_enable_nmi_window(struct vcpu_vmx *vmx, bool vnmi_enabled)
+{
+	if (!vnmi_enabled ||
+	    vmcs_read32(GUEST_INTERRUPTIBILITY_INFO) & GUEST_INTR_STATE_STI) {
+		_vmx_enable_irq_window(vmx);
+		return;
+	}
+
+	exec_controls_setbit(vmx, CPU_BASED_NMI_WINDOW_EXITING);
+}
+
 #endif
