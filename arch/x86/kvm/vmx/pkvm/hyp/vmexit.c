@@ -13,6 +13,7 @@
 #include "nested.h"
 #include "ept.h"
 #include "iommu.h"
+#include "lapic.h"
 #include "debug.h"
 
 #define CR0	0

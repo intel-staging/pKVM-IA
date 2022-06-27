@@ -22,6 +22,7 @@
 #include "iommu.h"
 #include "iommu_internal.h"
 #include "mem_protect.h"
+#include "lapic.h"
 
 void *pkvm_vmemmap_base;
 void *pkvm_mmu_pgt_base;
@@ -274,8 +275,11 @@ int __pkvm_init_finalise(struct kvm_vcpu *vcpu, struct pkvm_section sections[],
 	unsigned long pkvm_mem_size = 0;
 	u64 eptp;
 
-	if (pkvm_init)
+	if (pkvm_init) {
+		/* Switch to pkvm mmu in root mode in case some setup may need this */
+		native_write_cr3(pkvm_hyp->mmu->root_pa);
 		goto switch_pgt;
+	}
 
 	if (section_sz > TMP_SECTION_SZ) {
 		pkvm_err("pkvm: no enough space to save sections[] array parameters!");
@@ -344,6 +348,7 @@ switch_pgt:
 
 	ept_sync_global();
 
+	ret = pkvm_setup_lapic(pcpu, vcpu->cpu);
 out:
 	return ret;
 }
