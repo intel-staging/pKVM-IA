@@ -12,6 +12,7 @@
 #include "pkvm_hyp.h"
 #include "vmsr.h"
 #include "nested.h"
+#include "lapic.h"
 #include "debug.h"
 
 #define CR4	4
