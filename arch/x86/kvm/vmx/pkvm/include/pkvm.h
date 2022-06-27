@@ -27,6 +27,7 @@ struct pkvm_pcpu {
 	struct gdt_page gdt_page;
 	struct idt_page idt_page;
 	struct tss_struct tss;
+	void *lapic;
 };
 
 struct pkvm_host_vcpu {
