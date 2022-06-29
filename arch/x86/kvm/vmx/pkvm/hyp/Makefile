@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0
 
+KVM_PKVM = virt/kvm/pkvm
+
+ccflags-y += -I $(srctree)/$(KVM_PKVM)/
 ccflags-y += -I $(srctree)/arch/x86/kvm
 ccflags-y += -I $(srctree)/arch/x86/kvm/vmx/pkvm/include
 ccflags-y += -fno-stack-protector
@@ -9,20 +12,23 @@ ccflags-y += -D__PKVM_HYP__
 pkvm-hyp-obj	:= $(obj)/vmx_asm.o $(obj)/vmexit.o \
 		   $(obj)/memory.o
 
-lib-dir		:= $(obj)/lib
+virt-dir	:= $(objtree)/$(KVM_PKVM)
+pkvm-hyp-obj	+= $(virt-dir)/page_alloc.o
 
+lib-dir		:= $(obj)/lib
 pkvm-hyp-obj	+= $(lib-dir)/memset_64.o
 ifdef CONFIG_RETPOLINE
 pkvm-hyp-obj	+= $(lib-dir)/retpoline.o
 endif
 
-dir-obj		:= $(lib-dir)
+dir-obj		:= $(lib-dir) $(virt-dir)
 
 pkvm-rename-obj 	:= $(patsubst %.o,%.pkvm.o,$(pkvm-hyp-obj))
 pkvm-obj		:= pkvm.o
 
 $(dir-obj): FORCE
 	$(Q)mkdir -p $(lib-dir)
+	$(Q)mkdir -p $(virt-dir)
 
 %.pkvm.o: %.c $(dir-obj) FORCE
 	$(call if_changed_rule,cc_o_c)
