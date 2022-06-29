@@ -14,8 +14,8 @@
 
 #include <hyp/fault.h>
 
-#include <nvhe/gfp.h>
-#include <nvhe/memory.h>
+#include <gfp.h>
+#include <buddy_memory.h>
 #include <nvhe/mem_protect.h>
 #include <nvhe/mm.h>
 

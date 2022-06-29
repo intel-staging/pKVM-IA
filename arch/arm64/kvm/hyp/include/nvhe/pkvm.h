@@ -9,7 +9,7 @@
 
 #include <asm/kvm_pkvm.h>
 
-#include <nvhe/gfp.h>
+#include <gfp.h>
 #include <asm/pkvm_spinlock.h>
 
 /*

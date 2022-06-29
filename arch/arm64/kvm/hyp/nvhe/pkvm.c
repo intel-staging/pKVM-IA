@@ -8,7 +8,7 @@
 #include <linux/mm.h>
 #include <nvhe/fixed_config.h>
 #include <nvhe/mem_protect.h>
-#include <nvhe/memory.h>
+#include <buddy_memory.h>
 #include <nvhe/pkvm.h>
 #include <nvhe/trap_handler.h>
 
