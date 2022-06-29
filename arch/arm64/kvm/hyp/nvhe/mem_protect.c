@@ -30,22 +30,22 @@ const u8 pkvm_hyp_id = 1;
 
 static void host_lock_component(void)
 {
-	hyp_spin_lock(&host_kvm.lock);
+	pkvm_spin_lock(&host_kvm.lock);
 }
 
 static void host_unlock_component(void)
 {
-	hyp_spin_unlock(&host_kvm.lock);
+	pkvm_spin_unlock(&host_kvm.lock);
 }
 
 static void hyp_lock_component(void)
 {
-	hyp_spin_lock(&pkvm_pgd_lock);
+	pkvm_spin_lock(&pkvm_pgd_lock);
 }
 
 static void hyp_unlock_component(void)
 {
-	hyp_spin_unlock(&pkvm_pgd_lock);
+	pkvm_spin_unlock(&pkvm_pgd_lock);
 }
 
 static void *host_s2_zalloc_pages_exact(size_t size)
@@ -123,7 +123,7 @@ int kvm_host_prepare_stage2(void *pgt_pool_base)
 	int ret;
 
 	prepare_host_vtcr();
-	hyp_spin_lock_init(&host_kvm.lock);
+	pkvm_spinlock_init(&host_kvm.lock);
 	mmu->arch = &host_kvm.arch;
 
 	ret = prepare_s2_pool(pgt_pool_base);
@@ -263,7 +263,7 @@ static inline int __host_stage2_idmap(u64 start, u64 end,
 #define host_stage2_try(fn, ...)					\
 	({								\
 		int __ret;						\
-		hyp_assert_lock_held(&host_kvm.lock);			\
+		pkvm_assert_lock_held(&host_kvm.lock);			\
 		__ret = fn(__VA_ARGS__);				\
 		if (__ret == -ENOMEM) {					\
 			__ret = host_stage2_unmap_dev_all();		\
@@ -286,7 +286,7 @@ static int host_stage2_adjust_range(u64 addr, struct kvm_mem_range *range)
 	u32 level;
 	int ret;
 
-	hyp_assert_lock_held(&host_kvm.lock);
+	pkvm_assert_lock_held(&host_kvm.lock);
 	ret = kvm_pgtable_get_leaf(&host_kvm.pgt, addr, &pte, &level);
 	if (ret)
 		return ret;
@@ -459,7 +459,7 @@ static int __host_check_page_state_range(u64 addr, u64 size,
 		.get_page_state	= host_get_page_state,
 	};
 
-	hyp_assert_lock_held(&host_kvm.lock);
+	pkvm_assert_lock_held(&host_kvm.lock);
 	return check_page_state_range(&host_kvm.pgt, addr, size, &d);
 }
 
@@ -527,7 +527,7 @@ static int __hyp_check_page_state_range(u64 addr, u64 size,
 		.get_page_state	= hyp_get_page_state,
 	};
 
-	hyp_assert_lock_held(&pkvm_pgd_lock);
+	pkvm_assert_lock_held(&pkvm_pgd_lock);
 	return check_page_state_range(&pkvm_pgtable, addr, size, &d);
 }
 

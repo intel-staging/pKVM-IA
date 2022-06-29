@@ -126,10 +126,10 @@ static int recreate_hyp_mappings(phys_addr_t phys, unsigned long size,
 		 * and addresses corresponding to the guard page have the
 		 * PAGE_SHIFT bit as 0 - this is used for overflow detection.
 		 */
-		hyp_spin_lock(&pkvm_pgd_lock);
+		pkvm_spin_lock(&pkvm_pgd_lock);
 		ret = kvm_pgtable_hyp_map(&pkvm_pgtable, hyp_addr + PAGE_SIZE,
 					PAGE_SIZE, params->stack_pa, PAGE_HYP);
-		hyp_spin_unlock(&pkvm_pgd_lock);
+		pkvm_spin_unlock(&pkvm_pgd_lock);
 		if (ret)
 			return ret;
 
@@ -314,7 +314,7 @@ int __pkvm_init(phys_addr_t phys, unsigned long size, unsigned long nr_cpus,
 	if (!PAGE_ALIGNED(phys) || !PAGE_ALIGNED(size))
 		return -EINVAL;
 
-	hyp_spin_lock_init(&pkvm_pgd_lock);
+	pkvm_spinlock_init(&pkvm_pgd_lock);
 	hyp_nr_cpus = nr_cpus;
 
 	ret = divide_memory_pool(virt, size);

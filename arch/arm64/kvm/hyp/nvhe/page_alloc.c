@@ -180,18 +180,18 @@ void hyp_put_page(struct hyp_pool *pool, void *addr)
 {
 	struct hyp_page *p = hyp_virt_to_page(addr);
 
-	hyp_spin_lock(&pool->lock);
+	pkvm_spin_lock(&pool->lock);
 	__hyp_put_page(pool, p);
-	hyp_spin_unlock(&pool->lock);
+	pkvm_spin_unlock(&pool->lock);
 }
 
 void hyp_get_page(struct hyp_pool *pool, void *addr)
 {
 	struct hyp_page *p = hyp_virt_to_page(addr);
 
-	hyp_spin_lock(&pool->lock);
+	pkvm_spin_lock(&pool->lock);
 	hyp_page_ref_inc(p);
-	hyp_spin_unlock(&pool->lock);
+	pkvm_spin_unlock(&pool->lock);
 }
 
 void hyp_split_page(struct hyp_page *p)
@@ -213,13 +213,13 @@ void *hyp_alloc_pages(struct hyp_pool *pool, unsigned short order)
 	unsigned short i = order;
 	struct hyp_page *p;
 
-	hyp_spin_lock(&pool->lock);
+	pkvm_spin_lock(&pool->lock);
 
 	/* Look for a high-enough-order page */
 	while (i < pool->max_order && list_empty(&pool->free_area[i]))
 		i++;
 	if (i >= pool->max_order) {
-		hyp_spin_unlock(&pool->lock);
+		pkvm_spin_unlock(&pool->lock);
 		return NULL;
 	}
 
@@ -228,7 +228,7 @@ void *hyp_alloc_pages(struct hyp_pool *pool, unsigned short order)
 	p = __hyp_extract_page(pool, p, order);
 
 	hyp_set_page_refcounted(p);
-	hyp_spin_unlock(&pool->lock);
+	pkvm_spin_unlock(&pool->lock);
 
 	return hyp_page_to_virt(p);
 }
@@ -240,7 +240,7 @@ int hyp_pool_init(struct hyp_pool *pool, u64 pfn, unsigned int nr_pages,
 	struct hyp_page *p;
 	int i;
 
-	hyp_spin_lock_init(&pool->lock);
+	pkvm_spinlock_init(&pool->lock);
 	pool->max_order = min(MAX_ORDER, get_order((nr_pages + 1) << PAGE_SHIFT));
 	for (i = 0; i < pool->max_order; i++)
 		INIT_LIST_HEAD(&pool->free_area[i]);

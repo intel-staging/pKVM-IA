@@ -17,7 +17,7 @@
 #include <asm/lse.h>
 #include <asm/rwonce.h>
 
-typedef union hyp_spinlock {
+typedef union arch_pkvm_spinlock {
 	u32	__val;
 	struct {
 #ifdef __AARCH64EB__
@@ -26,17 +26,14 @@ typedef union hyp_spinlock {
 		u16 owner, next;
 #endif
 	};
-} hyp_spinlock_t;
+} arch_pkvm_spinlock_t;
 
-#define hyp_spin_lock_init(l)						\
-do {									\
-	*(l) = (hyp_spinlock_t){ .__val = 0 };				\
-} while (0)
+#define __ARCH_PKVM_SPINLOCK_UNLOCKED	{ 0 }
 
-static inline void hyp_spin_lock(hyp_spinlock_t *lock)
+static inline void arch_pkvm_spin_lock(arch_pkvm_spinlock_t *lock)
 {
 	u32 tmp;
-	hyp_spinlock_t lockval, newval;
+	arch_pkvm_spinlock_t lockval, newval;
 
 	asm volatile(
 	/* Atomically increment the next ticket. */
@@ -71,7 +68,7 @@ static inline void hyp_spin_lock(hyp_spinlock_t *lock)
 	: "memory");
 }
 
-static inline void hyp_spin_unlock(hyp_spinlock_t *lock)
+static inline void arch_pkvm_spin_unlock(arch_pkvm_spinlock_t *lock)
 {
 	u64 tmp;
 
@@ -90,15 +87,15 @@ static inline void hyp_spin_unlock(hyp_spinlock_t *lock)
 	: "memory");
 }
 
-static inline bool hyp_spin_is_locked(hyp_spinlock_t *lock)
+static inline bool arch_pkvm_spin_is_locked(arch_pkvm_spinlock_t *lock)
 {
-	hyp_spinlock_t lockval = READ_ONCE(*lock);
+	arch_pkvm_spinlock_t lockval = READ_ONCE(*lock);
 
 	return lockval.owner != lockval.next;
 }
 
 #ifdef CONFIG_NVHE_EL2_DEBUG
-static inline void hyp_assert_lock_held(hyp_spinlock_t *lock)
+static inline void arch_pkvm_assert_lock_held(arch_pkvm_spinlock_t *lock)
 {
 	/*
 	 * The __pkvm_init() path accesses protected data-structures without
@@ -108,10 +105,10 @@ static inline void hyp_assert_lock_held(hyp_spinlock_t *lock)
 	 * wait until it is set before checking the lock state.
 	 */
 	if (static_branch_likely(&kvm_protected_mode_initialized))
-		BUG_ON(!hyp_spin_is_locked(lock));
+		BUG_ON(!arch_pkvm_spin_is_locked(lock));
 }
 #else
-static inline void hyp_assert_lock_held(hyp_spinlock_t *lock) { }
+static inline void arch_pkvm_assert_lock_held(arch_pkvm_spinlock_t *lock) { }
 #endif
 
 #endif /* __ASM_ARM64_PKVM_SPINLOCK_H__ */

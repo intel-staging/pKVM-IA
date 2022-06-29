@@ -47,7 +47,7 @@ struct host_kvm {
 	struct kvm_arch arch;
 	struct kvm_pgtable pgt;
 	struct kvm_pgtable_mm_ops mm_ops;
-	hyp_spinlock_t lock;
+	pkvm_spinlock_t lock;
 };
 extern struct host_kvm host_kvm;
 

@@ -11,7 +11,7 @@
 #include <pkvm_spinlock.h>
 
 extern struct kvm_pgtable pkvm_pgtable;
-extern hyp_spinlock_t pkvm_pgd_lock;
+extern pkvm_spinlock_t pkvm_pgd_lock;
 
 int hyp_create_idmap(u32 hyp_va_bits);
 int hyp_map_vectors(void);
