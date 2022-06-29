@@ -2,6 +2,7 @@
 #ifndef __PKVM_GFP_H
 #define __PKVM_GFP_H
 
+#include <linux/mmzone.h>
 #include <linux/list.h>
 
 #include <buddy_memory.h>

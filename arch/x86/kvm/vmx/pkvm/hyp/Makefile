@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0
 
+KVM_PKVM = virt/kvm/pkvm
+
+ccflags-y += -I $(srctree)/$(KVM_PKVM)/
 ccflags-y += -I $(srctree)/arch/x86/kvm
 ccflags-y += -I $(srctree)/arch/x86/kvm/vmx/pkvm/include
 ccflags-y += -fno-stack-protector
@@ -7,12 +10,14 @@ ccflags-y += -D__DISABLE_EXPORTS
 ccflags-y += -D__PKVM_HYP__
 
 lib-dir		:= lib
+virt-dir	:= ../../../../../../$(KVM_PKVM)
 
 pkvm-hyp-y	:= vmx_asm.o vmexit.o memory.o
 
 pkvm-hyp-y	+= $(lib-dir)/memset_64.o
 pkvm-hyp-$(CONFIG_RETPOLINE)	+= $(lib-dir)/retpoline.o
 pkvm-hyp-$(CONFIG_DEBUG_LIST)	+= $(lib-dir)/list_debug.o
+pkvm-hyp-y	+= $(virt-dir)/page_alloc.o
 
 pkvm-obj 	:= $(patsubst %.o,%.pkvm.o,$(pkvm-hyp-y))
 obj-$(CONFIG_PKVM_INTEL)	+= pkvm.o
