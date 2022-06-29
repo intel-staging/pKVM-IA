@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
-#ifndef __KVM_HYP_MEMORY_H
-#define __KVM_HYP_MEMORY_H
+#ifndef __PKVM_BUDDY_MEMORY_H
+#define __PKVM_BUDDY_MEMORY_H
 
 #include <asm/kvm_mmu.h>
 #include <asm/page.h>
@@ -45,4 +45,4 @@ static inline int hyp_page_count(void *addr)
 	return p->refcount;
 }
 
-#endif /* __KVM_HYP_MEMORY_H */
+#endif /* __PKVM_BUDDY_MEMORY_H */

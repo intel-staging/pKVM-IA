@@ -31,6 +31,7 @@ define rule_gen_hyp_constants
 endef
 
 CFLAGS_hyp-constants.o = -I $(srctree)/$(src)/hyp/include
+CFLAGS_hyp-constants.o += -I $(srctree)/virt/kvm/pkvm
 $(obj)/hyp-constants.s: $(src)/hyp/hyp-constants.c FORCE
 	$(call if_changed_dep,cc_s_c)
 

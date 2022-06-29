@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 #include <linux/kbuild.h>
-#include <nvhe/memory.h>
+#include <buddy_memory.h>
 
 int main(void)
 {

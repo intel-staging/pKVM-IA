@@ -12,8 +12,8 @@
 
 #include <nvhe/early_alloc.h>
 #include <nvhe/fixed_config.h>
-#include <nvhe/gfp.h>
-#include <nvhe/memory.h>
+#include <gfp.h>
+#include <buddy_memory.h>
 #include <nvhe/mem_protect.h>
 #include <nvhe/mm.h>
 #include <nvhe/trap_handler.h>

@@ -7,7 +7,7 @@
 #include <linux/memblock.h>
 #include <linux/types.h>
 
-#include <nvhe/memory.h>
+#include <buddy_memory.h>
 #include <pkvm_spinlock.h>
 
 extern struct kvm_pgtable pkvm_pgtable;

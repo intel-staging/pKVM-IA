@@ -1,10 +1,10 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
-#ifndef __KVM_HYP_GFP_H
-#define __KVM_HYP_GFP_H
+#ifndef __PKVM_GFP_H
+#define __PKVM_GFP_H
 
 #include <linux/list.h>
 
-#include <nvhe/memory.h>
+#include <buddy_memory.h>
 #include <pkvm_spinlock.h>
 
 #define HYP_NO_ORDER	USHRT_MAX
@@ -31,4 +31,4 @@ void hyp_put_page(struct hyp_pool *pool, void *addr);
 /* Used pages cannot be freed */
 int hyp_pool_init(struct hyp_pool *pool, u64 pfn, unsigned int nr_pages,
 		  unsigned int reserved_pages);
-#endif /* __KVM_HYP_GFP_H */
+#endif /* __PKVM_GFP_H */
