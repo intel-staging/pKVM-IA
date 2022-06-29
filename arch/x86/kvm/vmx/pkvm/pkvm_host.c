@@ -240,14 +240,13 @@ static __init void init_guest_state_area(struct pkvm_host_vcpu *vcpu, int cpu)
 	vmcs_write64(VMCS_LINK_POINTER, -1ull);
 }
 
-static __init void _init_host_state_area(struct pkvm_pcpu *pcpu)
+static __init void _init_host_state_area(struct pkvm_pcpu *pcpu, int cpu)
 {
 	unsigned long a;
 #ifdef CONFIG_PKVM_INTEL_DEBUG
 	u32 high, low;
 	struct desc_ptr dt;
 	u16 selector;
-	int cpu = raw_smp_processor_id();
 #endif
 
 	vmcs_writel(HOST_CR0, read_cr0() & ~X86_CR0_TS);
@@ -302,6 +301,9 @@ static __init void _init_host_state_area(struct pkvm_pcpu *pcpu)
 	vmcs_writel(HOST_TR_BASE, (unsigned long)&pcpu->tss);
 	vmcs_writel(HOST_GDTR_BASE, (unsigned long)(&pcpu->gdt_page));
 	vmcs_writel(HOST_IDTR_BASE, (unsigned long)(&pcpu->idt_page));
+
+	vmcs_write16(HOST_GS_SELECTOR, __KERNEL_DS);
+	vmcs_writel(HOST_GS_BASE, cpu);
 #endif
 
 	/* MSR area */
@@ -312,11 +314,11 @@ static __init void _init_host_state_area(struct pkvm_pcpu *pcpu)
 	vmcs_write64(HOST_IA32_PAT, a);
 }
 
-static __init void init_host_state_area(struct pkvm_host_vcpu *vcpu)
+static __init void init_host_state_area(struct pkvm_host_vcpu *vcpu, int cpu)
 {
 	struct pkvm_pcpu *pcpu = vcpu->pcpu;
 
-	_init_host_state_area(pcpu);
+	_init_host_state_area(pcpu, cpu);
 
 	/*host RIP*/
 	vmcs_writel(HOST_RIP, (unsigned long)pkvm_sym(__pkvm_vmx_vmexit));
@@ -403,7 +405,7 @@ static __init int pkvm_host_init_vmx(struct pkvm_host_vcpu *vcpu, int cpu)
 	vmcs_load(vmx->loaded_vmcs->vmcs);
 
 	init_guest_state_area(vcpu, cpu);
-	init_host_state_area(vcpu);
+	init_host_state_area(vcpu, cpu);
 	init_execution_control(vmx, &pkvm->vmcs_config, &pkvm->vmx_cap);
 	init_vmexit_control(vmx, &pkvm->vmcs_config);
 	init_vmentry_control(vmx, &pkvm->vmcs_config);
