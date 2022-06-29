@@ -30,6 +30,9 @@ static inline phys_addr_t hyp_virt_to_phys(void *addr)
 extern struct memblock_region kvm_nvhe_sym(hyp_memory)[];
 extern unsigned int kvm_nvhe_sym(hyp_memblock_nr);
 
+int hyp_pre_reserve_check(void);
+u64 hyp_total_reserve_pages(void);
+
 static inline unsigned long __hyp_pgtable_max_pages(unsigned long nr_pages)
 {
 	unsigned long total = 0, i;
