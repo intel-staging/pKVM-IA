@@ -10,8 +10,8 @@
  * Copyright (C) 2012 ARM Ltd.
  */
 
-#ifndef __ARM64_KVM_NVHE_SPINLOCK_H__
-#define __ARM64_KVM_NVHE_SPINLOCK_H__
+#ifndef __ASM_ARM64_PKVM_SPINLOCK_H__
+#define __ASM_ARM64_PKVM_SPINLOCK_H__
 
 #include <asm/alternative.h>
 #include <asm/lse.h>
@@ -114,4 +114,4 @@ static inline void hyp_assert_lock_held(hyp_spinlock_t *lock)
 static inline void hyp_assert_lock_held(hyp_spinlock_t *lock) { }
 #endif
 
-#endif /* __ARM64_KVM_NVHE_SPINLOCK_H__ */
+#endif /* __ASM_ARM64_PKVM_SPINLOCK_H__ */

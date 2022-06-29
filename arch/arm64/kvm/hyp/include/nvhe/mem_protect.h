@@ -10,7 +10,7 @@
 #include <asm/kvm_hyp.h>
 #include <asm/kvm_pgtable.h>
 #include <asm/virt.h>
-#include <nvhe/spinlock.h>
+#include <pkvm_spinlock.h>
 
 /*
  * SW bits 0-1 are reserved to track the memory ownership state of each page:

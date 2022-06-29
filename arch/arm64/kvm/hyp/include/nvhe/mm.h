@@ -8,7 +8,7 @@
 #include <linux/types.h>
 
 #include <nvhe/memory.h>
-#include <nvhe/spinlock.h>
+#include <pkvm_spinlock.h>
 
 extern struct kvm_pgtable pkvm_pgtable;
 extern hyp_spinlock_t pkvm_pgd_lock;

@@ -5,7 +5,7 @@
 #include <linux/list.h>
 
 #include <nvhe/memory.h>
-#include <nvhe/spinlock.h>
+#include <pkvm_spinlock.h>
 
 #define HYP_NO_ORDER	USHRT_MAX
 
