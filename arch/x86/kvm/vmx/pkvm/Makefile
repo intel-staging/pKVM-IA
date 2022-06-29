@@ -1,9 +1,12 @@
 # SPDX-License-Identifier: GPL-2.0
 
+KVM_PKVM ?= ../../../../../virt/kvm/pkvm
 ccflags-y += -I $(srctree)/arch/x86/kvm
 ccflags-y += -I $(srctree)/arch/x86/kvm/vmx/pkvm/include
 
 pkvm-obj		:= pkvm_host.o
+
+pkvm-obj		+= $(KVM_PKVM)/pkvm.o
 
 obj-$(CONFIG_PKVM_INTEL)	+= $(pkvm-obj)
 obj-$(CONFIG_PKVM_INTEL)	+= hyp/

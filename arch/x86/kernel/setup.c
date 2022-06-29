@@ -35,6 +35,7 @@
 #include <asm/cpu.h>
 #include <asm/efi.h>
 #include <asm/gart.h>
+#include <asm/kvm_pkvm.h>
 #include <asm/hypervisor.h>
 #include <asm/io_apic.h>
 #include <asm/kasan.h>
@@ -1258,6 +1259,8 @@ void __init setup_arch(char **cmdline_p)
 #endif
 
 	unwind_init();
+
+	pkvm_reserve();
 }
 
 #ifdef CONFIG_X86_32

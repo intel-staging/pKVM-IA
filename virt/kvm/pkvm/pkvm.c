@@ -4,6 +4,7 @@
  * Author: Quentin Perret <qperret@google.com>
  */
 
+#include <linux/kvm_host.h>
 #include <linux/memblock.h>
 #include <linux/sort.h>
 
