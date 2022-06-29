@@ -181,8 +181,8 @@ static int host_stage2_unmap_dev_all(void)
 	int i, ret;
 
 	/* Unmap all non-memory regions to recycle the pages */
-	for (i = 0; i < hyp_memblock_nr; i++, addr = reg->base + reg->size) {
-		reg = &hyp_memory[i];
+	for (i = 0; i < pkvm_memblock_nr; i++, addr = reg->base + reg->size) {
+		reg = &pkvm_memory[i];
 		ret = kvm_pgtable_stage2_unmap(pgt, addr, reg->base - addr);
 		if (ret)
 			return ret;
@@ -197,7 +197,7 @@ struct kvm_mem_range {
 
 static bool find_mem_range(phys_addr_t addr, struct kvm_mem_range *range)
 {
-	int cur, left = 0, right = hyp_memblock_nr;
+	int cur, left = 0, right = pkvm_memblock_nr;
 	struct memblock_region *reg;
 	phys_addr_t end;
 
@@ -207,7 +207,7 @@ static bool find_mem_range(phys_addr_t addr, struct kvm_mem_range *range)
 	/* The list of memblock regions is sorted, binary search it */
 	while (left < right) {
 		cur = (left + right) >> 1;
-		reg = &hyp_memory[cur];
+		reg = &pkvm_memory[cur];
 		end = reg->base + reg->size;
 		if (addr < reg->base) {
 			right = cur;

@@ -9,7 +9,7 @@
 #include <asm/kvm_pkvm.h>
 #include "hyp_constants.h"
 
-int hyp_pre_reserve_check(void)
+int pkvm_pre_reserve_check(void)
 {
 	if (!is_hyp_mode_available() || is_kernel_in_hyp_mode())
 		return -EINVAL;
@@ -20,7 +20,7 @@ int hyp_pre_reserve_check(void)
 	return 0;
 }
 
-u64 hyp_total_reserve_pages(void)
+u64 pkvm_total_reserve_pages(void)
 {
 	u64 nr_pages, prev, total_pages = 0;
 

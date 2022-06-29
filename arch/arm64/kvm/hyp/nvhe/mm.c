@@ -20,8 +20,8 @@
 struct kvm_pgtable pkvm_pgtable;
 pkvm_spinlock_t pkvm_pgd_lock;
 
-struct memblock_region hyp_memory[HYP_MEMBLOCK_REGIONS];
-unsigned int hyp_memblock_nr;
+struct memblock_region pkvm_memory[PKVM_MEMBLOCK_REGIONS];
+unsigned int pkvm_memblock_nr;
 
 static u64 __io_map_base;
 

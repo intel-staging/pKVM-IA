@@ -420,7 +420,7 @@ void __init bootmem_init(void)
 
 	dma_pernuma_cma_reserve();
 
-	kvm_hyp_reserve();
+	pkvm_reserve();
 
 	/*
 	 * sparse_init() tries to allocate memory from memblock, so must be

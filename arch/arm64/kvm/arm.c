@@ -1858,7 +1858,7 @@ static int do_pkvm_init(u32 hyp_va_bits)
 
 	preempt_disable();
 	cpu_hyp_init_context();
-	ret = kvm_call_hyp_nvhe(__pkvm_init, hyp_mem_base, hyp_mem_size,
+	ret = kvm_call_hyp_nvhe(__pkvm_init, pkvm_mem_base, pkvm_mem_size,
 				num_possible_cpus(), kern_hyp_va(per_cpu_base),
 				hyp_va_bits);
 	cpu_hyp_init_features();
@@ -1875,7 +1875,7 @@ static int do_pkvm_init(u32 hyp_va_bits)
 
 static int kvm_hyp_init_protection(u32 hyp_va_bits)
 {
-	void *addr = phys_to_virt(hyp_mem_base);
+	void *addr = phys_to_virt(pkvm_mem_base);
 	int ret;
 
 	kvm_nvhe_sym(id_aa64pfr0_el1_sys_val) = read_sanitised_ftr_reg(SYS_ID_AA64PFR0_EL1);
@@ -1887,7 +1887,7 @@ static int kvm_hyp_init_protection(u32 hyp_va_bits)
 	kvm_nvhe_sym(id_aa64mmfr1_el1_sys_val) = read_sanitised_ftr_reg(SYS_ID_AA64MMFR1_EL1);
 	kvm_nvhe_sym(id_aa64mmfr2_el1_sys_val) = read_sanitised_ftr_reg(SYS_ID_AA64MMFR2_EL1);
 
-	ret = create_hyp_mappings(addr, addr + hyp_mem_size, PAGE_HYP);
+	ret = create_hyp_mappings(addr, addr + pkvm_mem_size, PAGE_HYP);
 	if (ret)
 		return ret;
 
@@ -1913,7 +1913,7 @@ static int init_hyp_mode(void)
 	 * The protected Hyp-mode cannot be initialized if the memory pool
 	 * allocation has failed.
 	 */
-	if (is_protected_kvm_enabled() && !hyp_mem_base)
+	if (is_protected_kvm_enabled() && !pkvm_mem_base)
 		goto out_err;
 
 	/*

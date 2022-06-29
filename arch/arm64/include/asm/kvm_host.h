@@ -840,11 +840,11 @@ bool kvm_arm_vcpu_is_finalized(struct kvm_vcpu *vcpu);
 
 int kvm_trng_call(struct kvm_vcpu *vcpu);
 #ifdef CONFIG_KVM
-extern phys_addr_t hyp_mem_base;
-extern phys_addr_t hyp_mem_size;
-void __init kvm_hyp_reserve(void);
+extern phys_addr_t pkvm_mem_base;
+extern phys_addr_t pkvm_mem_size;
+void __init pkvm_reserve(void);
 #else
-static inline void kvm_hyp_reserve(void) { }
+static inline void pkvm_reserve(void) { }
 #endif
 
 void kvm_arm_vcpu_power_off(struct kvm_vcpu *vcpu);

@@ -246,8 +246,8 @@ static int finalize_host_mappings(void)
 	};
 	int i, ret;
 
-	for (i = 0; i < hyp_memblock_nr; i++) {
-		struct memblock_region *reg = &hyp_memory[i];
+	for (i = 0; i < pkvm_memblock_nr; i++) {
+		struct memblock_region *reg = &pkvm_memory[i];
 		u64 start = (u64)hyp_phys_to_virt(reg->base);
 
 		ret = kvm_pgtable_walk(&pkvm_pgtable, start, reg->size, &walker);
