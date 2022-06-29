@@ -6,9 +6,11 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <asm/trapnr.h>
+#include <asm/kvm_pkvm.h>
 
 #include <pkvm.h>
 #include <vmx/vmx_lib.h>
+#include "pkvm_constants.h"
 
 MODULE_LICENSE("GPL");
 
@@ -32,6 +34,18 @@ struct gdt_page pkvm_gdt_page = {
 		[GDT_ENTRY_DEFAULT_USER_CS]	= GDT_ENTRY_INIT(0xa0fb, 0, 0xfffff),
 	},
 };
+
+u64 pkvm_total_reserve_pages(void)
+{
+	u64 total;
+
+	total = pkvm_data_struct_pages(PKVM_GLOBAL_PAGES, PKVM_PERCPU_PAGES, num_possible_cpus());
+	total += pkvm_vmemmap_pages(PKVM_VMEMMAP_ENTRY_SIZE);
+	total += pkvm_mmu_pgtable_pages();
+	total += host_ept_pgtable_pages();
+
+	return total;
+}
 
 static void *pkvm_early_alloc_contig(int pages)
 {
