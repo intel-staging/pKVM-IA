@@ -28,10 +28,10 @@ static inline void hyp_vmemmap_range(phys_addr_t phys, unsigned long size,
 				     unsigned long *start, unsigned long *end)
 {
 	unsigned long nr_pages = size >> PAGE_SHIFT;
-	struct hyp_page *p = hyp_phys_to_page(phys);
+	struct pkvm_page *p = pkvm_phys_to_page(phys);
 
 	*start = (unsigned long)p;
-	*end = *start + nr_pages * sizeof(struct hyp_page);
+	*end = *start + nr_pages * sizeof(struct pkvm_page);
 	*start = ALIGN_DOWN(*start, PAGE_SIZE);
 	*end = ALIGN(*end, PAGE_SIZE);
 }

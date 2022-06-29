@@ -27,7 +27,7 @@ static void *vmemmap_base;
 static void *hyp_pgt_base;
 static void *host_s2_pgt_base;
 static struct kvm_pgtable_mm_ops pkvm_pgtable_mm_ops;
-static struct hyp_pool hpool;
+static struct pkvm_pool ppool;
 
 static int divide_memory_pool(void *virt, unsigned long size)
 {
@@ -173,17 +173,17 @@ static void update_nvhe_init_params(void)
 
 static void *hyp_zalloc_hyp_page(void *arg)
 {
-	return hyp_alloc_pages(&hpool, 0);
+	return pkvm_alloc_pages(&ppool, 0);
 }
 
 static void hpool_get_page(void *addr)
 {
-	hyp_get_page(&hpool, addr);
+	pkvm_get_page(&ppool, addr);
 }
 
 static void hpool_put_page(void *addr)
 {
-	hyp_put_page(&hpool, addr);
+	pkvm_put_page(&ppool, addr);
 }
 
 static int finalize_host_mappings_walker(u64 addr, u64 end, u32 level,
@@ -266,10 +266,10 @@ void __noreturn __pkvm_init_finalise(void)
 	int ret;
 
 	/* Now that the vmemmap is backed, install the full-fledged allocator */
-	pfn = hyp_virt_to_pfn(hyp_pgt_base);
+	pfn = pkvm_virt_to_pfn(hyp_pgt_base);
 	nr_pages = hyp_s1_pgtable_pages();
 	reserved_pages = hyp_early_alloc_nr_used_pages();
-	ret = hyp_pool_init(&hpool, pfn, nr_pages, reserved_pages);
+	ret = pkvm_pool_init(&ppool, pfn, nr_pages, reserved_pages);
 	if (ret)
 		goto out;
 
@@ -283,7 +283,7 @@ void __noreturn __pkvm_init_finalise(void)
 		.virt_to_phys = hyp_virt_to_phys,
 		.get_page = hpool_get_page,
 		.put_page = hpool_put_page,
-		.page_count = hyp_page_count,
+		.page_count = pkvm_page_count,
 	};
 	pkvm_pgtable.mm_ops = &pkvm_pgtable_mm_ops;
 

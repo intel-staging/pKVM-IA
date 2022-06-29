@@ -5,6 +5,6 @@
 
 int main(void)
 {
-	DEFINE(STRUCT_HYP_PAGE_SIZE,	sizeof(struct hyp_page));
+	DEFINE(STRUCT_HYP_PAGE_SIZE,	sizeof(struct pkvm_page));
 	return 0;
 }

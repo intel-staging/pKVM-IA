@@ -24,7 +24,7 @@
 extern unsigned long hyp_nr_cpus;
 struct host_kvm host_kvm;
 
-static struct hyp_pool host_s2_pool;
+static struct pkvm_pool host_s2_pool;
 
 const u8 pkvm_hyp_id = 1;
 
@@ -50,9 +50,9 @@ static void hyp_unlock_component(void)
 
 static void *host_s2_zalloc_pages_exact(size_t size)
 {
-	void *addr = hyp_alloc_pages(&host_s2_pool, get_order(size));
+	void *addr = pkvm_alloc_pages(&host_s2_pool, get_order(size));
 
-	hyp_split_page(hyp_virt_to_page(addr));
+	pkvm_split_page(pkvm_virt_to_page(addr));
 
 	/*
 	 * The size of concatenated PGDs is always a power of two of PAGE_SIZE,
@@ -66,17 +66,17 @@ static void *host_s2_zalloc_pages_exact(size_t size)
 
 static void *host_s2_zalloc_page(void *pool)
 {
-	return hyp_alloc_pages(pool, 0);
+	return pkvm_alloc_pages(pool, 0);
 }
 
 static void host_s2_get_page(void *addr)
 {
-	hyp_get_page(&host_s2_pool, addr);
+	pkvm_get_page(&host_s2_pool, addr);
 }
 
 static void host_s2_put_page(void *addr)
 {
-	hyp_put_page(&host_s2_pool, addr);
+	pkvm_put_page(&host_s2_pool, addr);
 }
 
 static int prepare_s2_pool(void *pgt_pool_base)
@@ -84,9 +84,9 @@ static int prepare_s2_pool(void *pgt_pool_base)
 	unsigned long nr_pages, pfn;
 	int ret;
 
-	pfn = hyp_virt_to_pfn(pgt_pool_base);
+	pfn = pkvm_virt_to_pfn(pgt_pool_base);
 	nr_pages = host_s2_pgtable_pages();
-	ret = hyp_pool_init(&host_s2_pool, pfn, nr_pages, 0);
+	ret = pkvm_pool_init(&host_s2_pool, pfn, nr_pages, 0);
 	if (ret)
 		return ret;
 
@@ -95,7 +95,7 @@ static int prepare_s2_pool(void *pgt_pool_base)
 		.zalloc_page = host_s2_zalloc_page,
 		.phys_to_virt = hyp_phys_to_virt,
 		.virt_to_phys = hyp_virt_to_phys,
-		.page_count = hyp_page_count,
+		.page_count = pkvm_page_count,
 		.get_page = host_s2_get_page,
 		.put_page = host_s2_put_page,
 	};
@@ -735,7 +735,7 @@ static int do_unshare(struct pkvm_mem_share *share)
 int __pkvm_host_share_hyp(u64 pfn)
 {
 	int ret;
-	u64 host_addr = hyp_pfn_to_phys(pfn);
+	u64 host_addr = pkvm_pfn_to_phys(pfn);
 	u64 hyp_addr = (u64)__hyp_va(host_addr);
 	struct pkvm_mem_share share = {
 		.tx	= {
@@ -768,7 +768,7 @@ int __pkvm_host_share_hyp(u64 pfn)
 int __pkvm_host_unshare_hyp(u64 pfn)
 {
 	int ret;
-	u64 host_addr = hyp_pfn_to_phys(pfn);
+	u64 host_addr = pkvm_pfn_to_phys(pfn);
 	u64 hyp_addr = (u64)__hyp_va(host_addr);
 	struct pkvm_mem_share share = {
 		.tx	= {

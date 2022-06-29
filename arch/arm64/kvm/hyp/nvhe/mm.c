@@ -61,7 +61,7 @@ int pkvm_alloc_private_va_range(size_t size, unsigned long *haddr)
 	base = addr + PAGE_ALIGN(size);
 
 	/* Are we overflowing on the vmemmap ? */
-	if (!addr || base > __hyp_vmemmap)
+	if (!addr || base > __pkvm_vmemmap)
 		ret = -ENOMEM;
 	else {
 		__io_map_base = base;
@@ -209,7 +209,7 @@ int hyp_create_idmap(u32 hyp_va_bits)
 	 */
 	__io_map_base = start & BIT(hyp_va_bits - 2);
 	__io_map_base ^= BIT(hyp_va_bits - 2);
-	__hyp_vmemmap = __io_map_base | BIT(hyp_va_bits - 3);
+	__pkvm_vmemmap = __io_map_base | BIT(hyp_va_bits - 3);
 
 	return __pkvm_create_mappings(start, end - start, start, PAGE_HYP_EXEC);
 }
