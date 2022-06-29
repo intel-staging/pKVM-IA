@@ -4,7 +4,6 @@
  * Author: Quentin Perret <qperret@google.com>
  */
 
-#include <asm/kvm_hyp.h>
 #include <gfp.h>
 
 u64 __hyp_vmemmap;

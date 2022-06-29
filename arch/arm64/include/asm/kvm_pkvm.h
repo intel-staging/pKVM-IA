@@ -8,8 +8,24 @@
 
 #include <linux/memblock.h>
 #include <asm/kvm_pgtable.h>
+#include <asm/kvm_mmu.h>
 
 #define HYP_MEMBLOCK_REGIONS 128
+
+#define __hyp_va(phys)	((void *)((phys_addr_t)(phys) - hyp_physvirt_offset))
+
+static inline void *hyp_phys_to_virt(phys_addr_t phys)
+{
+	return __hyp_va(phys);
+}
+
+static inline phys_addr_t hyp_virt_to_phys(void *addr)
+{
+	return __hyp_pa(addr);
+}
+
+#define __pkvm_pa __hyp_pa
+#define __pkvm_va __hyp_va
 
 extern struct memblock_region kvm_nvhe_sym(hyp_memory)[];
 extern unsigned int kvm_nvhe_sym(hyp_memblock_nr);
