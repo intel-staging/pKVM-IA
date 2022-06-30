@@ -22,6 +22,7 @@ pkvm-hyp-obj	+= $(virt-dir)/page_alloc.o
 ifndef CONFIG_PKVM_INTEL_DEBUG
 lib-dir		:= $(obj)/lib
 pkvm-hyp-obj	+= $(lib-dir)/memset_64.o
+pkvm-hyp-obj	+= $(lib-dir)/memcpy_64.o
 ifdef CONFIG_RETPOLINE
 pkvm-hyp-obj	+= $(lib-dir)/retpoline.o
 endif
