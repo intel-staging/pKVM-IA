@@ -20,4 +20,15 @@ struct mem_range {
 bool find_mem_range(unsigned long addr, struct mem_range *range);
 bool mem_range_included(struct mem_range *child, struct mem_range *parent);
 
+#include <linux/kvm_host.h>
+void *host_gpa2hva(unsigned long gpa);
+int gva2gpa(struct kvm_vcpu *vcpu, gva_t gva, gpa_t *gpa,
+		u32 access, struct x86_exception *exception);
+int read_gva(struct kvm_vcpu *vcpu, gva_t gva, void *addr,
+		unsigned int bytes, struct x86_exception *exception);
+int write_gva(struct kvm_vcpu *vcpu, gva_t gva, void *addr,
+		unsigned int bytes, struct x86_exception *exception);
+int read_gpa(struct kvm_vcpu *vcpu, gpa_t gpa, void *addr, unsigned int bytes);
+int write_gpa(struct kvm_vcpu *vcpu, gpa_t gpa, void *addr, unsigned int bytes);
+
 #endif
