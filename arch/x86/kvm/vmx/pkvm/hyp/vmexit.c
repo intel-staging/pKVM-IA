@@ -154,6 +154,7 @@ int pkvm_main(struct kvm_vcpu *vcpu)
 		}
 
 		vcpu->arch.cr2 = native_read_cr2();
+		vcpu->arch.cr3 = vmcs_readl(GUEST_CR3);
 
 		vmx->exit_reason.full = vmcs_read32(VM_EXIT_REASON);
 		vmx->exit_qualification = vmcs_readl(EXIT_QUALIFICATION);
