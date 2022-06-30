@@ -17,6 +17,7 @@ pkvm-hyp-y	:= vmx_asm.o vmexit.o memory.o early_alloc.o pgtable.o mmu.o pkvm.o \
 ifndef CONFIG_PKVM_INTEL_DEBUG
 lib-dir		:= lib
 pkvm-hyp-y	+= $(lib-dir)/memset_64.o
+pkvm-hyp-y	+= $(lib-dir)/memcpy_64.o
 pkvm-hyp-$(CONFIG_RETPOLINE)	+= $(lib-dir)/retpoline.o
 pkvm-hyp-$(CONFIG_DEBUG_LIST)	+= $(lib-dir)/list_debug.o
 endif
