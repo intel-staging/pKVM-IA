@@ -133,6 +133,8 @@ int for_each_valid_shadow_vm(int (*fn)(struct pkvm_shadow_vm *vm, void *data),
 			     void *data);
 void pkvm_kick_vcpu(struct kvm_vcpu *vcpu);
 
+#define PKVM_REQ_TLB_FLUSH_HOST_EPT			KVM_ARCH_REQ(0)
+
 extern struct pkvm_hyp *pkvm_hyp;
 
 #endif

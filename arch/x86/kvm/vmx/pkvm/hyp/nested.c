@@ -1235,6 +1235,13 @@ int nested_vmexit(struct kvm_vcpu *vcpu, bool *skip_instruction)
 			return 0;
 		}
 		break;
+	case EXIT_REASON_INIT_SIGNAL:
+		/*
+		 * INIT vmexit reason is unsupported by KVM in primary VM and
+		 * it is reused by pkvm to kick vcpu out of non-root.
+		 * When this vmexit reason happens, no need back to primary VM.
+		 */
+		return 0;
 	default:
 		break;
 	}

@@ -45,7 +45,19 @@ static void host_ept_put_page(void *vaddr)
 	hyp_put_page(&host_ept_pool, vaddr);
 }
 
-/*TODO: add tlb flush support for host ept */
+static void host_ept_flush_tlb(void)
+{
+	struct pkvm_host_vcpu *hvcpu;
+	int i;
+
+	for (i = 0; i < pkvm_hyp->num_cpus; i++) {
+		hvcpu = pkvm_hyp->host_vm.host_vcpus[i];
+
+		kvm_make_request(PKVM_REQ_TLB_FLUSH_HOST_EPT, &hvcpu->vmx.vcpu);
+		pkvm_kick_vcpu(&hvcpu->vmx.vcpu);
+	}
+}
+
 struct pkvm_mm_ops host_ept_mm_ops = {
 	.phys_to_virt = pkvm_phys_to_virt,
 	.virt_to_phys = pkvm_virt_to_phys,
@@ -53,7 +65,7 @@ struct pkvm_mm_ops host_ept_mm_ops = {
 	.get_page = host_ept_get_page,
 	.put_page = host_ept_put_page,
 	.page_count = hyp_page_count,
-	.flush_tlb = flush_tlb_noop,
+	.flush_tlb = host_ept_flush_tlb,
 };
 
 static bool ept_entry_present(void *ptep)
@@ -175,6 +187,13 @@ void host_ept_lock(void)
 void host_ept_unlock(void)
 {
 	pkvm_spin_unlock(&_host_ept_lock);
+}
+
+void pkvm_flush_host_ept(void)
+{
+	u64 eptp = pkvm_construct_eptp(host_ept.root_pa, host_ept.level);
+
+	flush_ept(eptp);
 }
 
 static void ept_mk_nopresent(struct pkvm_pgtable *pgt, void *ptep)
