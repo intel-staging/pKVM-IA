@@ -24,5 +24,26 @@ static inline u64 pkvm_construct_eptp(unsigned long root_hpa,
 	return eptp;
 }
 
+static inline void vmcs_load_track(struct vcpu_vmx *vmx, struct vmcs *vmcs)
+{
+	struct pkvm_host_vcpu *pkvm_host_vcpu = vmx_to_pkvm_hvcpu(vmx);
+
+	pkvm_host_vcpu->current_vmcs = vmcs;
+	barrier();
+	vmcs_load(vmcs);
+}
+
+static inline void vmcs_clear_track(struct vcpu_vmx *vmx, struct vmcs *vmcs)
+{
+	struct pkvm_host_vcpu *pkvm_host_vcpu = vmx_to_pkvm_hvcpu(vmx);
+
+	/* vmcs_clear might clear none current vmcs */
+	if (pkvm_host_vcpu->current_vmcs == vmcs)
+		pkvm_host_vcpu->current_vmcs = NULL;
+
+	barrier();
+	vmcs_clear(vmcs);
+}
+
 void init_contant_host_state_area(struct pkvm_pcpu *pcpu, int cpu);
 #endif
