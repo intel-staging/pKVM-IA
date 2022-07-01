@@ -426,6 +426,33 @@ static __init void pkvm_host_deinit_vmx(struct pkvm_host_vcpu *vcpu)
 		vmx->vmcs01.msr_bitmap = NULL;
 }
 
+static __init void pkvm_host_setup_nested_vmx_cap(struct pkvm_hyp *pkvm)
+{
+	struct nested_vmx_msrs *msrs = &pkvm->vmcs_config.nested;
+
+	rdmsr(MSR_IA32_VMX_PROCBASED_CTLS,
+		msrs->procbased_ctls_low,
+		msrs->procbased_ctls_high);
+
+	rdmsr_safe(MSR_IA32_VMX_PROCBASED_CTLS2,
+			&msrs->secondary_ctls_low,
+			&msrs->secondary_ctls_high);
+
+	rdmsr(MSR_IA32_VMX_PINBASED_CTLS,
+		msrs->pinbased_ctls_low,
+		msrs->pinbased_ctls_high);
+
+	rdmsrl_safe(MSR_IA32_VMX_VMFUNC, &msrs->vmfunc_controls);
+
+	rdmsr(MSR_IA32_VMX_EXIT_CTLS,
+		msrs->exit_ctls_low,
+		msrs->exit_ctls_high);
+
+	rdmsr(MSR_IA32_VMX_ENTRY_CTLS,
+		msrs->entry_ctls_low,
+		msrs->entry_ctls_high);
+}
+
 static __init int pkvm_host_check_and_setup_vmx_cap(struct pkvm_hyp *pkvm)
 {
 	struct vmcs_config *vmcs_config = &pkvm->vmcs_config;
@@ -475,6 +502,8 @@ static __init int pkvm_host_check_and_setup_vmx_cap(struct pkvm_hyp *pkvm)
 		pr_info("vmexit_ctrl 0x%x\n", vmcs_config->vmexit_ctrl);
 		pr_info("vmentry_ctrl 0x%x\n", vmcs_config->vmentry_ctrl);
 	}
+
+	pkvm_host_setup_nested_vmx_cap(pkvm);
 
 	return ret;
 }
