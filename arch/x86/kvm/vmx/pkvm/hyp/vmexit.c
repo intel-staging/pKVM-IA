@@ -147,6 +147,19 @@ static void handle_pending_events(struct kvm_vcpu *vcpu)
 			     INTR_TYPE_NMI_INTR | INTR_INFO_VALID_MASK | NMI_VECTOR);
 		pkvm_host_vcpu->pending_nmi = false;
 	}
+
+	if (kvm_check_request(PKVM_REQ_TLB_FLUSH_HOST_EPT, vcpu))
+		pkvm_flush_host_ept();
+}
+
+static inline void set_vcpu_mode(struct kvm_vcpu *vcpu, int mode)
+{
+	vcpu->mode = mode;
+	/*
+	 * Make sure vcpu->mode is set before checking/handling the pending
+	 * requests. Pairs with kvm_vcpu_exiting_guest_mode().
+	 */
+	smp_wmb();
 }
 
 /* we take use of kvm_vcpu structure, but not used all the fields */
@@ -170,7 +183,7 @@ int pkvm_main(struct kvm_vcpu *vcpu)
 
 		trace_vmexit_start(vcpu, is_guest_mode(vcpu) ? true : false);
 
-		vcpu->mode = OUTSIDE_GUEST_MODE;
+		set_vcpu_mode(vcpu, OUTSIDE_GUEST_MODE);
 
 		vcpu->arch.cr3 = vmcs_readl(GUEST_CR3);
 		vcpu->arch.regs[VCPU_REGS_RSP] = vmcs_readl(GUEST_RSP);
@@ -183,6 +196,13 @@ int pkvm_main(struct kvm_vcpu *vcpu)
 			nested_vmexit(vcpu, &skip_instruction);
 		} else {
 			switch (vmx->exit_reason.full) {
+			case EXIT_REASON_INIT_SIGNAL:
+				/*
+				 * INIT is used as kick when making a request.
+				 * So just break the vmexits and go to pending
+				 * events handling.
+				 */
+				break;
 			case EXIT_REASON_CPUID:
 				handle_cpuid(vcpu);
 				skip_instruction = true;
@@ -272,10 +292,13 @@ int pkvm_main(struct kvm_vcpu *vcpu)
 
 		if (skip_instruction)
 			skip_emulated_instruction();
-
+handle_events:
 		handle_pending_events(vcpu);
 
-		vcpu->mode = IN_GUEST_MODE;
+		set_vcpu_mode(vcpu, IN_GUEST_MODE);
+
+		if (vcpu->mode == EXITING_GUEST_MODE || kvm_request_pending(vcpu))
+			goto handle_events;
 
 		/*
 		 * L2 VMExit -> L1 VMEntry and L1 VMExit -> L1 VMEnetry: vmresume.
