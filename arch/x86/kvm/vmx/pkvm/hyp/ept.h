@@ -28,6 +28,7 @@ int pkvm_host_ept_unmap(unsigned long vaddr_start, unsigned long phys_start,
 int pkvm_host_ept_init(struct pkvm_pgtable_cap *cap, void *ept_pool_base,
 		unsigned long ept_pool_pages);
 int handle_host_ept_violation(unsigned long gpa);
+void pkvm_flush_host_ept(void);
 int pkvm_shadow_ept_pool_init(void *ept_pool_base, unsigned long ept_pool_pages);
 int pkvm_shadow_ept_init(struct shadow_ept_desc *desc);
 void pkvm_shadow_ept_deinit(struct shadow_ept_desc *desc);
