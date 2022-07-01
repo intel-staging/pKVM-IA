@@ -8,6 +8,122 @@
 #include "pkvm_hyp.h"
 #include "debug.h"
 
+/**
+ * According to SDM Appendix B Field Encoding in VMCS, some fields only
+ * exist on processor that support the 1-setting of the corresponding
+ * fields in the control regs.
+ */
+static bool has_vmcs_field(u16 encoding)
+{
+	switch (encoding) {
+	case MSR_BITMAP:
+		return pkvm_hyp->vmx_ctls[PRIMARY_CTLS] & CPU_BASED_USE_MSR_BITMAPS;
+	case VIRTUAL_APIC_PAGE_ADDR:
+	case VIRTUAL_APIC_PAGE_ADDR_HIGH:
+	case TPR_THRESHOLD:
+		return pkvm_hyp->vmx_ctls[PRIMARY_CTLS] & CPU_BASED_TPR_SHADOW;
+	case SECONDARY_VM_EXEC_CONTROL:
+		return pkvm_hyp->vmx_ctls[PRIMARY_CTLS] &
+			CPU_BASED_ACTIVATE_SECONDARY_CONTROLS;
+
+	case VIRTUAL_PROCESSOR_ID:
+		return pkvm_hyp->vmx_ctls[SECONDARY_CTLS] & SECONDARY_EXEC_ENABLE_VPID;
+	case XSS_EXIT_BITMAP:
+		return pkvm_hyp->vmx_ctls[SECONDARY_CTLS] & SECONDARY_EXEC_XSAVES;
+	case PML_ADDRESS:
+		return pkvm_hyp->vmx_ctls[SECONDARY_CTLS] & SECONDARY_EXEC_ENABLE_PML;
+	case VM_FUNCTION_CONTROL:
+		return pkvm_hyp->vmx_ctls[SECONDARY_CTLS] & SECONDARY_EXEC_ENABLE_VMFUNC;
+	case EPT_POINTER:
+		return pkvm_hyp->vmx_ctls[SECONDARY_CTLS] & SECONDARY_EXEC_ENABLE_EPT;
+	case EOI_EXIT_BITMAP0:
+	case EOI_EXIT_BITMAP1:
+	case EOI_EXIT_BITMAP2:
+	case EOI_EXIT_BITMAP3:
+		return pkvm_hyp->vmx_ctls[SECONDARY_CTLS] &
+			SECONDARY_EXEC_VIRTUAL_INTR_DELIVERY;
+	case VMREAD_BITMAP:
+	case VMWRITE_BITMAP:
+		return pkvm_hyp->vmx_ctls[SECONDARY_CTLS] & SECONDARY_EXEC_SHADOW_VMCS;
+	case ENCLS_EXITING_BITMAP:
+		return pkvm_hyp->vmx_ctls[SECONDARY_CTLS] &
+			SECONDARY_EXEC_ENCLS_EXITING;
+	case GUEST_INTR_STATUS:
+		return pkvm_hyp->vmx_ctls[SECONDARY_CTLS] &
+			SECONDARY_EXEC_VIRTUAL_INTR_DELIVERY;
+	case GUEST_PML_INDEX:
+		return pkvm_hyp->vmx_ctls[SECONDARY_CTLS] & SECONDARY_EXEC_ENABLE_PML;
+	case APIC_ACCESS_ADDR:
+	case APIC_ACCESS_ADDR_HIGH:
+		return pkvm_hyp->vmx_ctls[SECONDARY_CTLS] &
+			SECONDARY_EXEC_VIRTUALIZE_APIC_ACCESSES;
+	case TSC_MULTIPLIER:
+	case TSC_MULTIPLIER_HIGH:
+		return pkvm_hyp->vmx_ctls[SECONDARY_CTLS] &
+			SECONDARY_EXEC_TSC_SCALING;
+	case GUEST_PHYSICAL_ADDRESS:
+	case GUEST_PHYSICAL_ADDRESS_HIGH:
+		return pkvm_hyp->vmx_ctls[SECONDARY_CTLS] &
+			SECONDARY_EXEC_ENABLE_EPT;
+	case GUEST_PDPTR0:
+	case GUEST_PDPTR0_HIGH:
+	case GUEST_PDPTR1:
+	case GUEST_PDPTR1_HIGH:
+	case GUEST_PDPTR2:
+	case GUEST_PDPTR2_HIGH:
+	case GUEST_PDPTR3:
+	case GUEST_PDPTR3_HIGH:
+		return pkvm_hyp->vmx_ctls[SECONDARY_CTLS] & SECONDARY_EXEC_ENABLE_EPT;
+	case PLE_GAP:
+	case PLE_WINDOW:
+		return pkvm_hyp->vmx_ctls[SECONDARY_CTLS] &
+			SECONDARY_EXEC_PAUSE_LOOP_EXITING;
+
+	case VMX_PREEMPTION_TIMER_VALUE:
+		return pkvm_hyp->vmx_ctls[PIN_BASED_CTLS] &
+			PIN_BASED_VMX_PREEMPTION_TIMER;
+	case POSTED_INTR_DESC_ADDR:
+		return pkvm_hyp->vmx_ctls[PIN_BASED_CTLS] & PIN_BASED_POSTED_INTR;
+	case POSTED_INTR_NV:
+		return pkvm_hyp->vmx_ctls[PIN_BASED_CTLS] & PIN_BASED_POSTED_INTR;
+
+	case GUEST_IA32_PAT:
+	case GUEST_IA32_PAT_HIGH:
+		return (pkvm_hyp->vmx_ctls[VM_ENTRY_CTLS] & VM_ENTRY_LOAD_IA32_PAT) ||
+			(pkvm_hyp->vmx_ctls[VM_EXIT_CTLS] & VM_EXIT_SAVE_IA32_PAT);
+	case GUEST_IA32_EFER:
+	case GUEST_IA32_EFER_HIGH:
+		return (pkvm_hyp->vmx_ctls[VM_ENTRY_CTLS] & VM_ENTRY_LOAD_IA32_EFER) ||
+			(pkvm_hyp->vmx_ctls[VM_EXIT_CTLS] & VM_EXIT_SAVE_IA32_EFER);
+	case GUEST_IA32_PERF_GLOBAL_CTRL:
+	case GUEST_IA32_PERF_GLOBAL_CTRL_HIGH:
+		return pkvm_hyp->vmx_ctls[VM_ENTRY_CTLS] & VM_ENTRY_LOAD_IA32_PERF_GLOBAL_CTRL;
+	case GUEST_BNDCFGS:
+	case GUEST_BNDCFGS_HIGH:
+		return (pkvm_hyp->vmx_ctls[VM_ENTRY_CTLS] & VM_ENTRY_LOAD_BNDCFGS) ||
+			(pkvm_hyp->vmx_ctls[VM_EXIT_CTLS] & VM_EXIT_CLEAR_BNDCFGS);
+	case GUEST_IA32_RTIT_CTL:
+	case GUEST_IA32_RTIT_CTL_HIGH:
+		return (pkvm_hyp->vmx_ctls[VM_ENTRY_CTLS] & VM_ENTRY_LOAD_IA32_RTIT_CTL) ||
+			(pkvm_hyp->vmx_ctls[VM_EXIT_CTLS] & VM_EXIT_CLEAR_IA32_RTIT_CTL);
+	case HOST_IA32_PAT:
+	case HOST_IA32_PAT_HIGH:
+		return pkvm_hyp->vmx_ctls[VM_EXIT_CTLS] & VM_EXIT_LOAD_IA32_PAT;
+	case HOST_IA32_EFER:
+	case HOST_IA32_EFER_HIGH:
+		return pkvm_hyp->vmx_ctls[VM_EXIT_CTLS] & VM_EXIT_LOAD_IA32_EFER;
+	case HOST_IA32_PERF_GLOBAL_CTRL:
+	case HOST_IA32_PERF_GLOBAL_CTRL_HIGH:
+		return pkvm_hyp->vmx_ctls[VM_EXIT_CTLS] & VM_ENTRY_LOAD_IA32_PERF_GLOBAL_CTRL;
+
+	case EPTP_LIST_ADDRESS:
+		return pkvm_hyp->vmx_ctls[VMFUNC_CTLS] & VMX_VMFUNC_EPTP_SWITCHING;
+
+	default:
+		return true;
+	}
+}
+
 enum VMXResult {
 	VMsucceed,
 	VMfailValid,

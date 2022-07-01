@@ -409,6 +409,29 @@ static void pkvm_host_deinit_vmx(struct pkvm_host_vcpu *vcpu)
 		vmx->vmcs01.msr_bitmap = NULL;
 }
 
+static void pkvm_host_get_vmx_cap(struct pkvm_hyp *pkvm)
+{
+	u32 supported, ign;
+
+	rdmsr(MSR_IA32_VMX_PROCBASED_CTLS, ign, supported);
+	pkvm->vmx_ctls[PRIMARY_CTLS] = supported;
+
+	rdmsr_safe(MSR_IA32_VMX_PROCBASED_CTLS2, &ign, &supported);
+	pkvm->vmx_ctls[SECONDARY_CTLS] = supported;
+
+	rdmsr(MSR_IA32_VMX_PINBASED_CTLS, ign, supported);
+	pkvm->vmx_ctls[PIN_BASED_CTLS] = supported;
+
+	rdmsr_safe(MSR_IA32_VMX_VMFUNC, &ign, &supported);
+	pkvm->vmx_ctls[VMFUNC_CTLS] = supported;
+
+	rdmsr(MSR_IA32_VMX_EXIT_CTLS, ign, supported);
+	pkvm->vmx_ctls[VM_EXIT_CTLS] = supported;
+
+	rdmsr(MSR_IA32_VMX_ENTRY_CTLS, ign, supported);
+	pkvm->vmx_ctls[VM_ENTRY_CTLS] = supported;
+}
+
 static int pkvm_host_check_and_setup_vmx_cap(struct pkvm_hyp *pkvm)
 {
 	struct vmcs_config *vmcs_config = &pkvm->vmcs_config;
@@ -457,6 +480,8 @@ static int pkvm_host_check_and_setup_vmx_cap(struct pkvm_hyp *pkvm)
 	pr_info("cpu_based_2nd_exec_ctrl 0x%x\n", vmcs_config->cpu_based_2nd_exec_ctrl);
 	pr_info("vmexit_ctrl 0x%x\n", vmcs_config->vmexit_ctrl);
 	pr_info("vmentry_ctrl 0x%x\n", vmcs_config->vmentry_ctrl);
+
+	pkvm_host_get_vmx_cap(pkvm);
 
 	return ret;
 }
