@@ -11,6 +11,7 @@
 #include "pkvm_hyp.h"
 #include "vmsr.h"
 #include "nested.h"
+#include "ept.h"
 #include "debug.h"
 
 #define CR0	0
@@ -259,6 +260,10 @@ int pkvm_main(struct kvm_vcpu *vcpu)
 			case EXIT_REASON_INVVPID:
 				ept_sync_global();
 				skip_instruction = true;
+				break;
+			case EXIT_REASON_EPT_VIOLATION:
+				if (handle_host_ept_violation(vmcs_read64(GUEST_PHYSICAL_ADDRESS)))
+					skip_instruction = true;
 				break;
 			default:
 				pkvm_dbg("CPU%d: Unsupported vmexit reason 0x%x.\n", vcpu->cpu, vmx->exit_reason.full);

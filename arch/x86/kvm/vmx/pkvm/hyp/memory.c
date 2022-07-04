@@ -243,3 +243,38 @@ int write_gpa(struct kvm_vcpu *vcpu, gpa_t gpa, void *addr, unsigned int bytes)
 {
 	return copy_gpa(vcpu, gpa, addr, bytes, false);
 }
+
+bool find_mem_range(unsigned long addr, struct mem_range *range)
+{
+	int cur, left = 0, right = pkvm_memblock_nr;
+	struct memblock_region *reg;
+	unsigned long end;
+
+	range->start = 0;
+	range->end = ULONG_MAX;
+
+	/* The list of memblock regions is sorted, binary search it */
+	while (left < right) {
+		cur = (left + right) >> 1;
+		reg = &pkvm_memory[cur];
+		end = reg->base + reg->size;
+		if (addr < reg->base) {
+			right = cur;
+			range->end = reg->base;
+		} else if (addr >= end) {
+			left = cur + 1;
+			range->start = end;
+		} else {
+			range->start = reg->base;
+			range->end = end;
+			return true;
+		}
+	}
+
+	return false;
+}
+
+bool mem_range_included(struct mem_range *child, struct mem_range *parent)
+{
+	return parent->start <= child->start && child->end <= parent->end;
+}
