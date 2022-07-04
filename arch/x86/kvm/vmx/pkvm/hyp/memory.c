@@ -7,6 +7,7 @@
 #include <asm/kvm_pkvm.h>
 
 #include <pkvm.h>
+#include "memory.h"
 #include "pgtable.h"
 #include "pkvm_hyp.h"
 
@@ -16,6 +17,16 @@ unsigned long __symbol_base_offset;
 unsigned int pkvm_memblock_nr;
 struct memblock_region pkvm_memory[PKVM_MEMBLOCK_REGIONS];
 
+void *pkvm_iophys_to_virt(unsigned long phys)
+{
+	unsigned long iova = PKVM_IOVA_OFFSET + phys;
+
+	if (iova >= __page_base_offset)
+		return (void *)INVALID_ADDR;
+
+	return (void *)iova;
+}
+
 void *pkvm_phys_to_virt(unsigned long phys)
 {
 	return (void *)__page_base_offset + phys;
@@ -23,7 +34,13 @@ void *pkvm_phys_to_virt(unsigned long phys)
 
 unsigned long pkvm_virt_to_phys(void *virt)
 {
-	return (unsigned long)virt - __page_base_offset;
+	/* this api only take care direct & io mapping */
+	if ((unsigned long)virt < PKVM_IOVA_OFFSET)
+		return INVALID_ADDR;
+
+	return ((unsigned long)virt >= __page_base_offset) ?
+		(unsigned long)virt - __page_base_offset :
+		(unsigned long)virt - PKVM_IOVA_OFFSET;
 }
 
 unsigned long pkvm_virt_to_symbol_phys(void *virt)
