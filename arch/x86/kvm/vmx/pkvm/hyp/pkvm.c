@@ -109,10 +109,6 @@ int __pkvm_init_shadow_vm(struct kvm_vcpu *hvcpu, unsigned long kvm_va,
 	if (read_gva(hvcpu, kvm_va + offset, &vm_type, bytes, &e) < 0)
 		return -EINVAL;
 
-	/* TODO: support KVM_X86_PROTECTED_VM */
-	if (vm_type != KVM_X86_DEFAULT_VM)
-		return -EPERM;
-
 	if (__pkvm_host_donate_hyp(shadow_pa, shadow_size))
 		return -EINVAL;
 
