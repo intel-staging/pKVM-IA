@@ -141,7 +141,7 @@ static void handle_pending_events(struct kvm_vcpu *vcpu)
 {
 	struct pkvm_host_vcpu *pkvm_host_vcpu = to_pkvm_hvcpu(vcpu);
 
-	if (pkvm_host_vcpu->pending_nmi) {
+	if (!is_guest_mode(vcpu) && pkvm_host_vcpu->pending_nmi) {
 		/* Inject if NMI is not blocked */
 		vmcs_write32(VM_ENTRY_INTR_INFO_FIELD,
 			     INTR_TYPE_NMI_INTR | INTR_INFO_VALID_MASK | NMI_VECTOR);
@@ -155,6 +155,8 @@ int pkvm_main(struct kvm_vcpu *vcpu)
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 	int launch = 1;
 
+	vcpu->mode = IN_GUEST_MODE;
+
 	do {
 		bool skip_instruction = false, guest_exit = false;
 
@@ -167,6 +169,8 @@ int pkvm_main(struct kvm_vcpu *vcpu)
 		vcpu->arch.cr2 = native_read_cr2();
 
 		trace_vmexit_start(vcpu, is_guest_mode(vcpu) ? true : false);
+
+		vcpu->mode = OUTSIDE_GUEST_MODE;
 
 		vcpu->arch.cr3 = vmcs_readl(GUEST_CR3);
 		vcpu->arch.regs[VCPU_REGS_RSP] = vmcs_readl(GUEST_RSP);
@@ -266,22 +270,19 @@ int pkvm_main(struct kvm_vcpu *vcpu)
 			}
 		}
 
-		if (is_guest_mode(vcpu)) {
-			/*
-			 * L2 VMExit -> L2 VMEntry: vmresume
-			 * L1 VMExit -> L2 VMEntry: vmlaunch
-			 * as vmcs02 is clear every time
-			 */
-			launch = guest_exit ? 0 : 1;
-		} else {
-			handle_pending_events(vcpu);
-
-			/* pkvm_host only need vmresume */
-			launch = 0;
-		}
-
 		if (skip_instruction)
 			skip_emulated_instruction();
+
+		handle_pending_events(vcpu);
+
+		vcpu->mode = IN_GUEST_MODE;
+
+		/*
+		 * L2 VMExit -> L1 VMEntry and L1 VMExit -> L1 VMEnetry: vmresume.
+		 * L2 VMExit -> L2 VMEntry: vmresume
+		 * L1 VMExit -> L2 VMEntry: vmlaunch, as vmcs02 is clear every time
+		 */
+		launch = !is_guest_mode(vcpu) ? 0 : (guest_exit ? 0 : 1);
 
 		native_write_cr2(vcpu->arch.cr2);
 		trace_vmexit_end(vcpu, vmx->exit_reason.basic);
