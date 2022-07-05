@@ -23,6 +23,8 @@
 #define PKVM_HC_TEARDOWN_SHADOW_VM	4
 #define PKVM_HC_TEARDOWN_SHADOW_VCPU	5
 
+DECLARE_PER_CPU_READ_MOSTLY(bool, pkvm_enabled);
+
 extern struct memblock_region pkvm_sym(pkvm_memory)[];
 extern unsigned int pkvm_sym(pkvm_memblock_nr);
 

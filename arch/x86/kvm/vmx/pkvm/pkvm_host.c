@@ -24,6 +24,7 @@ struct pkvm_deprivilege_param {
 	struct pkvm_hyp *pkvm;
 	int ret;
 };
+DEFINE_PER_CPU_READ_MOSTLY(bool, pkvm_enabled);
 
 #define is_aligned(POINTER, BYTE_COUNT) \
 		(((uintptr_t)(const void *)(POINTER)) % (BYTE_COUNT) == 0)
@@ -820,9 +821,21 @@ static int pkvm_host_deprivilege_cpus(struct pkvm_hyp *pkvm)
 	return p.ret;
 }
 
+static int this_cpu_do_finalise_hc(struct pkvm_section *sections, unsigned long size)
+{
+	int ret;
+
+	local_irq_disable();
+	ret = kvm_hypercall2(PKVM_HC_INIT_FINALISE, (unsigned long)sections, size);
+	if (!ret)
+		this_cpu_write(pkvm_enabled, true);
+	local_irq_enable();
+	return ret;
+}
+
 static void do_pkvm_finalise(void *data)
 {
-	kvm_hypercall2(PKVM_HC_INIT_FINALISE, 0, 0);
+	this_cpu_do_finalise_hc(NULL, 0);
 }
 
 static int pkvm_init_finalise(void)
@@ -895,12 +908,10 @@ static int pkvm_init_finalise(void)
 
 	/*
 	 * First hypercall to recreate the pgtable for pkvm, and init
-	 * memory pool for later use.
+	 * memory pool for later use, on boot cpu.
 	 * Input parameters are only needed for first hypercall.
 	 */
-	ret = kvm_hypercall2(PKVM_HC_INIT_FINALISE,
-			(unsigned long)sections, ARRAY_SIZE(sections));
-
+	ret = this_cpu_do_finalise_hc(sections, ARRAY_SIZE(sections));
 	if (ret) {
 		pr_err("%s: pkvm finalise failed!\n", __func__);
 		goto out;
@@ -911,7 +922,8 @@ static int pkvm_init_finalise(void)
 			continue;
 
 		/*
-		 * Second hypercall to switch the mmu and ept pgtable.
+		 * Second hypercall to switch the mmu and ept pgtable
+		 * for other cpus other than boot cpu.
 		 */
 		ret = smp_call_function_single(cpu, do_pkvm_finalise,
 					       NULL, true);
