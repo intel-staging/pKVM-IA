@@ -438,5 +438,8 @@ void pkvm_kick_vcpu(struct kvm_vcpu *vcpu)
 	struct pkvm_host_vcpu *hvcpu = to_pkvm_hvcpu(vcpu);
 	struct pkvm_pcpu *pcpu = hvcpu->pcpu;
 
+	if (kvm_vcpu_exiting_guest_mode(vcpu) != IN_GUEST_MODE)
+		return;
+
 	pkvm_lapic_send_init(pcpu);
 }
