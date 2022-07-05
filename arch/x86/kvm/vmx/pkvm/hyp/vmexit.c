@@ -12,6 +12,7 @@
 #include "vmsr.h"
 #include "nested.h"
 #include "ept.h"
+#include "iommu.h"
 #include "debug.h"
 
 #define CR0	0
@@ -111,6 +112,9 @@ static unsigned long handle_vmcall(struct kvm_vcpu *vcpu)
 		break;
 	case PKVM_HC_TEARDOWN_SHADOW_VCPU:
 		ret = __pkvm_teardown_shadow_vcpu(a0);
+		break;
+	case PKVM_HC_MMIO_ACCESS:
+		ret = pkvm_access_iommu(a0, a1, a2, a3);
 		break;
 	default:
 		ret = -EINVAL;
