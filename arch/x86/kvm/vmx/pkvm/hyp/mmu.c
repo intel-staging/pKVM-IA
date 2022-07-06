@@ -21,6 +21,7 @@
 
 static struct pkvm_pool mmu_pool;
 static struct pkvm_pgtable hyp_mmu;
+static pkvm_spinlock_t _hyp_mmu_lock = __PKVM_SPINLOCK_UNLOCKED;
 
 static void *mmu_zalloc_page(void)
 {
@@ -188,13 +189,23 @@ static int fix_pgtable_refcnt(void)
 int pkvm_mmu_map(unsigned long vaddr_start, unsigned long phys_start,
 		unsigned long size, int pgsz_mask, u64 prot)
 {
-	return pkvm_pgtable_map(&hyp_mmu, vaddr_start, phys_start, size,
-				pgsz_mask, prot, NULL);
+	int ret;
+
+	pkvm_spin_lock(&_hyp_mmu_lock);
+	ret = pkvm_pgtable_map(&hyp_mmu, vaddr_start, phys_start,
+			       size, pgsz_mask, prot, NULL);
+	pkvm_spin_unlock(&_hyp_mmu_lock);
+	return ret;
 }
 
 int pkvm_mmu_unmap(unsigned long vaddr_start, unsigned long phys_start, unsigned long size)
 {
-	return pkvm_pgtable_unmap(&hyp_mmu, vaddr_start, phys_start, size);
+	int ret;
+
+	pkvm_spin_lock(&_hyp_mmu_lock);
+	ret = pkvm_pgtable_unmap(&hyp_mmu, vaddr_start, phys_start, size);
+	pkvm_spin_unlock(&_hyp_mmu_lock);
+	return ret;
 }
 
 /* early mmu init before vmemmap ready, use early allocator first */
