@@ -316,6 +316,28 @@ static struct pkvm_mm_ops shadow_ept_mm_ops = {
 	.flush_tlb = flush_tlb_noop,
 };
 
+void pkvm_invalidate_shadow_ept(struct shadow_ept_desc *desc)
+{
+	struct pkvm_shadow_vm *vm = sept_desc_to_shadow_vm(desc);
+	struct pkvm_pgtable *sept = &desc->sept;
+	struct pkvm_mm_ops *mm_ops = sept->mm_ops;
+	void *root;
+
+	pkvm_spin_lock(&vm->lock);
+
+	if (!is_valid_eptp(desc->shadow_eptp))
+		goto out;
+
+	/* do not free sept root page */
+	root = mm_ops->phys_to_virt(sept->root_pa);
+	mm_ops->get_page(root);
+	pkvm_pgtable_destroy(sept);
+
+	flush_ept(desc->shadow_eptp);
+out:
+	pkvm_spin_unlock(&vm->lock);
+}
+
 void pkvm_shadow_ept_deinit(struct shadow_ept_desc *desc)
 {
 	struct pkvm_pgtable *sept = &desc->sept;
