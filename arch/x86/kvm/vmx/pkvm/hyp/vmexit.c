@@ -265,6 +265,9 @@ int pkvm_main(struct kvm_vcpu *vcpu)
 				handle_nmi_window(vcpu);
 				break;
 			case EXIT_REASON_INVEPT:
+				handle_invept(vcpu);
+				skip_instruction = true;
+				break;
 			case EXIT_REASON_INVVPID:
 				ept_sync_global();
 				skip_instruction = true;
