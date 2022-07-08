@@ -99,4 +99,19 @@ int __pkvm_hyp_donate_host(u64 hpa, u64 size);
 int __pkvm_host_share_guest(u64 hpa, struct pkvm_pgtable *guest_pgt,
 			    u64 gpa, u64 size, u64 prot);
 
+/*
+ * __pkvm_host_unshare_guest() - Host unshare pages that being shared to guest
+ * previously. Guest will can't access these pages.
+ *
+ * @hpa:	Start hpa of being shared pages, must be continues.
+ * @guest_pgt:	The guest ept pagetable.
+ * @gpa:	Start gpa of shared pages that being mapped in guest ept.
+ * @size:	The size of pages to being shared.
+ *
+ * Unmap the range [gfn, gfn + nr_pages) in guest ept pagetable. And tranverse
+ * the page state from PAGE_SHARED_BORROWED to PAGE_OWNED in the host ept.
+ */
+int __pkvm_host_unshare_guest(u64 hpa, struct pkvm_pgtable *guest_pgt,
+			      u64 gpa, u64 size);
+
 #endif
