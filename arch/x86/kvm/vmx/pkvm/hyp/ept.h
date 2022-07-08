@@ -18,6 +18,8 @@ enum sept_handle_ret {
 	PKVM_INJECT_EPT_MISC,
 };
 
+void host_ept_lock(void);
+void host_ept_unlock(void);
 int host_ept_create_idmap(u64 addr, u64 size, int pgsz_mask, u64 prot);
 int host_ept_create_idmap_locked(u64 addr, u64 size, int pgsz_mask, u64 prot);
 int pkvm_host_ept_map(unsigned long vaddr_start, unsigned long phys_start,
