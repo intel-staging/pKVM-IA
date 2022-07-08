@@ -67,4 +67,18 @@ int host_ept_set_owner(phys_addr_t addr, u64 size, pkvm_id owner_id);
  */
 int __pkvm_host_donate_hyp(u64 hpa, u64 size);
 
+/*
+ * __pkvm_hyp_donate_host() - Donate pages from hyp to host, then host can
+ * access these pages.
+ *
+ * @hpa:	Start hpa of being donated pages, must be continues.
+ * @size:	The size of memory to being donated.
+ *
+ * A range of pages [hpa, hpa + size) will be donated from hyp to host. This
+ * will create mapping in host ept for these pages, and nothing to do with hyp
+ * mmu. This is paired with __pkvm_host_donate_hyp(), and sames as host reclaim
+ * these pages back.
+ */
+int __pkvm_hyp_donate_host(u64 hpa, u64 size);
+
 #endif

@@ -30,6 +30,7 @@ struct pkvm_mem_trans_desc {
 			u64	addr;
 		} hyp;
 	};
+	u64			prot;
 };
 
 struct pkvm_mem_transition {
@@ -115,6 +116,14 @@ static int host_request_donation(const struct pkvm_mem_transition *tx)
 	return __host_check_page_state_range(addr, size, PKVM_PAGE_OWNED);
 }
 
+static int host_ack_donation(const struct pkvm_mem_transition *tx)
+{
+	u64 addr = tx->completer.host.addr;
+	u64 size = tx->size;
+
+	return __host_check_page_state_range(addr, size, PKVM_NOPAGE);
+}
+
 static int check_donation(const struct pkvm_mem_transition *tx)
 {
 	int ret;
@@ -122,6 +131,9 @@ static int check_donation(const struct pkvm_mem_transition *tx)
 	switch (tx->initiator.id) {
 	case PKVM_ID_HOST:
 		ret = host_request_donation(tx);
+		break;
+	case PKVM_ID_HYP:
+		ret = 0;
 		break;
 	default:
 		ret = -EINVAL;
@@ -131,6 +143,9 @@ static int check_donation(const struct pkvm_mem_transition *tx)
 		return ret;
 
 	switch (tx->completer.id) {
+	case PKVM_ID_HOST:
+		ret = host_ack_donation(tx);
+		break;
 	case PKVM_ID_HYP:
 		ret = 0;
 		break;
@@ -149,6 +164,15 @@ static int host_initiate_donation(const struct pkvm_mem_transition *tx)
 	return host_ept_set_owner_locked(addr, size, pkvm_hyp_id);
 }
 
+static int host_complete_donation(const struct pkvm_mem_transition *tx)
+{
+	u64 addr = tx->completer.host.addr;
+	u64 size = tx->size;
+	u64 prot = pkvm_mkstate(tx->completer.prot, PKVM_PAGE_OWNED);
+
+	return host_ept_create_idmap_locked(addr, size, 0, prot);
+}
+
 static int __do_donate(const struct pkvm_mem_transition *tx)
 {
 	int ret;
@@ -156,6 +180,9 @@ static int __do_donate(const struct pkvm_mem_transition *tx)
 	switch (tx->initiator.id) {
 	case PKVM_ID_HOST:
 		ret = host_initiate_donation(tx);
+		break;
+	case PKVM_ID_HYP:
+		ret = 0;
 		break;
 	default:
 		ret = -EINVAL;
@@ -165,6 +192,9 @@ static int __do_donate(const struct pkvm_mem_transition *tx)
 		return ret;
 
 	switch (tx->completer.id) {
+	case PKVM_ID_HOST:
+		ret = host_complete_donation(tx);
+		break;
 	case PKVM_ID_HYP:
 		ret = 0;
 		break;
@@ -213,6 +243,36 @@ int __pkvm_host_donate_hyp(u64 hpa, u64 size)
 			.hyp	= {
 				.addr = hyp_addr,
 			},
+		},
+	};
+
+	host_ept_lock();
+
+	ret = do_donate(&donation);
+
+	host_ept_unlock();
+
+	return ret;
+}
+
+int __pkvm_hyp_donate_host(u64 hpa, u64 size)
+{
+	int ret;
+	u64 hyp_addr = (u64)__pkvm_va(hpa);
+	struct pkvm_mem_transition donation = {
+		.size		= size,
+		.initiator	= {
+			.id	= PKVM_ID_HYP,
+			.hyp	= {
+				.addr	= hyp_addr,
+			},
+		},
+		.completer	= {
+			.id	= PKVM_ID_HOST,
+			.host	= {
+				.addr	= hpa,
+			},
+			.prot	= HOST_EPT_DEF_MEM_PROT,
 		},
 	};
 
