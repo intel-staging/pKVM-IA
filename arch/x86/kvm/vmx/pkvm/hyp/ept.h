@@ -11,6 +11,7 @@
 				(MTRR_TYPE_WRBACK << VMX_EPT_MT_EPTE_SHIFT))
 #define HOST_EPT_DEF_MMIO_PROT	(VMX_EPT_RWX_MASK |				\
 				(MTRR_TYPE_UNCACHABLE << VMX_EPT_MT_EPTE_SHIFT))
+#define EPT_PROT_MASK		0xfffull
 
 enum sept_handle_ret {
 	PKVM_NOT_HANDLED,
