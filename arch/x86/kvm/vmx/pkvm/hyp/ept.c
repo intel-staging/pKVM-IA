@@ -317,6 +317,58 @@ static struct pkvm_mm_ops shadow_ept_mm_ops = {
 	.flush_tlb = flush_tlb_noop,
 };
 
+static int pkvm_shadow_ept_map_leaf(struct pkvm_pgtable *pgt, unsigned long vaddr, int level,
+				    void *ptep, struct pgt_flush_data *flush_data, void *arg)
+{
+	struct pkvm_pgtable_map_data *data = arg;
+	struct pkvm_pgtable_ops *pgt_ops = pgt->pgt_ops;
+	unsigned long level_size = pgt_ops->pgt_level_to_size(level);
+	unsigned long map_phys = data->phys & PAGE_MASK;
+	int ret;
+
+	/*
+	 * It is possible that another CPU just created same mapping when
+	 * multiple EPT violations happen on different CPUs.
+	 */
+	if (!pgt_ops->pgt_entry_present(ptep)) {
+		ret = __pkvm_host_share_guest(map_phys, pgt, vaddr, level_size, data->prot);
+		if (ret)
+			return ret;
+	}
+
+	/* Increase the physical address for the next mapping */
+	data->phys += level_size;
+
+	return 0;
+}
+
+static int pkvm_shadow_ept_free_leaf(struct pkvm_pgtable *pgt, unsigned long vaddr, int level,
+				     void *ptep, struct pgt_flush_data *flush_data, void *arg)
+{
+	unsigned long phys = pgt->pgt_ops->pgt_entry_to_phys(ptep);
+	unsigned long size = pgt->pgt_ops->pgt_level_to_size(level);
+
+	if (pgt->pgt_ops->pgt_entry_present(ptep)) {
+		int ret;
+
+		/*
+		 * The pgtable_free_cb in this current page walker is still walking
+		 * the shadow EPT so cannot allow the  __pkvm_host_unshare_guest()
+		 * release shadow EPT table pages.
+		 *
+		 * The table pages will be freed later by the pgtable_free_cb itself.
+		 */
+		pgt->mm_ops->get_page(ptep);
+		ret = __pkvm_host_unshare_guest(phys, pgt, vaddr, size);
+		pgt->mm_ops->put_page(ptep);
+		flush_data->flushtlb |= true;
+
+		return ret;
+	}
+
+	return 0;
+}
+
 void pkvm_invalidate_shadow_ept(struct shadow_ept_desc *desc)
 {
 	struct pkvm_shadow_vm *vm = sept_desc_to_shadow_vm(desc);
@@ -328,7 +380,7 @@ void pkvm_invalidate_shadow_ept(struct shadow_ept_desc *desc)
 	if (!is_valid_eptp(desc->shadow_eptp))
 		goto out;
 
-	pkvm_pgtable_unmap(sept, 0, size, NULL);
+	pkvm_pgtable_unmap(sept, 0, size, pkvm_shadow_ept_free_leaf);
 
 	flush_ept(desc->shadow_eptp);
 out:
@@ -343,7 +395,7 @@ void pkvm_shadow_ept_deinit(struct shadow_ept_desc *desc)
 	pkvm_spin_lock(&vm->lock);
 
 	if (desc->shadow_eptp) {
-		pkvm_pgtable_destroy(sept, NULL);
+		pkvm_pgtable_destroy(sept, pkvm_shadow_ept_free_leaf);
 
 		flush_ept(desc->shadow_eptp);
 
@@ -459,8 +511,10 @@ pkvm_handle_shadow_ept_violation(struct shadow_vcpu_state *shadow_vcpu, u64 l2_g
 		unsigned long level_size = pgt_ops->pgt_level_to_size(level);
 		unsigned long gpa = ALIGN_DOWN(l2_gpa, level_size);
 		unsigned long hpa = ALIGN_DOWN(host_gpa2hpa(phys), level_size);
+		u64 prot = gprot & EPT_PROT_MASK;
 
-		if (!pkvm_pgtable_map(sept, gpa, hpa, level_size, 0, gprot, NULL))
+		if (!pkvm_pgtable_map(sept, gpa, hpa, level_size, 0,
+					prot, pkvm_shadow_ept_map_leaf))
 			ret = PKVM_HANDLED;
 	}
 out:
