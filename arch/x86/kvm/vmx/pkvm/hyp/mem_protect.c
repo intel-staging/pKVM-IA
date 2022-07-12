@@ -141,6 +141,11 @@ static pkvm_id __pkvm_owner_id(const struct pkvm_mem_trans_desc *desc)
 	}
 }
 
+static pkvm_id initiator_owner_id(const struct pkvm_mem_transition *tx)
+{
+	return __pkvm_owner_id(&tx->initiator);
+}
+
 static pkvm_id completer_owner_id(const struct pkvm_mem_transition *tx)
 {
 	return __pkvm_owner_id(&tx->completer);
@@ -707,6 +712,24 @@ static int host_request_unshare(const struct pkvm_mem_transition *tx)
 	return __host_check_page_state_range(addr, size, PKVM_PAGE_SHARED_OWNED);
 }
 
+static int guest_request_unshare(const struct pkvm_mem_transition *tx)
+{
+	u64 addr = tx->initiator.guest.addr;
+	u64 size = tx->size;
+
+	return __guest_check_page_state_range(tx->initiator.guest.pgt,
+					      addr, size, PKVM_PAGE_SHARED_OWNED);
+}
+
+static int host_ack_unshare(const struct pkvm_mem_transition *tx)
+{
+	u64 addr = tx->completer.host.addr;
+	u64 size = tx->size;
+
+	return __host_check_page_state_range(addr, size,
+					     PKVM_PAGE_SHARED_BORROWED);
+}
+
 static int guest_ack_unshare(const struct pkvm_mem_transition *tx)
 {
 	u64 addr = tx->completer.guest.addr;
@@ -724,6 +747,9 @@ int check_unshare(const struct pkvm_mem_transition *tx)
 	case PKVM_ID_HOST:
 		ret = host_request_unshare(tx);
 		break;
+	case PKVM_ID_GUEST:
+		ret = guest_request_unshare(tx);
+		break;
 	default:
 		ret = -EINVAL;
 	}
@@ -732,6 +758,9 @@ int check_unshare(const struct pkvm_mem_transition *tx)
 		return ret;
 
 	switch (tx->completer.id) {
+	case PKVM_ID_HOST:
+		ret = host_ack_unshare(tx);
+		break;
 	case PKVM_ID_GUEST:
 		ret = guest_ack_unshare(tx);
 		break;
@@ -749,6 +778,26 @@ static int host_initiate_unshare(const struct pkvm_mem_transition *tx)
 	u64 prot = pkvm_mkstate(tx->initiator.prot, PKVM_PAGE_OWNED);
 
 	return host_ept_create_idmap_locked(addr, size, 0, prot);
+}
+
+static int guest_initiate_unshare(const struct pkvm_mem_transition *tx)
+{
+	struct pkvm_pgtable *pgt = tx->initiator.guest.pgt;
+	u64 addr = tx->initiator.guest.addr;
+	u64 phys = tx->initiator.guest.phys;
+	u64 size = tx->size;
+	u64 prot = pkvm_mkstate(tx->initiator.prot, PKVM_PAGE_OWNED);
+
+	return pkvm_pgtable_map(pgt, addr, phys, size, 0, prot, NULL);
+}
+
+static int host_complete_unshare(const struct pkvm_mem_transition *tx)
+{
+	u64 addr = tx->completer.host.addr;
+	u64 size = tx->size;
+	u64 owner_id = initiator_owner_id(tx);
+
+	return host_ept_set_owner_locked(addr, size, owner_id);
 }
 
 static int guest_complete_unshare(const struct pkvm_mem_transition *tx)
@@ -769,6 +818,9 @@ static int __do_unshare(struct pkvm_mem_transition *tx)
 	case PKVM_ID_HOST:
 		ret = host_initiate_unshare(tx);
 		break;
+	case PKVM_ID_GUEST:
+		ret = guest_initiate_unshare(tx);
+		break;
 	default:
 		ret = -EINVAL;
 	}
@@ -777,6 +829,9 @@ static int __do_unshare(struct pkvm_mem_transition *tx)
 		return ret;
 
 	switch (tx->completer.id) {
+	case PKVM_ID_HOST:
+		ret = host_complete_unshare(tx);
+		break;
 	case PKVM_ID_GUEST:
 		ret = guest_complete_unshare(tx);
 		break;
@@ -832,6 +887,62 @@ int __pkvm_host_unshare_guest(u64 hpa, struct pkvm_pgtable *guest_pgt,
 
 	ret = do_unshare(&share);
 
+	host_ept_unlock();
+
+	return ret;
+}
+
+static int __pkvm_guest_unshare_host_page(struct pkvm_pgtable *guest_pgt,
+					  u64 gpa, u64 hpa, u64 guest_prot)
+{
+	struct pkvm_mem_transition share = {
+		.size = PAGE_SIZE,
+		.initiator	= {
+			.id	= PKVM_ID_GUEST,
+			.guest	= {
+				.pgt	= guest_pgt,
+				.addr	= gpa,
+				.phys	= hpa,
+			},
+			.prot	= guest_prot,
+		},
+		.completer	= {
+			.id	= PKVM_ID_HOST,
+			.host	= {
+				.addr	= hpa,
+			},
+		},
+	};
+
+	return do_unshare(&share);
+}
+
+int __pkvm_guest_unshare_host(struct pkvm_pgtable *guest_pgt,
+			      u64 gpa, u64 size)
+{
+	unsigned long hpa;
+	u64 prot;
+	int ret;
+
+	host_ept_lock();
+	guest_sept_lock(guest_pgt);
+
+	while (size) {
+		pkvm_pgtable_lookup(guest_pgt, gpa, &hpa, &prot, NULL);
+		if (hpa == INVALID_ADDR) {
+			ret = -EINVAL;
+			break;
+		}
+
+		ret = __pkvm_guest_unshare_host_page(guest_pgt, gpa, hpa, prot);
+		if (ret)
+			break;
+
+		size -= PAGE_SIZE;
+		gpa += PAGE_SIZE;
+	}
+
+	guest_sept_unlock(guest_pgt);
 	host_ept_unlock();
 
 	return ret;
