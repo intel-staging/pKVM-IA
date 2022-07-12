@@ -47,6 +47,16 @@ struct pkvm_mem_transition {
 	struct pkvm_mem_trans_desc	completer;
 };
 
+static void guest_sept_lock(struct pkvm_pgtable *sept)
+{
+	pkvm_spin_lock(&sept_to_shadow_vm(sept)->lock);
+}
+
+static void guest_sept_unlock(struct pkvm_pgtable *sept)
+{
+	pkvm_spin_unlock(&sept_to_shadow_vm(sept)->lock);
+}
+
 static u64 pkvm_init_invalid_leaf_owner(pkvm_id owner_id)
 {
 	/* the page owned by others also means NOPAGE in page state */
@@ -447,6 +457,23 @@ static int host_request_share(const struct pkvm_mem_transition *tx)
 	return __host_check_page_state_range(addr, size, PKVM_PAGE_OWNED);
 }
 
+static int guest_request_share(const struct pkvm_mem_transition *tx)
+{
+	u64 addr = tx->initiator.guest.addr;
+	u64 size = tx->size;
+
+	return __guest_check_page_state_range(tx->initiator.guest.pgt,
+					      addr, size, PKVM_PAGE_OWNED);
+}
+
+static int host_ack_share(const struct pkvm_mem_transition *tx)
+{
+	u64 addr = tx->completer.host.addr;
+	u64 size = tx->size;
+
+	return __host_check_page_state_range(addr, size, PKVM_NOPAGE);
+}
+
 static int guest_ack_share(const struct pkvm_mem_transition *tx)
 {
 	u64 addr = tx->completer.guest.addr;
@@ -464,6 +491,9 @@ static int check_share(const struct pkvm_mem_transition *tx)
 	case PKVM_ID_HOST:
 		ret = host_request_share(tx);
 		break;
+	case PKVM_ID_GUEST:
+		ret = guest_request_share(tx);
+		break;
 	default:
 		ret = -EINVAL;
 	}
@@ -472,6 +502,9 @@ static int check_share(const struct pkvm_mem_transition *tx)
 		return ret;
 
 	switch (tx->completer.id) {
+	case PKVM_ID_HOST:
+		ret = host_ack_share(tx);
+		break;
 	case PKVM_ID_GUEST:
 		ret = guest_ack_share(tx);
 		break;
@@ -487,6 +520,26 @@ static int host_initiate_share(const struct pkvm_mem_transition *tx)
 	u64 addr = tx->initiator.host.addr;
 	u64 size = tx->size;
 	u64 prot = pkvm_mkstate(tx->initiator.prot, PKVM_PAGE_SHARED_OWNED);
+
+	return host_ept_create_idmap_locked(addr, size, 0, prot);
+}
+
+static int guest_initiate_share(const struct pkvm_mem_transition *tx)
+{
+	struct pkvm_pgtable *pgt = tx->initiator.guest.pgt;
+	u64 addr = tx->initiator.guest.addr;
+	u64 phys = tx->initiator.guest.phys;
+	u64 size = tx->size;
+	u64 prot = pkvm_mkstate(tx->initiator.prot, PKVM_PAGE_SHARED_OWNED);
+
+	return pkvm_pgtable_map(pgt, addr, phys, size, 0, prot, NULL);
+}
+
+static int host_complete_share(const struct pkvm_mem_transition *tx)
+{
+	u64 addr = tx->completer.host.addr;
+	u64 size = tx->size;
+	u64 prot = pkvm_mkstate(tx->completer.prot, PKVM_PAGE_SHARED_BORROWED);
 
 	return host_ept_create_idmap_locked(addr, size, 0, prot);
 }
@@ -511,6 +564,9 @@ static int __do_share(const struct pkvm_mem_transition *tx)
 	case PKVM_ID_HOST:
 		ret = host_initiate_share(tx);
 		break;
+	case PKVM_ID_GUEST:
+		ret = guest_initiate_share(tx);
+		break;
 	default:
 		ret = -EINVAL;
 	}
@@ -519,6 +575,9 @@ static int __do_share(const struct pkvm_mem_transition *tx)
 		return ret;
 
 	switch (tx->completer.id) {
+	case PKVM_ID_HOST:
+		ret = host_complete_share(tx);
+		break;
 	case PKVM_ID_GUEST:
 		ret = guest_complete_share(tx);
 		break;
@@ -575,6 +634,66 @@ int __pkvm_host_share_guest(u64 hpa, struct pkvm_pgtable *guest_pgt,
 
 	ret = do_share(&share);
 
+	host_ept_unlock();
+
+	return ret;
+}
+
+static int __pkvm_guest_share_host_page(struct pkvm_pgtable *guest_pgt,
+					u64 gpa, u64 hpa, u64 guest_prot)
+{
+	struct pkvm_mem_transition share = {
+		.size		= PAGE_SIZE,
+		.initiator	= {
+			.id	= PKVM_ID_GUEST,
+			.guest	= {
+				.pgt	= guest_pgt,
+				.addr	= gpa,
+				.phys	= hpa,
+			},
+			.prot	= guest_prot,
+		},
+		.completer	= {
+			.id	= PKVM_ID_HOST,
+			.host	= {
+				.addr	= hpa,
+			},
+			.prot	= HOST_EPT_DEF_MEM_PROT,
+		},
+	};
+
+	return do_share(&share);
+}
+
+int __pkvm_guest_share_host(struct pkvm_pgtable *guest_pgt,
+			    u64 gpa, u64 size)
+{
+	unsigned long hpa;
+	u64 prot;
+	int ret = 0;
+
+	if (!PAGE_ALIGNED(size))
+		return -EINVAL;
+
+	host_ept_lock();
+	guest_sept_lock(guest_pgt);
+
+	while (size) {
+		pkvm_pgtable_lookup(guest_pgt, gpa, &hpa, &prot, NULL);
+		if (hpa == INVALID_ADDR) {
+			ret = -EINVAL;
+			break;
+		}
+
+		ret = __pkvm_guest_share_host_page(guest_pgt, gpa, hpa, prot);
+		if (ret)
+			break;
+
+		size -= PAGE_SIZE;
+		gpa += PAGE_SIZE;
+	}
+
+	guest_sept_unlock(guest_pgt);
 	host_ept_unlock();
 
 	return ret;
