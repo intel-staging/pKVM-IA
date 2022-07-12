@@ -157,4 +157,26 @@ int __pkvm_host_donate_guest(u64 hpa, struct pkvm_pgtable *guest_pgt,
  */
 int __pkvm_host_undonate_guest(u64 hpa, struct pkvm_pgtable *guest_pgt,
 			       u64 gpa, u64 size);
+/*
+ * __pkvm_guest_share_host() - Guest share pages to host, guest still
+ * ownes the pages and host will have temporary access for these pages.
+ *
+ * @guest_pgt:	The guest ept pagetable.
+ * @gpa:	Start gpa of being shared pages, must be continues.
+ * @size:	The size of pages to be shared, should be PAGE_ALIGNED.
+ *
+ * Here no hpa in the paramter, due to the caller don't know it. So the hpa
+ * depends on lookup the guest ept to get it.
+ *
+ * Now the function will share one PAGE at a time, if the size larger than
+ * PAGE_SIZE, it will split it into multiple PAGE_SIZE page and share them using
+ * a loop.
+ *
+ * A range of pages [gpa, gpa + size) in guest ept that it's page state
+ * will be modified from PAGE_OWNED to PAGE_SHARED_OWNED. And there will have
+ * mapping to be created in host ept for addr hpa, and it's page state will be
+ * PAGE_SHARED_BORROWED.
+ */
+int __pkvm_guest_share_host(struct pkvm_pgtable *guest_pgt,
+			    u64 gpa, u64 size);
 #endif
