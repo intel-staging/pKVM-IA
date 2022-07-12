@@ -179,4 +179,26 @@ int __pkvm_host_undonate_guest(u64 hpa, struct pkvm_pgtable *guest_pgt,
  */
 int __pkvm_guest_share_host(struct pkvm_pgtable *guest_pgt,
 			    u64 gpa, u64 size);
+
+/*
+ * __pkvm_guest_unshare_host() - Guest reclaim these pages donated to host.
+ * Then host can't access these pages and guest still ownes it.
+ *
+ * @guest_pgt:	The guest ept pagetable.
+ * @gpa:	Start gpa of being unshared pages, must be continues.
+ * @size:	The size of pages to be unshared, should be PAGE_ALIGNED.
+ *
+ * Here no hpa in the paramter, due to the caller don't know it. So the hpa
+ * depends on lookup the guest ept to get it.
+ *
+ * Now the function will unshare one PAGE at a time, if the size larger than
+ * PAGE_SIZE, it will split it into multiple PAGE_SIZE page and unshare them
+ * using a loop.
+ *
+ * A range of pages [gpa, gpa + size) in guest ept that it's page state will be
+ * modified from PAGE_SHARED_OWNED to PAGE_OWNED. And the mapping for these
+ * pages in host ept will be unmapped and the owner_id will be set to guest_id.
+ */
+int __pkvm_guest_unshare_host(struct pkvm_pgtable *guest_pgt,
+			      u64 gpa, u64 size);
 #endif
