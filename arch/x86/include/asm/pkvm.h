@@ -17,6 +17,12 @@
 #define PKVM_HC_MMIO_ACCESS		6
 #define PKVM_HC_ACTIVATE_IOMMU		7
 
+/* PKVM provided hypercalls for guest use. */
+#define PKVM_GHC_NUM(x)	(x + KVM_HC_PKVM_OP)
+
+#define PKVM_GHC_SHARE_MEM		PKVM_GHC_NUM(1)
+#define PKVM_GHC_UNSHARE_MEM		PKVM_GHC_NUM(2)
+
 /*
  * 15bits for PASID, DO NOT change it, based on it,
  * the size of PASID DIR table can kept as one page
