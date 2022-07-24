@@ -206,6 +206,16 @@ int pkvm_main(struct kvm_vcpu *vcpu)
 			handle_vmxoff(vcpu);
 			skip_instruction = true;
 			break;
+		case EXIT_REASON_VMPTRLD:
+			pkvm_dbg("CPU%d vmexit reason: VMPTRLD.\n", vcpu->cpu);
+			handle_vmptrld(vcpu);
+			skip_instruction = true;
+			break;
+		case EXIT_REASON_VMCLEAR:
+			pkvm_dbg("CPU%d vmexit reason: VMCLEAR.\n", vcpu->cpu);
+			handle_vmclear(vcpu);
+			skip_instruction = true;
+			break;
 		case EXIT_REASON_XSETBV:
 			handle_xsetbv(vcpu);
 			skip_instruction = true;
