@@ -48,6 +48,7 @@
 #include <asm/spec-ctrl.h>
 #include <asm/virtext.h>
 #include <asm/vmx.h>
+#include <asm/kvm_pkvm.h>
 
 #include "capabilities.h"
 #include "cpuid.h"
@@ -6965,6 +6966,8 @@ static void vmx_vcpu_free(struct kvm_vcpu *vcpu)
 	free_vpid(vmx->vpid);
 	nested_vmx_free_vcpu(vcpu);
 	free_loaded_vmcs(vmx->loaded_vmcs);
+
+	pkvm_teardown_shadow_vcpu(vcpu);
 }
 
 static int vmx_vcpu_create(struct kvm_vcpu *vcpu)
@@ -7058,7 +7061,7 @@ static int vmx_vcpu_create(struct kvm_vcpu *vcpu)
 			goto free_vmcs;
 	}
 
-	return 0;
+	return pkvm_init_shadow_vcpu(vcpu);
 
 free_vmcs:
 	free_loaded_vmcs(vmx->loaded_vmcs);
@@ -7100,7 +7103,13 @@ static int vmx_vm_init(struct kvm *kvm)
 			break;
 		}
 	}
-	return 0;
+
+	return pkvm_init_shadow_vm(kvm);
+}
+
+static void vmx_vm_free(struct kvm *kvm)
+{
+	pkvm_teardown_shadow_vm(kvm);
 }
 
 static int __init vmx_check_processor_compat(void)
@@ -7705,6 +7714,7 @@ static struct kvm_x86_ops vmx_x86_ops __initdata = {
 
 	.vm_size = sizeof(struct kvm_vmx),
 	.vm_init = vmx_vm_init,
+	.vm_free = vmx_vm_free,
 
 	.vcpu_create = vmx_vcpu_create,
 	.vcpu_free = vmx_vcpu_free,
