@@ -6,6 +6,7 @@
 #include <pkvm.h>
 
 #include "pkvm_hyp.h"
+#include "vmx.h"
 #include "debug.h"
 
 /**
@@ -223,6 +224,11 @@ static void init_emulated_vmcs_fields(void)
 	max_emulated_fields = j;
 }
 
+static bool is_host_fields(unsigned long field)
+{
+	return (((field) >> 10U) & 0x3U) == 3U;
+}
+
 static void nested_vmx_result(enum VMXResult result, int error_number)
 {
 	u64 rflags = vmcs_readl(GUEST_RFLAGS);
@@ -363,6 +369,163 @@ static bool check_vmx_permission(struct kvm_vcpu *vcpu)
 	return permit;
 }
 
+static void clear_shadow_indicator(struct vmcs *vmcs)
+{
+	vmcs->hdr.shadow_vmcs = 0;
+}
+
+static void set_shadow_indicator(struct vmcs *vmcs)
+{
+	vmcs->hdr.shadow_vmcs = 1;
+}
+
+/* current vmcs is vmcs02 */
+static void copy_shadow_fields_vmcs02_to_vmcs12(struct vcpu_vmx *vmx, struct vmcs12 *vmcs12)
+{
+	const struct shadow_vmcs_field *fields[] = {
+		shadow_read_write_fields,
+		shadow_read_only_fields
+	};
+	const int max_fields[] = {
+		max_shadow_read_write_fields,
+		max_shadow_read_only_fields
+	};
+	struct shadow_vmcs_field field;
+	unsigned long val;
+	int i, q;
+
+	for (q = 0; q < ARRAY_SIZE(fields); q++) {
+		for (i = 0; i < max_fields[q]; i++) {
+			field = fields[q][i];
+			val = __vmcs_readl(field.encoding);
+			if (is_host_fields((field.encoding))) {
+				pkvm_err("%s: field 0x%x is host field, please remove from shadowing!",
+						__func__, field.encoding);
+				continue;
+			}
+			vmcs12_write_any(vmcs12, field.encoding, field.offset, val);
+		}
+	}
+}
+
+/* current vmcs is vmcs02 */
+static void copy_shadow_fields_vmcs12_to_vmcs02(struct vcpu_vmx *vmx, struct vmcs12 *vmcs12)
+{
+	const struct shadow_vmcs_field *fields[] = {
+		shadow_read_write_fields,
+		shadow_read_only_fields
+	};
+	const int max_fields[] = {
+		max_shadow_read_write_fields,
+		max_shadow_read_only_fields
+	};
+	struct shadow_vmcs_field field;
+	unsigned long val;
+	int i, q;
+
+	for (q = 0; q < ARRAY_SIZE(fields); q++) {
+		for (i = 0; i < max_fields[q]; i++) {
+			field = fields[q][i];
+			val = vmcs12_read_any(vmcs12, field.encoding,
+					      field.offset);
+			if (is_host_fields((field.encoding))) {
+				pkvm_err("%s: field 0x%x is host field, please remove from shadowing!",
+						__func__, field.encoding);
+				continue;
+			}
+			__vmcs_writel(field.encoding, val);
+		}
+	}
+}
+
+/* current vmcs is vmcs02*/
+static u64 emulate_field_for_vmcs02(struct vcpu_vmx *vmx, u16 field, u64 virt_val)
+{
+	u64 val = virt_val;
+
+	switch (field) {
+	case VM_ENTRY_CONTROLS:
+		/* L1 host wishes to use its own MSRs for L2 guest?
+		 * emulate it by enabling vmentry load for such guest states
+		 * then use vmcs01 saved guest states as vmcs02's guest states
+		 */
+		if ((val & VM_ENTRY_LOAD_IA32_EFER) != VM_ENTRY_LOAD_IA32_EFER)
+			val |= VM_ENTRY_LOAD_IA32_EFER;
+		if ((val & VM_ENTRY_LOAD_IA32_PAT) != VM_ENTRY_LOAD_IA32_PAT)
+			val |= VM_ENTRY_LOAD_IA32_PAT;
+		if ((val & VM_ENTRY_LOAD_DEBUG_CONTROLS) != VM_ENTRY_LOAD_DEBUG_CONTROLS)
+			val |= VM_ENTRY_LOAD_DEBUG_CONTROLS;
+		break;
+	case VM_EXIT_CONTROLS:
+		/* L1 host wishes to keep use MSRs from L2 guest after its VMExit?
+		 * emulate it by enabling vmexit save for such guest states
+		 * then vmcs01 shall take these guest states as its before L1 VMEntry
+		 *
+		 * And vmcs01 shall still keep enabling vmexit load such guest states as
+		 * pkvm need restore from its host states
+		 */
+		if ((val & VM_EXIT_LOAD_IA32_EFER) != VM_EXIT_LOAD_IA32_EFER)
+			val |= (VM_EXIT_LOAD_IA32_EFER | VM_EXIT_SAVE_IA32_EFER);
+		if ((val & VM_EXIT_LOAD_IA32_PAT) != VM_EXIT_LOAD_IA32_PAT)
+			val |= (VM_EXIT_LOAD_IA32_PAT | VM_EXIT_SAVE_IA32_PAT);
+		/* host always in 64bit mode */
+		val |= VM_EXIT_HOST_ADDR_SPACE_SIZE;
+		break;
+	}
+	return val;
+}
+
+/* current vmcs is vmcs02*/
+static void sync_vmcs12_dirty_fields_to_vmcs02(struct vcpu_vmx *vmx, struct vmcs12 *vmcs12)
+{
+	struct shadow_vmcs_field field;
+	unsigned long val, phys_val;
+	int i;
+
+	if (vmx->nested.dirty_vmcs12) {
+		for (i = 0; i < max_emulated_fields; i++) {
+			field = emulated_fields[i];
+			val = vmcs12_read_any(vmcs12, field.encoding, field.offset);
+			phys_val = emulate_field_for_vmcs02(vmx, field.encoding, val);
+			__vmcs_writel(field.encoding, phys_val);
+		}
+		vmx->nested.dirty_vmcs12 = false;
+	}
+}
+
+static void nested_release_vmcs12(struct kvm_vcpu *vcpu)
+{
+	struct vcpu_vmx *vmx = to_vmx(vcpu);
+	struct pkvm_host_vcpu *pkvm_hvcpu = to_pkvm_hvcpu(vcpu);
+	struct shadow_vcpu_state *cur_shadow_vcpu = pkvm_hvcpu->current_shadow_vcpu;
+	struct vmcs *vmcs02;
+	struct vmcs12 *vmcs12;
+
+	if (vmx->nested.current_vmptr == INVALID_GPA)
+		return;
+
+	/* cur_shadow_vcpu must be valid here */
+	vmcs02 = (struct vmcs *)cur_shadow_vcpu->vmcs02;
+	vmcs12 = (struct vmcs12 *)cur_shadow_vcpu->cached_vmcs12;
+	vmcs_load_track(vmx, vmcs02);
+	copy_shadow_fields_vmcs02_to_vmcs12(vmx, vmcs12);
+
+	vmcs_clear_track(vmx, vmcs02);
+	clear_shadow_indicator(vmcs02);
+
+	/*disable shadowing*/
+	vmcs_load_track(vmx, vmx->loaded_vmcs->vmcs);
+	secondary_exec_controls_clearbit(vmx, SECONDARY_EXEC_SHADOW_VMCS);
+	vmcs_write64(VMCS_LINK_POINTER, INVALID_GPA);
+
+	write_gpa(vcpu, vmx->nested.current_vmptr, vmcs12, VMCS12_SIZE);
+	vmx->nested.dirty_vmcs12 = false;
+	vmx->nested.current_vmptr = INVALID_GPA;
+	pkvm_hvcpu->current_shadow_vcpu = NULL;
+
+	put_shadow_vcpu(cur_shadow_vcpu->shadow_vcpu_handle);
+}
+
 int handle_vmxon(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
@@ -379,6 +542,8 @@ int handle_vmxon(struct kvm_vcpu *vcpu)
 		} else if (!validate_vmcs_revision_id(vcpu, vmptr)) {
 			nested_vmx_result(VMfailInvalid, 0);
 		} else {
+			vmx->nested.current_vmptr = INVALID_GPA;
+			vmx->nested.dirty_vmcs12 = false;
 			vmx->nested.vmxon_ptr = vmptr;
 			vmx->nested.vmxon = true;
 
@@ -398,6 +563,109 @@ int handle_vmxoff(struct kvm_vcpu *vcpu)
 		vmx->nested.vmxon_ptr = INVALID_GPA;
 
 		nested_vmx_result(VMsucceed, 0);
+	}
+
+	return 0;
+}
+
+int handle_vmptrld(struct kvm_vcpu *vcpu)
+{
+	struct vcpu_vmx *vmx = to_vmx(vcpu);
+	struct pkvm_host_vcpu *pkvm_hvcpu = to_pkvm_hvcpu(vcpu);
+	struct shadow_vcpu_state *shadow_vcpu;
+	struct vmcs *vmcs02;
+	struct vmcs12 *vmcs12;
+	gpa_t vmptr;
+	int r;
+
+	if (check_vmx_permission(vcpu)) {
+		if (nested_vmx_get_vmptr(vcpu, &vmptr, &r)) {
+			nested_vmx_result(VMfailValid, VMXERR_VMPTRLD_INVALID_ADDRESS);
+			return r;
+		} else if (vmptr == vmx->nested.vmxon_ptr) {
+			nested_vmx_result(VMfailValid, VMXERR_VMPTRLD_VMXON_POINTER);
+		} else if (!validate_vmcs_revision_id(vcpu, vmptr)) {
+			nested_vmx_result(VMfailValid, VMXERR_VMPTRLD_INCORRECT_VMCS_REVISION_ID);
+		} else {
+			if (vmx->nested.current_vmptr != vmptr) {
+				s64 handle;
+
+				nested_release_vmcs12(vcpu);
+
+				handle = find_shadow_vcpu_handle_by_vmcs(vmptr);
+				shadow_vcpu = handle > 0 ? get_shadow_vcpu(handle) : NULL;
+				if ((handle > 0) && shadow_vcpu) {
+					vmcs02 = (struct vmcs *)shadow_vcpu->vmcs02;
+					vmcs12 = (struct vmcs12 *) shadow_vcpu->cached_vmcs12;
+
+					read_gpa(vcpu, vmptr, vmcs12, VMCS12_SIZE);
+					vmx->nested.dirty_vmcs12 = true;
+
+					if (!shadow_vcpu->vmcs02_inited) {
+						memset(vmcs02, 0, pkvm_hyp->vmcs_config.size);
+						vmcs02->hdr.revision_id = pkvm_hyp->vmcs_config.revision_id;
+						vmcs_load_track(vmx, vmcs02);
+						pkvm_init_host_state_area(pkvm_hvcpu->pcpu, vcpu->cpu);
+						vmcs_writel(HOST_RIP, (unsigned long)__pkvm_vmx_vmexit);
+						shadow_vcpu->last_cpu = vcpu->cpu;
+						shadow_vcpu->vmcs02_inited = true;
+					} else {
+						vmcs_load_track(vmx, vmcs02);
+						if (shadow_vcpu->last_cpu != vcpu->cpu) {
+							pkvm_init_host_state_area(pkvm_hvcpu->pcpu, vcpu->cpu);
+							shadow_vcpu->last_cpu = vcpu->cpu;
+						}
+					}
+					copy_shadow_fields_vmcs12_to_vmcs02(vmx, vmcs12);
+					sync_vmcs12_dirty_fields_to_vmcs02(vmx, vmcs12);
+					vmcs_clear_track(vmx, vmcs02);
+					set_shadow_indicator(vmcs02);
+
+					/* enable shadowing */
+					vmcs_load_track(vmx, vmx->loaded_vmcs->vmcs);
+					vmcs_write64(VMREAD_BITMAP, __pkvm_pa_symbol(vmx_vmread_bitmap));
+					vmcs_write64(VMWRITE_BITMAP, __pkvm_pa_symbol(vmx_vmwrite_bitmap));
+					secondary_exec_controls_setbit(vmx, SECONDARY_EXEC_SHADOW_VMCS);
+					vmcs_write64(VMCS_LINK_POINTER, __pkvm_pa(vmcs02));
+
+					vmx->nested.current_vmptr = vmptr;
+					pkvm_hvcpu->current_shadow_vcpu = shadow_vcpu;
+
+					nested_vmx_result(VMsucceed, 0);
+				} else {
+					nested_vmx_result(VMfailValid, VMXERR_VMPTRLD_INVALID_ADDRESS);
+				}
+			} else {
+				nested_vmx_result(VMsucceed, 0);
+			}
+		}
+	}
+
+	return 0;
+}
+
+int handle_vmclear(struct kvm_vcpu *vcpu)
+{
+	struct vcpu_vmx *vmx = to_vmx(vcpu);
+	gpa_t vmptr;
+	u32 zero = 0;
+	int r;
+
+	if (check_vmx_permission(vcpu)) {
+		if (nested_vmx_get_vmptr(vcpu, &vmptr, &r)) {
+			nested_vmx_result(VMfailValid, VMXERR_VMPTRLD_INVALID_ADDRESS);
+			return r;
+		} else if (vmptr == vmx->nested.vmxon_ptr) {
+			nested_vmx_result(VMfailValid, VMXERR_VMCLEAR_VMXON_POINTER);
+		} else {
+			if (vmx->nested.current_vmptr == vmptr)
+				nested_release_vmcs12(vcpu);
+
+			write_gpa(vcpu, vmptr + offsetof(struct vmcs12, launch_state),
+					&zero, sizeof(zero));
+
+			nested_vmx_result(VMsucceed, 0);
+		}
 	}
 
 	return 0;

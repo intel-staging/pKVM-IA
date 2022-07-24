@@ -35,6 +35,8 @@ struct pkvm_host_vcpu {
 	struct vmcs *vmxarea;
 	struct vmcs *current_vmcs;
 
+	void *current_shadow_vcpu;
+
 	bool pending_nmi;
 };
 
