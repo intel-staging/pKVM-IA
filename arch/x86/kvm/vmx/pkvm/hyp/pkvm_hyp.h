@@ -106,6 +106,9 @@ struct pkvm_shadow_vm {
 	 */
 	struct shadow_ept_desc sept_desc;
 
+	/* The vm_type to indicate if this is a protected VM */
+	u8 vm_type;
+
 	pkvm_spinlock_t lock;
 } __aligned(PAGE_SIZE);
 
@@ -115,8 +118,8 @@ struct pkvm_shadow_vm {
 
 #define sept_to_shadow_vm(_sept) sept_desc_to_shadow_vm(sept_to_shadow_ept_desc(_sept))
 
-int __pkvm_init_shadow_vm(unsigned long kvm_va, unsigned long shadow_pa,
-			  size_t shadow_size);
+int __pkvm_init_shadow_vm(struct kvm_vcpu *hvcpu, unsigned long kvm_va,
+			  unsigned long shadow_pa,  size_t shadow_size);
 unsigned long __pkvm_teardown_shadow_vm(int shadow_vm_handle);
 s64 __pkvm_init_shadow_vcpu(struct kvm_vcpu *hvcpu, int shadow_vm_handle,
 			    unsigned long vcpu_va, unsigned long shadow_pa,
