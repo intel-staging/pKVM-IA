@@ -92,7 +92,7 @@ static unsigned long handle_vmcall(struct kvm_vcpu *vcpu)
 		__pkvm_init_finalise(vcpu, a0, a1);
 		break;
 	case PKVM_HC_INIT_SHADOW_VM:
-		ret = __pkvm_init_shadow_vm(a0, a1, a2);
+		ret = __pkvm_init_shadow_vm(vcpu, a0, a1, a2);
 		break;
 	case PKVM_HC_INIT_SHADOW_VCPU:
 		ret = __pkvm_init_shadow_vcpu(vcpu, a0, a1, a2, a3);
