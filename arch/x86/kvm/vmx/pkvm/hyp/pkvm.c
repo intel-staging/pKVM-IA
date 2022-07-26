@@ -23,6 +23,9 @@ struct shadow_vm_ref {
 };
 static struct shadow_vm_ref shadow_vms_ref[MAX_SHADOW_VMS];
 
+#define SHADOW_VCPU_ARRAY(vm) \
+	((struct shadow_vcpu_array *)((void *)(vm) + sizeof(struct pkvm_shadow_vm)))
+
 static int allocate_shadow_vm_handle(struct pkvm_shadow_vm *vm)
 {
 	struct shadow_vm_ref *vm_ref;
@@ -83,7 +86,8 @@ int __pkvm_init_shadow_vm(unsigned long kvm_va,
 
 	if (!PAGE_ALIGNED(shadow_pa) ||
 		!PAGE_ALIGNED(shadow_size) ||
-		(shadow_size != PAGE_ALIGN(sizeof(struct pkvm_shadow_vm))))
+		(shadow_size != PAGE_ALIGN(sizeof(struct pkvm_shadow_vm)
+					   + pkvm_shadow_vcpu_array_size())))
 		return -EINVAL;
 
 	vm = pkvm_phys_to_virt(shadow_pa);
@@ -102,7 +106,7 @@ unsigned long __pkvm_teardown_shadow_vm(int shadow_vm_handle)
 	if (!vm)
 		return 0;
 
-	memset(vm, 0, sizeof(*vm));
+	memset(vm, 0, sizeof(struct pkvm_shadow_vm) + pkvm_shadow_vcpu_array_size());
 
 	return pkvm_virt_to_phys(vm);
 }
@@ -129,9 +133,52 @@ static void put_shadow_vm(int shadow_vm_handle)
 	WARN_ON(atomic_dec_if_positive(&vm_ref->refcount) <= 0);
 }
 
+struct shadow_vcpu_state *get_shadow_vcpu(s64 shadow_vcpu_handle)
+{
+	int shadow_vm_handle = to_shadow_vm_handle(shadow_vcpu_handle);
+	u32 vcpu_idx = to_shadow_vcpu_idx(shadow_vcpu_handle);
+	struct shadow_vcpu_ref *vcpu_ref;
+	struct shadow_vcpu_state *vcpu;
+	struct pkvm_shadow_vm *vm;
+
+	if (vcpu_idx >= KVM_MAX_VCPUS)
+		return NULL;
+
+	vm = get_shadow_vm(shadow_vm_handle);
+	if (!vm)
+		return NULL;
+
+	vcpu_ref = &SHADOW_VCPU_ARRAY(vm)->ref[vcpu_idx];
+	vcpu = atomic_inc_not_zero(&vcpu_ref->refcount) ? vcpu_ref->vcpu : NULL;
+
+	put_shadow_vm(shadow_vm_handle);
+	return vcpu;
+}
+
+void put_shadow_vcpu(s64 shadow_vcpu_handle)
+{
+	int shadow_vm_handle = to_shadow_vm_handle(shadow_vcpu_handle);
+	u32 vcpu_idx = to_shadow_vcpu_idx(shadow_vcpu_handle);
+	struct shadow_vcpu_ref *vcpu_ref;
+	struct pkvm_shadow_vm *vm;
+
+	if (vcpu_idx >= KVM_MAX_VCPUS)
+		return;
+
+	vm = get_shadow_vm(shadow_vm_handle);
+	if (!vm)
+		return;
+
+	vcpu_ref = &SHADOW_VCPU_ARRAY(vm)->ref[vcpu_idx];
+	WARN_ON(atomic_dec_if_positive(&vcpu_ref->refcount) <= 0);
+
+	put_shadow_vm(shadow_vm_handle);
+}
+
 static s64 attach_shadow_vcpu_to_vm(struct pkvm_shadow_vm *vm,
 				    struct shadow_vcpu_state *shadow_vcpu)
 {
+	struct shadow_vcpu_ref *vcpu_ref;
 	u32 vcpu_idx;
 
 	/*
@@ -160,8 +207,10 @@ static s64 attach_shadow_vcpu_to_vm(struct pkvm_shadow_vm *vm,
 	vcpu_idx = vm->created_vcpus;
 	shadow_vcpu->shadow_vcpu_handle =
 		to_shadow_vcpu_handle(vm->shadow_vm_handle, vcpu_idx);
-	vm->shadow_vcpus[vcpu_idx] = shadow_vcpu;
+	vcpu_ref = &SHADOW_VCPU_ARRAY(vm)->ref[vcpu_idx];
+	vcpu_ref->vcpu = shadow_vcpu;
 	vm->created_vcpus++;
+	atomic_set(&vcpu_ref->refcount, 1);
 
 	pkvm_spin_unlock(&vm->lock);
 
@@ -172,13 +221,24 @@ static struct shadow_vcpu_state *
 detach_shadow_vcpu_from_vm(struct pkvm_shadow_vm *vm, s64 shadow_vcpu_handle)
 {
 	u32 vcpu_idx = to_shadow_vcpu_idx(shadow_vcpu_handle);
-	struct shadow_vcpu_state *shadow_vcpu;
+	struct shadow_vcpu_state *shadow_vcpu = NULL;
+	struct shadow_vcpu_ref *vcpu_ref;
 
 	if (vcpu_idx >= KVM_MAX_VCPUS)
 		return NULL;
 
 	pkvm_spin_lock(&vm->lock);
-	shadow_vcpu = vm->shadow_vcpus[vcpu_idx];
+
+	vcpu_ref = &SHADOW_VCPU_ARRAY(vm)->ref[vcpu_idx];
+	if ((atomic_cmpxchg(&vcpu_ref->refcount, 1, 0) != 1)) {
+		pkvm_err("%s: VM%d shadow_vcpu%d is busy, refcount %d\n",
+			 __func__, vm->shadow_vm_handle, vcpu_idx,
+			 atomic_read(&vcpu_ref->refcount));
+	} else {
+		shadow_vcpu = vcpu_ref->vcpu;
+		vcpu_ref->vcpu = NULL;
+	}
+
 	pkvm_spin_unlock(&vm->lock);
 
 	if (shadow_vcpu)

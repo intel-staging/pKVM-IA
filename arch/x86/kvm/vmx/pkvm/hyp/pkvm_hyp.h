@@ -31,6 +31,25 @@ struct shadow_vcpu_state {
 		 ((vcpu_idx) & SHADOW_VCPU_INDEX_MASK))
 
 /*
+ * Shadow_vcpu_array will be appended to the end of the pkvm_shadow_vm area
+ * implicitly, so that the shadow_vcpu_state pointer cannot be got directly
+ * from the pkvm_shadow_vm, but needs to be done through the interface
+ * get/put_shadow_vcpu. This can prevent the shadow_vcpu_state point been
+ * abused without getting/putting the refcount.
+ */
+struct shadow_vcpu_array {
+	struct shadow_vcpu_ref {
+		atomic_t refcount;
+		struct shadow_vcpu_state *vcpu;
+	} ref[KVM_MAX_VCPUS];
+} __aligned(PAGE_SIZE);
+
+static inline size_t pkvm_shadow_vcpu_array_size(void)
+{
+	return sizeof(struct shadow_vcpu_array);
+}
+
+/*
  *  * Holds the relevant data for running a protected vm.
  *   */
 struct pkvm_shadow_vm {
@@ -44,9 +63,6 @@ struct pkvm_shadow_vm {
 	unsigned long host_kvm_va;
 
 	pkvm_spinlock_t lock;
-
-	/* Array of the shadow state per vcpu. */
-	struct shadow_vcpu_state *shadow_vcpus[KVM_MAX_VCPUS];
 } __aligned(PAGE_SIZE);
 
 int __pkvm_init_shadow_vm(unsigned long kvm_va, unsigned long shadow_pa,
@@ -56,6 +72,8 @@ s64 __pkvm_init_shadow_vcpu(struct kvm_vcpu *hvcpu, int shadow_vm_handle,
 			    unsigned long vcpu_va, unsigned long shadow_pa,
 			    size_t shadow_size);
 unsigned long __pkvm_teardown_shadow_vcpu(s64 shadow_vcpu_handle);
+struct shadow_vcpu_state *get_shadow_vcpu(s64 shadow_vcpu_handle);
+void put_shadow_vcpu(s64 shadow_vcpu_handle);
 
 extern struct pkvm_hyp *pkvm_hyp;
 
