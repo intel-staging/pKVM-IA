@@ -6,6 +6,17 @@
 #define __PKVM_HYP_H
 
 #include "pkvm_spinlock.h"
+#include "pgtable.h"
+
+/*
+ * Descriptor for shadow EPT
+ */
+struct shadow_ept_desc {
+	/* shadow EPTP value configured by pkvm */
+	u64 shadow_eptp;
+
+	struct pkvm_pgtable sept;
+};
 
 /*
  *  * A container for the vcpu state that hyp needs to maintain for protected VMs.
@@ -73,8 +84,17 @@ struct pkvm_shadow_vm {
 	/* The host's kvm va. */
 	unsigned long host_kvm_va;
 
+	/*
+	 * VM's shadow EPT. All vCPU shares one mapping.
+	 * Have potential security issue if some vCPUs are
+	 * in SMM but the others are not.
+	 */
+	struct shadow_ept_desc sept_desc;
+
 	pkvm_spinlock_t lock;
 } __aligned(PAGE_SIZE);
+
+#define sept_desc_to_shadow_vm(desc) container_of(desc, struct pkvm_shadow_vm, sept_desc)
 
 int __pkvm_init_shadow_vm(unsigned long kvm_va, unsigned long shadow_pa,
 			  size_t shadow_size);
