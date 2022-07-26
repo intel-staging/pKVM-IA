@@ -13,6 +13,8 @@
 #define PKVM_MAX_IOMMU_NUM	32
 #define PKVM_MAX_PASID_PDEV_NUM	32
 #define PKVM_MAX_PDEV_NUM	512
+#define PKVM_MAX_NORMAL_VM_NUM	8
+#define PKVM_MAX_SECURE_VM_NUM	2
 
 struct pkvm_pgtable_cap {
 	int level;
