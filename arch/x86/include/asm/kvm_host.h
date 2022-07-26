@@ -1872,8 +1872,16 @@ struct kvm_arch_async_pf {
 	u64 error_code;
 };
 
+struct kvm_pinned_page {
+	struct list_head list;
+	struct page *page;
+};
+
 struct kvm_protected_vm {
 	int shadow_vm_handle;
+
+	struct list_head pinned_pages;
+	spinlock_t pinned_page_lock;
 };
 
 extern u32 __read_mostly kvm_nr_uret_msrs;
