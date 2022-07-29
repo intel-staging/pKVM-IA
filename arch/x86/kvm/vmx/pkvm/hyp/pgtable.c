@@ -546,12 +546,14 @@ int pkvm_pgtable_init(struct pkvm_pgtable *pgt,
 	return 0;
 }
 
-int pkvm_pgtable_map(struct pkvm_pgtable *pgt, unsigned long vaddr_start,
-		     unsigned long phys_start, unsigned long size,
-		     int pgsz_mask, u64 prot, pgtable_leaf_ov_fn_t map_leaf)
+static int __pkvm_pgtable_map(struct pkvm_pgtable *pgt, unsigned long vaddr_start,
+			      unsigned long phys, unsigned long size,
+			      int pgsz_mask, u64 prot, pgtable_leaf_ov_fn_t map_leaf,
+			      u64 annotation)
 {
 	struct pkvm_pgtable_map_data data = {
-		.phys = ALIGN_DOWN(phys_start, PAGE_SIZE),
+		.phys = phys,
+		.annotation = annotation,
 		.prot = prot,
 		.pgsz_mask = pgsz_mask ? pgt->allowed_pgsz & pgsz_mask :
 					 pgt->allowed_pgsz,
@@ -564,6 +566,14 @@ int pkvm_pgtable_map(struct pkvm_pgtable *pgt, unsigned long vaddr_start,
 	};
 
 	return pgtable_walk(pgt, vaddr_start, size, true, &walker);
+}
+
+int pkvm_pgtable_map(struct pkvm_pgtable *pgt, unsigned long vaddr_start,
+		     unsigned long phys_start, unsigned long size,
+		     int pgsz_mask, u64 prot, pgtable_leaf_ov_fn_t map_leaf)
+{
+	return __pkvm_pgtable_map(pgt, vaddr_start, ALIGN_DOWN(phys_start, PAGE_SIZE),
+				  size, pgsz_mask, prot, map_leaf, 0);
 }
 
 int pkvm_pgtable_unmap(struct pkvm_pgtable *pgt, unsigned long vaddr_start,
@@ -637,19 +647,10 @@ void pkvm_pgtable_destroy(struct pkvm_pgtable *pgt, pgtable_leaf_ov_fn_t free_le
 int pkvm_pgtable_annotate(struct pkvm_pgtable *pgt, unsigned long addr,
 			  unsigned long size, u64 annotation)
 {
-	struct pkvm_pgtable_map_data map_data = {
-		.phys		= INVALID_ADDR,
-		.pgsz_mask	= (1 << PG_LEVEL_4K),
-		.annotation	= annotation,
-	};
-	struct pkvm_pgtable_walker walker = {
-		.cb		= pgtable_map_cb,
-		.flags		= PKVM_PGTABLE_WALK_LEAF,
-		.arg		= &map_data,
-	};
-
 	if (pgt->pgt_ops->pgt_entry_present(&annotation))
 		return -EINVAL;
 
-	return pgtable_walk(pgt, addr, size, true, &walker);
+	return __pkvm_pgtable_map(pgt, addr, INVALID_ADDR,
+				  size, 1 << PG_LEVEL_4K, 0,
+				  NULL, annotation);
 }
