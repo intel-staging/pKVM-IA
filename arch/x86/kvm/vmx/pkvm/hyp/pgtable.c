@@ -264,8 +264,8 @@ static int pgtable_unmap_cb(struct pkvm_pgtable *pgt, unsigned long vaddr,
 	unsigned long size = page_level_size(level);
 	void *child_ptep;
 
-	if (!pgt_ops->pgt_entry_present(ptep))
-		/* Nothing to do if the entry is not present */
+	if (!pgt_ops->pgt_entry_mapped(ptep))
+		/* Nothing to do if the entry is not mapped */
 		return 0;
 
 	/*
@@ -283,7 +283,8 @@ static int pgtable_unmap_cb(struct pkvm_pgtable *pgt, unsigned long vaddr,
 		}
 
 		pgtable_set_entry(pgt_ops, mm_ops, ptep, 0);
-		flush_data->flushtlb |= true;
+		if (pgt_ops->pgt_entry_present(ptep))
+			flush_data->flushtlb |= true;
 		mm_ops->put_page(ptep);
 
 		data->phys = ALIGN_DOWN(data->phys, size);
@@ -370,8 +371,9 @@ static int pgtable_free_leaf(struct pkvm_pgtable *pgt,
 			     struct pgt_flush_data *flush_data,
 			     void *ptep)
 {
-	if (pgt->pgt_ops->pgt_entry_present(ptep)) {
-		flush_data->flushtlb |= true;
+	if (pgt->pgt_ops->pgt_entry_mapped(ptep)) {
+		if (pgt->pgt_ops->pgt_entry_present(ptep))
+			flush_data->flushtlb |= true;
 		pgt->mm_ops->put_page(ptep);
 	}
 
