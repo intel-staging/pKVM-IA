@@ -177,6 +177,14 @@ void host_ept_unlock(void)
 	pkvm_spin_unlock(&_host_ept_lock);
 }
 
+static void ept_mk_nopresent(struct pkvm_pgtable *pgt, void *ptep)
+{
+	u64 val;
+
+	val = READ_ONCE(*(u64 *)ptep) & ~VMX_EPT_RWX_MASK;
+	pgt->pgt_ops->pgt_set_entry(ptep, val);
+}
+
 static void reset_rsvds_bits_mask_ept(struct rsvd_bits_validate *rsvd_check,
 				      u64 pa_bits_rsvd, bool execonly,
 				      int huge_page_level)
@@ -360,26 +368,112 @@ static int pkvm_shadow_ept_free_leaf(struct pkvm_pgtable *pgt, unsigned long vad
 {
 	unsigned long phys = pgt->pgt_ops->pgt_entry_to_phys(ptep);
 	unsigned long size = pgt->pgt_ops->pgt_level_to_size(level);
+	struct pkvm_shadow_vm *vm = sept_to_shadow_vm(pgt);
+	int ret = 0;
 
-	if (pgt->pgt_ops->pgt_entry_present(ptep)) {
-		int ret;
+	/*
+	 * For normal VM, call __pkvm_host_unshare_guest() to unshare all previous
+	 * shared pages, the page table entry with present bits indicate the page
+	 * was shared before.
+	 *
+	 * For protected VM, call __pkvm_host_undonate_guest() to undonate all
+	 * previous donated pages, the donated pages are indicated by their page
+	 * table entry whose page state show it owned this page - check by API
+	 * owned_this_page(). The reason to check page state is because for
+	 * invalidation operation(below) of a protected VM, we will make the page
+	 * table entry non-present while still keep its page state information in
+	 * the page table entry. So either a donated page is invalidated or not,
+	 * it's kept in donated state.
+	 *
+	 * And the pgtable_free_cb in this current page walker is still walking
+	 * the shadow EPT so cannot allow the  __pkvm_host_unshare_guest()
+	 * or __pkvm_host_undonate_guest() release shadow EPT table pages. So
+	 * we shall get_page befor these APIs called, then put_page to allow
+	 * pgtable_free_cb free table pages with correct refcount.
+	 *
+	 */
+	switch (vm->vm_type) {
+	case KVM_X86_DEFAULT_VM:
+		if (pgt->pgt_ops->pgt_entry_present(ptep)) {
+			pgt->mm_ops->get_page(ptep);
+			ret = __pkvm_host_unshare_guest(phys, pgt, vaddr, size);
+			pgt->mm_ops->put_page(ptep);
+			flush_data->flushtlb |= true;
+		}
+		break;
+	case KVM_X86_PROTECTED_VM:
+		if (owned_this_page(ptep)) {
+			void *virt = pgt->mm_ops->phys_to_virt(phys);
 
-		/*
-		 * The pgtable_free_cb in this current page walker is still walking
-		 * the shadow EPT so cannot allow the  __pkvm_host_unshare_guest()
-		 * release shadow EPT table pages.
-		 *
-		 * The table pages will be freed later by the pgtable_free_cb itself.
-		 */
+			/*
+			 * before return to host, the page previously owned by
+			 * protected VM shall be memset to 0 to avoid secret leakage.
+			 */
+			memset(virt, 0, size);
+
+			pgt->mm_ops->get_page(ptep);
+			ret = __pkvm_host_undonate_guest(phys, pgt, vaddr, size);
+			pgt->mm_ops->put_page(ptep);
+			flush_data->flushtlb |= true;
+		}
+		break;
+	default:
+		ret = -EINVAL;
+		break;
+	}
+
+	if (ret)
+		pkvm_err("%s failed: ret %d vm_type %d phys 0x%lx GPA 0x%lx size 0x%lx\n",
+			 __func__, ret, vm->vm_type, phys, vaddr, size);
+
+	return ret;
+}
+
+static int pkvm_shadow_ept_invalidate_leaf(struct pkvm_pgtable *pgt, unsigned long vaddr,
+					   int level, void *ptep, struct pgt_flush_data *flush_data,
+					   void *arg)
+{
+	unsigned long phys = pgt->pgt_ops->pgt_entry_to_phys(ptep);
+	unsigned long size = pgt->pgt_ops->pgt_level_to_size(level);
+	struct pkvm_shadow_vm *vm = sept_to_shadow_vm(pgt);
+	int ret = 0;
+
+	if (!pgt->pgt_ops->pgt_entry_present(ptep))
+		return 0;
+
+	/*
+	 * We need do invalidation for all present page table entry.
+	 *
+	 * For normal VM, do same as free_leaf, unshare the page from guest,
+	 * and do not allow the __pkvm_host_unshare_guest() release shadow
+	 * EPT table pages.
+	 *
+	 * For protected VM, from security consideration, we shall not allow a
+	 * donated page to be undonated back to host during ept invalidation,
+	 * as it will cause secret leakage during runtime; so we just make the
+	 * page table entry not present and keep all the other page entry information
+	 * like page state, ADDR, PAGE_SIZE etc.
+	 */
+	switch(vm->vm_type) {
+	case KVM_X86_DEFAULT_VM:
 		pgt->mm_ops->get_page(ptep);
 		ret = __pkvm_host_unshare_guest(phys, pgt, vaddr, size);
 		pgt->mm_ops->put_page(ptep);
 		flush_data->flushtlb |= true;
-
-		return ret;
+		break;
+	case KVM_X86_PROTECTED_VM:
+		ept_mk_nopresent(pgt, ptep);
+		flush_data->flushtlb |= true;
+		break;
+	default:
+		ret = -EINVAL;
+		break;
 	}
 
-	return 0;
+	if (ret)
+		pkvm_err("%s failed: ret %d vm_type %d phys 0x%lx GPA 0x%lx size 0x%lx\n",
+			 __func__, ret, vm->vm_type, phys, vaddr, size);
+	return ret;
 }
 
 void pkvm_invalidate_shadow_ept(struct shadow_ept_desc *desc)
@@ -393,7 +487,7 @@ void pkvm_invalidate_shadow_ept(struct shadow_ept_desc *desc)
 	if (!is_valid_eptp(desc->shadow_eptp))
 		goto out;
 
-	pkvm_pgtable_unmap(sept, 0, size, pkvm_shadow_ept_free_leaf);
+	pkvm_pgtable_unmap(sept, 0, size, pkvm_shadow_ept_invalidate_leaf);
 
 	flush_ept(desc->shadow_eptp);
 out:
