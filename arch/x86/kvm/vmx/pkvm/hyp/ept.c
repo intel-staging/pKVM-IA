@@ -30,7 +30,7 @@ static pkvm_spinlock_t _host_ept_lock = __PKVM_SPINLOCK_UNLOCKED;
 static struct pkvm_pool shadow_ept_pool;
 static struct rsvd_bits_validate ept_zero_check;
 
-static void flush_tlb_noop(void) { };
+static void flush_tlb_noop(struct pkvm_pgtable *pgt) { };
 static void *host_ept_zalloc_page(void)
 {
 	return pkvm_alloc_pages(&host_ept_pool, 0);
@@ -52,7 +52,7 @@ static void host_ept_flush_cache(void *vaddr, unsigned int size)
 		pkvm_clflush_cache_range(vaddr, size);
 }
 
-static void host_ept_flush_tlb(void)
+static void host_ept_flush_tlb(struct pkvm_pgtable *pgt)
 {
 	struct pkvm_host_vcpu *hvcpu;
 	int i;
