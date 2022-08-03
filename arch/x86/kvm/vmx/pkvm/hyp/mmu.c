@@ -187,7 +187,8 @@ int pkvm_mmu_map(unsigned long vaddr_start, unsigned long phys_start,
 {
 	int ret;
 
-	ret = pkvm_pgtable_map(&hyp_mmu, vaddr_start, phys_start, size, pgsz_mask, prot);
+	ret = pkvm_pgtable_map(&hyp_mmu, vaddr_start, phys_start, size,
+			pgsz_mask, prot, NULL);
 
 	return ret;
 }
@@ -196,7 +197,7 @@ int pkvm_mmu_unmap(unsigned long vaddr_start, unsigned long size)
 {
 	int ret;
 
-	ret = pkvm_pgtable_unmap(&hyp_mmu, vaddr_start, size);
+	ret = pkvm_pgtable_unmap(&hyp_mmu, vaddr_start, size, NULL);
 
 	return ret;
 }

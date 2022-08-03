@@ -19,17 +19,6 @@ struct pgt_walk_data {
 	struct pkvm_pgtable_walker *walker;
 };
 
-struct pkvm_pgtable_map_data {
-	unsigned long phys;
-	u64 annotation;
-	u64 prot;
-	int pgsz_mask;
-};
-
-struct pkvm_pgtable_unmap_data {
-	unsigned long phys;
-};
-
 struct pkvm_pgtable_lookup_data {
 	unsigned long vaddr;
 	unsigned long phys;
@@ -107,20 +96,15 @@ static void pgtable_split(struct pkvm_pgtable_ops *pgt_ops,
 	}
 }
 
-static int pgtable_map_try_leaf(struct pkvm_pgtable *pgt, unsigned long vaddr,
-				unsigned long vaddr_end, int level, void *ptep,
-				struct pgt_flush_data *flush_data,
-				struct pkvm_pgtable_map_data *data)
+static int pgtable_map_leaf(struct pkvm_pgtable *pgt,
+			    unsigned long vaddr,
+			    int level, void *ptep,
+			    struct pgt_flush_data *flush_data,
+			    struct pkvm_pgtable_map_data *data)
 {
 	struct pkvm_pgtable_ops *pgt_ops = pgt->pgt_ops;
 	struct pkvm_mm_ops *mm_ops = pgt->mm_ops;
 	u64 old = *(u64 *)ptep, new;
-
-	if (!leaf_mapping_allowed(pgt_ops, vaddr, vaddr_end,
-				 data->phys, data->pgsz_mask, level)) {
-		/* The 4K page shall be able to map, otherwise return err */
-		return (level == PG_LEVEL_4K ? -EINVAL : -E2BIG);
-	}
 
 	if (pkvm_phys_is_valid(data->phys)) {
 		new = data->phys | data->prot;
@@ -151,6 +135,23 @@ set_pte:
 		data->phys += page_level_size(level);
 
 	return 0;
+}
+
+static int pgtable_map_try_leaf(struct pkvm_pgtable *pgt, unsigned long vaddr,
+				unsigned long vaddr_end, int level, void *ptep,
+				struct pgt_flush_data *flush_data,
+				struct pkvm_pgtable_map_data *data)
+{
+	if (!leaf_mapping_allowed(pgt->pgt_ops, vaddr, vaddr_end,
+				 data->phys, data->pgsz_mask, level)) {
+		/* The 4K page shall be able to map, otherwise return err */
+		return (level == PG_LEVEL_4K ? -EINVAL : -E2BIG);
+	}
+
+	if (data->map_leaf_override)
+		return data->map_leaf_override(pgt, vaddr, level, ptep, flush_data, data);
+	else
+		return pgtable_map_leaf(pgt, vaddr, level, ptep, flush_data, data);
 }
 
 static int pgtable_map_walk_leaf(struct pkvm_pgtable *pgt,
@@ -250,6 +251,33 @@ static inline void *get_page_from_freelist(struct list_head *head)
 	return (void *)node;
 }
 
+static int pgtable_unmap_leaf(struct pkvm_pgtable *pgt, unsigned long vaddr,
+			      int level, void *ptep, struct pgt_flush_data *flush_data,
+			      void *const arg)
+{
+	struct pkvm_pgtable_unmap_data *data = arg;
+	struct pkvm_pgtable_ops *pgt_ops = pgt->pgt_ops;
+	struct pkvm_mm_ops *mm_ops = pgt->mm_ops;
+	unsigned long size = page_level_size(level);
+
+	if (data->phys != INVALID_ADDR) {
+		unsigned long phys = pgt_ops->pgt_entry_to_phys(ptep);
+
+		PKVM_ASSERT(phys == data->phys);
+	}
+
+	pgt_ops->pgt_set_entry(ptep, 0);
+	flush_data->flushtlb |= true;
+	mm_ops->put_page(ptep);
+
+	if (data->phys != INVALID_ADDR) {
+		data->phys = ALIGN_DOWN(data->phys, size);
+		data->phys += size;
+	}
+
+	return 0;
+}
+
 static int pgtable_unmap_cb(struct pkvm_pgtable *pgt, unsigned long vaddr,
 			    unsigned long vaddr_end, int level, void *ptep,
 			    unsigned long flags, struct pgt_flush_data *flush_data,
@@ -271,21 +299,12 @@ static int pgtable_unmap_cb(struct pkvm_pgtable *pgt, unsigned long vaddr,
 	if (level == PG_LEVEL_4K || (pgt_ops->pgt_entry_huge(ptep) &&
 				     leaf_mapping_valid(pgt_ops, vaddr, vaddr_end,
 							1 << level, level))) {
-		if (data->phys != INVALID_ADDR) {
-			unsigned long phys = pgt_ops->pgt_entry_to_phys(ptep);
-
-			PKVM_ASSERT(phys == data->phys);
-		}
-
-		pgt_ops->pgt_set_entry(ptep, 0);
-		flush_data->flushtlb |= true;
-		mm_ops->put_page(ptep);
-
-		if (data->phys != INVALID_ADDR) {
-			data->phys = ALIGN_DOWN(data->phys, size);
-			data->phys += size;
-		}
-		return 0;
+		if (data->unmap_leaf_override)
+			return data->unmap_leaf_override(pgt, vaddr, level, ptep,
+					flush_data, data);
+		else
+			return pgtable_unmap_leaf(pgt, vaddr, level, ptep,
+					flush_data, data);
 	}
 
 	if (pgt_ops->pgt_entry_huge(ptep)) {
@@ -362,6 +381,18 @@ static int pgtable_lookup_cb(struct pkvm_pgtable *pgt,
 	return PGTABLE_WALK_DONE;
 }
 
+static int pgtable_free_leaf(struct pkvm_pgtable *pgt,
+			     struct pgt_flush_data *flush_data,
+			     void *ptep)
+{
+	if (pgt->pgt_ops->pgt_entry_present(ptep)) {
+		flush_data->flushtlb |= true;
+		pgt->mm_ops->put_page(ptep);
+	}
+
+	return 0;
+}
+
 static int pgtable_free_cb(struct pkvm_pgtable *pgt,
 			    unsigned long vaddr,
 			    unsigned long vaddr_end,
@@ -371,17 +402,18 @@ static int pgtable_free_cb(struct pkvm_pgtable *pgt,
 			    struct pgt_flush_data *flush_data,
 			    void *const arg)
 {
+	struct pkvm_pgtable_free_data *data = arg;
 	struct pkvm_pgtable_ops *pgt_ops = pgt->pgt_ops;
 	struct pkvm_mm_ops *mm_ops = pgt->mm_ops;
 	phys_addr_t phys;
 	void *virt;
 
 	if (pgt_ops->pgt_entry_is_leaf(ptep, level)) {
-		if (pgt_ops->pgt_entry_present(ptep)) {
-			flush_data->flushtlb |= true;
-			mm_ops->put_page(ptep);
-		}
-		return 0;
+		if (data->free_leaf_override)
+			return data->free_leaf_override(pgt, vaddr, level, ptep,
+							flush_data, data);
+		else
+			return pgtable_free_leaf(pgt, flush_data, ptep);
 	}
 
 	/* Free the child page */
@@ -526,7 +558,8 @@ int pkvm_pgtable_init(struct pkvm_pgtable *pgt,
 
 static int __pkvm_pgtable_map(struct pkvm_pgtable *pgt, unsigned long vaddr_start,
 		     unsigned long phys, unsigned long size,
-		     int pgsz_mask, u64 prot, u64 annotation)
+		     int pgsz_mask, u64 prot, pgtable_leaf_ov_fn_t map_leaf,
+		     u64 annotation)
 {
 	struct pkvm_pgtable_map_data data = {
 		.phys = phys,
@@ -534,6 +567,7 @@ static int __pkvm_pgtable_map(struct pkvm_pgtable *pgt, unsigned long vaddr_star
 		.prot = prot,
 		.pgsz_mask = pgsz_mask ? pgt->allowed_pgsz & pgsz_mask :
 					 pgt->allowed_pgsz,
+		.map_leaf_override = map_leaf,
 	};
 	struct pkvm_pgtable_walker walker = {
 		.cb = pgtable_map_cb,
@@ -546,17 +580,18 @@ static int __pkvm_pgtable_map(struct pkvm_pgtable *pgt, unsigned long vaddr_star
 
 int pkvm_pgtable_map(struct pkvm_pgtable *pgt, unsigned long vaddr_start,
 		     unsigned long phys_start, unsigned long size,
-		     int pgsz_mask, u64 prot)
+		     int pgsz_mask, u64 prot, pgtable_leaf_ov_fn_t map_leaf)
 {
 	return __pkvm_pgtable_map(pgt, vaddr_start, ALIGN_DOWN(phys_start, PAGE_SIZE),
-				  size, pgsz_mask, prot, 0);
+				  size, pgsz_mask, prot, map_leaf, 0);
 }
 
 int pkvm_pgtable_unmap(struct pkvm_pgtable *pgt, unsigned long vaddr_start,
-		       unsigned long size)
+		       unsigned long size, pgtable_leaf_ov_fn_t unmap_leaf)
 {
 	struct pkvm_pgtable_unmap_data data = {
 		.phys = INVALID_ADDR,
+		.unmap_leaf_override = unmap_leaf,
 	};
 	struct pkvm_pgtable_walker walker = {
 		.cb = pgtable_unmap_cb,
@@ -568,10 +603,12 @@ int pkvm_pgtable_unmap(struct pkvm_pgtable *pgt, unsigned long vaddr_start,
 }
 
 int pkvm_pgtable_unmap_safe(struct pkvm_pgtable *pgt, unsigned long vaddr_start,
-			    unsigned long phys_start, unsigned long size)
+			    unsigned long phys_start, unsigned long size,
+			    pgtable_leaf_ov_fn_t unmap_leaf)
 {
 	struct pkvm_pgtable_unmap_data data = {
 		.phys = ALIGN_DOWN(phys_start, PAGE_SIZE),
+		.unmap_leaf_override = unmap_leaf,
 	};
 	struct pkvm_pgtable_walker walker = {
 		.cb = pgtable_unmap_cb,
@@ -612,13 +649,17 @@ retry:
 		*plevel = data.level;
 }
 
-void pkvm_pgtable_destroy(struct pkvm_pgtable *pgt)
+void pkvm_pgtable_destroy(struct pkvm_pgtable *pgt, pgtable_leaf_ov_fn_t free_leaf)
 {
 	unsigned long size;
 	void *virt_root;
 	struct pkvm_pgtable_ops *pgt_ops;
+	struct pkvm_pgtable_free_data data = {
+		.free_leaf_override = free_leaf,
+	};
 	struct pkvm_pgtable_walker walker = {
 		.cb 	= pgtable_free_cb,
+		.arg 	= &data,
 		.flags 	= PKVM_PGTABLE_WALK_LEAF | PKVM_PGTABLE_WALK_TABLE_POST,
 	};
 
@@ -642,5 +683,5 @@ int pkvm_pgtable_annotate(struct pkvm_pgtable *pgt, unsigned long addr,
 		return -EINVAL;
 
 	return __pkvm_pgtable_map(pgt, addr, INVALID_ADDR, size,
-			1 << PG_LEVEL_4K, 0, annotation);
+			1 << PG_LEVEL_4K, 0, NULL, annotation);
 }

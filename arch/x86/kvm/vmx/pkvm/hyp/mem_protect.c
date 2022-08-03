@@ -74,7 +74,7 @@ static int host_ept_set_owner_locked(phys_addr_t addr, u64 size, pkvm_id owner_i
 
 static int host_ept_create_idmap_locked(u64 addr, u64 size, int pgsz_mask, u64 prot)
 {
-	return pkvm_pgtable_map(pkvm_hyp->host_vm.ept, addr, addr, size, pgsz_mask, prot);
+	return pkvm_pgtable_map(pkvm_hyp->host_vm.ept, addr, addr, size, pgsz_mask, prot, NULL);
 }
 
 static int
@@ -374,7 +374,7 @@ static int guest_complete_share(const struct pkvm_mem_transition *tx)
 	u64 prot = tx->completer.prot;
 
 	prot = pkvm_mkstate(prot, PKVM_PAGE_SHARED_BORROWED);
-	return pkvm_pgtable_map(pgt, addr, phys, size, 0, prot);
+	return pkvm_pgtable_map(pgt, addr, phys, size, 0, prot, NULL);
 }
 
 static int __do_share(const struct pkvm_mem_transition *tx)
@@ -513,7 +513,7 @@ static int guest_complete_unshare(const struct pkvm_mem_transition *tx)
 	u64 phys = tx->completer.guest.phys;
 	u64 size = tx->size;
 
-	return pkvm_pgtable_unmap_safe(pgt, addr, phys, size);
+	return pkvm_pgtable_unmap_safe(pgt, addr, phys, size, NULL);
 }
 
 static int __do_unshare(struct pkvm_mem_transition *tx)
