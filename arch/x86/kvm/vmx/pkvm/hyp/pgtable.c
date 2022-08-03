@@ -19,6 +19,7 @@ struct pgt_walk_data {
 
 struct pkvm_pgtable_map_data {
 	unsigned long phys;
+	u64 annotation;
 	u64 prot;
 	int pgsz_mask;
 };
@@ -33,6 +34,21 @@ struct pkvm_pgtable_lookup_data {
 	u64 prot;
 	int level;
 };
+
+static bool pkvm_phys_is_valid(u64 phys)
+{
+	return phys != INVALID_ADDR;
+}
+
+static bool pgtable_pte_is_counted(u64 pte)
+{
+	/*
+	 * Due to we use the invalid pte to record the page ownership,
+	 * the refcount tracks both valid and invalid pte if the pte is
+	 * not 0.
+	 */
+	return !!pte;
+}
 
 static bool leaf_mapping_allowed(struct pkvm_pgtable_ops *pgt_ops,
 				unsigned long vaddr,
@@ -49,7 +65,7 @@ static bool leaf_mapping_allowed(struct pkvm_pgtable_ops *pgt_ops,
 	if (!IS_ALIGNED(vaddr, page_size))
 		return false;
 
-	if (!IS_ALIGNED(phys, page_size))
+	if (pkvm_phys_is_valid(phys) && !IS_ALIGNED(phys, page_size))
 		return false;
 
 	if (page_size > (vaddr_end - vaddr))
@@ -95,7 +111,7 @@ static int pgtable_map_try_leaf(struct pkvm_pgtable *pgt, unsigned long vaddr,
 {
 	struct pkvm_pgtable_ops *pgt_ops = pgt->pgt_ops;
 	struct pkvm_mm_ops *mm_ops = pgt->mm_ops;
-	u64 new;
+	u64 old = *(u64 *)ptep, new;
 
 	if (!leaf_mapping_allowed(pgt_ops, vaddr, vaddr_end,
 				 data->phys, data->pgsz_mask, level)) {
@@ -103,20 +119,28 @@ static int pgtable_map_try_leaf(struct pkvm_pgtable *pgt, unsigned long vaddr,
 		return (level == PG_LEVEL_4K ? -EINVAL: -E2BIG);
 	}
 
-	new = data->phys | data->prot;
-	if (level != PG_LEVEL_4K)
-		pgt_ops->pgt_entry_mkhuge(&new);
+	if (pkvm_phys_is_valid(data->phys)) {
+		new = data->phys | data->prot;
+		if (level != PG_LEVEL_4K)
+			pgt_ops->pgt_entry_mkhuge(&new);
+	} else {
+		new = data->annotation;
+	}
 
-	if (pgt_ops->pgt_entry_present(ptep)) {
-		pgtable_set_entry(pgt_ops, mm_ops, ptep, 0);
-		flush_data->flushtlb |= true;
+	if (pgtable_pte_is_counted(old)) {
+		if (pgt_ops->pgt_entry_present(ptep)) {
+			pgtable_set_entry(pgt_ops, mm_ops, ptep, 0);
+			flush_data->flushtlb |= true;
+		}
 		mm_ops->put_page(ptep);
 	}
 
-	mm_ops->get_page(ptep);
-	pgtable_set_entry(pgt_ops, mm_ops, ptep, new);
+	if (pgtable_pte_is_counted(new))
+		mm_ops->get_page(ptep);
 
-	data->phys += page_level_size(level);
+	pgtable_set_entry(pgt_ops, mm_ops, ptep, new);
+	if (pkvm_phys_is_valid(data->phys))
+		data->phys += page_level_size(level);
 
 	return 0;
 }
@@ -567,4 +591,29 @@ void pkvm_pgtable_destroy(struct pkvm_pgtable *pgt)
 	pgtable_walk(pgt, 0, size, true, &walker);
 	virt_root = pgt->mm_ops->phys_to_virt(pgt->root_pa);
 	pgt->mm_ops->put_page(virt_root);
+}
+
+/*
+ * pkvm_pgtable_annotate() - Unmap and annotate pages to track ownership.
+ * @annotation:		The value stored in the invalid pte.
+ * 			@annotation[2:0] must be 0.
+ */
+int pkvm_pgtable_annotate(struct pkvm_pgtable *pgt, unsigned long addr,
+			  unsigned long size, u64 annotation)
+{
+	struct pkvm_pgtable_map_data map_data = {
+		.phys		= INVALID_ADDR,
+		.pgsz_mask	= (1 << PG_LEVEL_4K),
+		.annotation	= annotation,
+	};
+	struct pkvm_pgtable_walker walker = {
+		.cb		= pgtable_map_cb,
+		.flags		= PKVM_PGTABLE_WALK_LEAF,
+		.arg		= &map_data,
+	};
+
+	if (pgt->pgt_ops->pgt_entry_present(&annotation))
+		return -EINVAL;
+
+	return pgtable_walk(pgt, addr, size, true, &walker);
 }
