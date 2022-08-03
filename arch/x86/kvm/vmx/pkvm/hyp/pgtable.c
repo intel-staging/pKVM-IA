@@ -173,6 +173,31 @@ static int pgtable_map_cb(struct pkvm_pgtable *pgt, unsigned long vaddr,
 	return -EINVAL;
 }
 
+/*
+ * put_page_to_free_list(): the page added to the freelist should not be using
+ * by any one as this page will be used as a node linked to the freelist.
+ */
+static inline void put_page_to_freelist(void *page, struct list_head *head)
+{
+	struct list_head *node = page;
+
+	list_add_tail(node, head);
+}
+
+/*
+ * get_page_to_free_list(): the page got from the freelist is valid to be used
+ * again.
+ */
+static inline void *get_page_from_freelist(struct list_head *head)
+{
+	struct list_head *node = head->next;
+
+	list_del(node);
+	memset(node, 0, sizeof(struct list_head));
+
+	return (void *)node;
+}
+
 static int pgtable_unmap_cb(struct pkvm_pgtable *pgt, unsigned long vaddr,
 			    unsigned long vaddr_end, int level, void *ptep,
 			    unsigned long flags, struct pgt_flush_data *flush_data,
@@ -242,7 +267,7 @@ static int pgtable_unmap_cb(struct pkvm_pgtable *pgt, unsigned long vaddr,
 	if (mm_ops->page_count(child_ptep) == 1) {
 		pgt_ops->pgt_set_entry(ptep, 0);
 		mm_ops->put_page(ptep);
-		mm_ops->put_page(child_ptep);
+		put_page_to_freelist(child_ptep, &flush_data->free_list);
 	}
 
 	return 0;
@@ -276,7 +301,7 @@ static int pgtable_free_cb(struct pkvm_pgtable *pgt,
 	if (mm_ops->page_count(virt) == 1) {
 		pgt_ops->pgt_set_entry(ptep, 0);
 		mm_ops->put_page(ptep);
-		mm_ops->put_page(virt);
+		put_page_to_freelist(virt, &flush_data->free_list);
 	}
 
 	return 0;
@@ -356,6 +381,7 @@ int pgtable_walk(struct pkvm_pgtable *pgt, unsigned long vaddr,
 		.pgt = pgt,
 		.flush_data = {
 			.flushtlb = false,
+			.free_list = LIST_HEAD_INIT(data.flush_data.free_list),
 		},
 		.vaddr = aligned_vaddr,
 		.vaddr_end = aligned_vaddr + ALIGN(size, PAGE_SIZE),
@@ -369,8 +395,14 @@ int pgtable_walk(struct pkvm_pgtable *pgt, unsigned long vaddr,
 
 	ret = _pgtable_walk(&data, mm_ops->phys_to_virt(pgt->root_pa), pgt->level);
 
-	if (data.flush_data.flushtlb)
+	if (data.flush_data.flushtlb || !list_empty(&data.flush_data.free_list))
 		pgt->mm_ops->flush_tlb();
+
+	while (!list_empty(&data.flush_data.free_list)) {
+		void *page = get_page_from_freelist(&data.flush_data.free_list);
+
+		pgt->mm_ops->put_page(page);
+	}
 
 	return ret;
 }

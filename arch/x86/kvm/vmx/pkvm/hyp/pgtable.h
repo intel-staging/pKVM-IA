@@ -43,10 +43,7 @@ struct pkvm_pgtable {
 
 struct pgt_flush_data {
 	bool flushtlb;
-	/*
-	 * TODO: other filed will be introduced to
-	 * free table pages after flushing the tlb.
-	 */
+	struct list_head free_list;
 };
 
 typedef int (*pgtable_visit_fn_t)(struct pkvm_pgtable *pgt, unsigned long vaddr,
