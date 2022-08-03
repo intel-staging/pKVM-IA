@@ -360,7 +360,7 @@ static int guest_complete_share(const struct pkvm_mem_transition *tx)
 	u64 prot = tx->completer.prot;
 
 	prot = pkvm_mkstate(prot, PKVM_PAGE_SHARED_BORROWED);
-	return pkvm_pgtable_map(pgt, addr, phys, size, 0, prot);
+	return pkvm_pgtable_map(pgt, addr, phys, size, 0, prot, NULL);
 }
 
 static int __do_share(const struct pkvm_mem_transition *tx)

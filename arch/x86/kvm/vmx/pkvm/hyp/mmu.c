@@ -187,7 +187,8 @@ static int fix_pgtable_refcnt(void)
 int pkvm_mmu_map(unsigned long vaddr_start, unsigned long phys_start,
 		unsigned long size, int pgsz_mask, u64 prot)
 {
-	return pkvm_pgtable_map(&hyp_mmu, vaddr_start, phys_start, size, pgsz_mask, prot);
+	return pkvm_pgtable_map(&hyp_mmu, vaddr_start, phys_start, size,
+				pgsz_mask, prot, NULL);
 }
 
 int pkvm_mmu_unmap(unsigned long vaddr_start, unsigned long phys_start, unsigned long size)

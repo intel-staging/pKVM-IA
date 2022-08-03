@@ -151,7 +151,8 @@ struct pkvm_pgtable_ops ept_ops = {
 int pkvm_host_ept_map(unsigned long vaddr_start, unsigned long phys_start,
 		unsigned long size, int pgsz_mask, u64 prot)
 {
-	return pkvm_pgtable_map(&host_ept, vaddr_start, phys_start, size, pgsz_mask, prot);
+	return pkvm_pgtable_map(&host_ept, vaddr_start, phys_start, size,
+				pgsz_mask, prot, NULL);
 }
 
 int pkvm_host_ept_unmap(unsigned long vaddr_start, unsigned long phys_start,
@@ -162,12 +163,12 @@ int pkvm_host_ept_unmap(unsigned long vaddr_start, unsigned long phys_start,
 
 void pkvm_host_ept_destroy(void)
 {
-	pkvm_pgtable_destroy(&host_ept);
+	pkvm_pgtable_destroy(&host_ept, NULL);
 }
 
 int host_ept_create_idmap_locked(u64 addr, u64 size, int pgsz_mask, u64 prot)
 {
-	return pkvm_pgtable_map(&host_ept, addr, addr, size, pgsz_mask, prot);
+	return pkvm_pgtable_map(&host_ept, addr, addr, size, pgsz_mask, prot, NULL);
 }
 
 /*
@@ -362,7 +363,7 @@ void pkvm_invalidate_shadow_ept(struct shadow_ept_desc *desc)
 	/* do not free sept root page */
 	root = mm_ops->phys_to_virt(sept->root_pa);
 	mm_ops->get_page(root);
-	pkvm_pgtable_destroy(sept);
+	pkvm_pgtable_destroy(sept, NULL);
 
 	flush_ept(desc->shadow_eptp);
 out:
@@ -377,7 +378,7 @@ void pkvm_shadow_ept_deinit(struct shadow_ept_desc *desc)
 	pkvm_spin_lock(&vm->lock);
 
 	if (desc->shadow_eptp) {
-		pkvm_pgtable_destroy(sept);
+		pkvm_pgtable_destroy(sept, NULL);
 
 		flush_ept(desc->shadow_eptp);
 
@@ -506,7 +507,7 @@ pkvm_handle_shadow_ept_violation(struct shadow_vcpu_state *shadow_vcpu, u64 l2_g
 		unsigned long gpa = ALIGN_DOWN(l2_gpa, level_size);
 		unsigned long hpa = ALIGN_DOWN(host_gpa2hpa(phys), level_size);
 
-		if (!pkvm_pgtable_map(sept, gpa, hpa, level_size, 0, gprot))
+		if (!pkvm_pgtable_map(sept, gpa, hpa, level_size, 0, gprot, NULL))
 			ret = PKVM_HANDLED;
 	}
 out:
