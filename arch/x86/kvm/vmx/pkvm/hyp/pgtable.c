@@ -58,6 +58,16 @@ static bool leaf_mapping_allowed(struct pkvm_pgtable_ops *pgt_ops,
 	return true;
 }
 
+static void pgtable_set_entry(struct pkvm_pgtable_ops *pgt_ops,
+			struct pkvm_mm_ops *mm_ops,
+			void *ptep, u64 pte)
+{
+	pgt_ops->pgt_set_entry(ptep, pte);
+
+	if (mm_ops->flush_cache)
+		mm_ops->flush_cache(ptep, sizeof(u64));
+}
+
 static void pgtable_split(struct pkvm_pgtable_ops *pgt_ops,
 			  struct pkvm_mm_ops *mm_ops,
 			  unsigned long vaddr, unsigned long phys,
@@ -73,7 +83,7 @@ static void pgtable_split(struct pkvm_pgtable_ops *pgt_ops,
 		pgt_ops->pgt_entry_mkhuge(&prot);
 
 	for (i = 0; phys < phys_end; phys += level_size, i++) {
-		pgt_ops->pgt_set_entry((ptep + i * entry_size), phys | prot);
+		pgtable_set_entry(pgt_ops, mm_ops,(ptep + i * entry_size), phys | prot);
 		mm_ops->get_page(ptep);
 	}
 }
@@ -98,13 +108,13 @@ static int pgtable_map_try_leaf(struct pkvm_pgtable *pgt, unsigned long vaddr,
 		pgt_ops->pgt_entry_mkhuge(&new);
 
 	if (pgt_ops->pgt_entry_present(ptep)) {
-		pgt_ops->pgt_set_entry(ptep, 0);
+		pgtable_set_entry(pgt_ops, mm_ops, ptep, 0);
 		flush_data->flushtlb |= true;
 		mm_ops->put_page(ptep);
 	}
 
 	mm_ops->get_page(ptep);
-	pgt_ops->pgt_set_entry(ptep, new);
+	pgtable_set_entry(pgt_ops, mm_ops, ptep, new);
 
 	data->phys += page_level_size(level);
 
@@ -153,7 +163,7 @@ static int pgtable_map_walk_leaf(struct pkvm_pgtable *pgt,
 	}
 
 	mm_ops->get_page(ptep);
-	pgt_ops->pgt_set_entry(ptep, pgt->table_prot | mm_ops->virt_to_phys(page));
+	pgtable_set_entry(pgt_ops, mm_ops, ptep, pgt->table_prot | mm_ops->virt_to_phys(page));
 
 	return 0;
 }
@@ -234,7 +244,7 @@ static int pgtable_unmap_cb(struct pkvm_pgtable *pgt, unsigned long vaddr,
 			return 0;
 		}
 
-		pgt_ops->pgt_set_entry(ptep, 0);
+		pgtable_set_entry(pgt_ops, mm_ops, ptep, 0);
 		flush_data->flushtlb |= true;
 		mm_ops->put_page(ptep);
 
@@ -261,7 +271,8 @@ static int pgtable_unmap_cb(struct pkvm_pgtable *pgt, unsigned long vaddr,
 			      pgt_ops->pgt_entry_to_phys(ptep),
 			      size, page, level - 1,
 			      pgt_ops->pgt_entry_to_prot(ptep));
-		pgt_ops->pgt_set_entry(ptep, pgt->table_prot | mm_ops->virt_to_phys(page));
+		pgtable_set_entry(pgt_ops, mm_ops, ptep,
+				pgt->table_prot | mm_ops->virt_to_phys(page));
 		return 0;
 	}
 
@@ -272,7 +283,7 @@ static int pgtable_unmap_cb(struct pkvm_pgtable *pgt, unsigned long vaddr,
 	 */
 	child_ptep = mm_ops->phys_to_virt(pgt_ops->pgt_entry_to_phys(ptep));
 	if (mm_ops->page_count(child_ptep) == 1) {
-		pgt_ops->pgt_set_entry(ptep, 0);
+		pgtable_set_entry(pgt_ops, mm_ops, ptep, 0);
 		mm_ops->put_page(ptep);
 		put_page_to_freelist(child_ptep, &flush_data->free_list);
 	}
