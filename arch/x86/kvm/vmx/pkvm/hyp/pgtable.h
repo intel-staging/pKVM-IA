@@ -74,7 +74,9 @@ int pkvm_pgtable_map(struct pkvm_pgtable *pgt, unsigned long vaddr_start,
 		unsigned long phys_start, unsigned long size,
 		int pgsz_mask, u64 entry_prot);
 int pkvm_pgtable_unmap(struct pkvm_pgtable *pgt, unsigned long vaddr_start,
-		unsigned long phys_start, unsigned long size);
+		       unsigned long size);
+int pkvm_pgtable_unmap_safe(struct pkvm_pgtable *pgt, unsigned long vaddr_start,
+			    unsigned long phys_start, unsigned long size);
 void pkvm_pgtable_lookup(struct pkvm_pgtable *pgt, unsigned long vaddr,
 		unsigned long *pphys, u64 *pprot, int *plevel);
 void pkvm_pgtable_destroy(struct pkvm_pgtable *pgt);
