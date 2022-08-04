@@ -9,6 +9,7 @@
 #include "memory.h"
 #include "mem_protect.h"
 #include "debug.h"
+#include "bug.h"
 
 struct pgt_walk_data {
 	struct pkvm_pgtable *pgt;
@@ -44,12 +45,11 @@ static bool pgtable_pte_is_counted(u64 pte)
 	return !!pte;
 }
 
-static bool leaf_mapping_allowed(struct pkvm_pgtable_ops *pgt_ops,
-				unsigned long vaddr,
-				unsigned long vaddr_end,
-				unsigned long phys,
-				int pgsz_mask,
-				int level)
+static bool leaf_mapping_valid(struct pkvm_pgtable_ops *pgt_ops,
+			       unsigned long vaddr,
+			       unsigned long vaddr_end,
+			       int pgsz_mask,
+			       int level)
 {
 	unsigned long page_size = pgt_ops->pgt_level_to_size(level);
 
@@ -59,13 +59,25 @@ static bool leaf_mapping_allowed(struct pkvm_pgtable_ops *pgt_ops,
 	if (!IS_ALIGNED(vaddr, page_size))
 		return false;
 
-	if (pkvm_phys_is_valid(phys) && !IS_ALIGNED(phys, page_size))
-		return false;
-
 	if (page_size > (vaddr_end - vaddr))
 		return false;
 
 	return true;
+}
+
+static bool leaf_mapping_allowed(struct pkvm_pgtable_ops *pgt_ops,
+				 unsigned long vaddr,
+				 unsigned long vaddr_end,
+				 unsigned long phys,
+				 int pgsz_mask,
+				 int level)
+{
+	unsigned long page_size = pgt_ops->pgt_level_to_size(level);
+
+	if (pkvm_phys_is_valid(phys) && !IS_ALIGNED(phys, page_size))
+		return false;
+
+	return leaf_mapping_valid(pgt_ops, vaddr, vaddr_end, pgsz_mask, level);
 }
 
 static void pgtable_set_entry(struct pkvm_pgtable_ops *pgt_ops,
@@ -272,14 +284,12 @@ static int pgtable_unmap_cb(struct pkvm_pgtable *pgt, unsigned long vaddr,
 	 * Can direct unmap if matches with a large entry or a 4K entry
 	 */
 	if (level == PG_LEVEL_4K || (pgt_ops->pgt_entry_huge(ptep) &&
-			leaf_mapping_allowed(pgt_ops, vaddr, vaddr_end,
-				data->phys, 1 << level, level))) {
-		unsigned long phys = pgt_ops->pgt_entry_to_phys(ptep);
+				     leaf_mapping_valid(pgt_ops, vaddr, vaddr_end,
+							1 << level, level))) {
+		if (data->phys != INVALID_ADDR) {
+			unsigned long phys = pgt_ops->pgt_entry_to_phys(ptep);
 
-		if (phys != data->phys) {
-			pkvm_err("%s: unmap incorrect phys (0x%lx vs 0x%lx) at vaddr 0x%lx level %d\n",
-				__func__, phys, data->phys, vaddr, level);
-			return 0;
+			PKVM_ASSERT(phys == data->phys);
 		}
 
 		pgtable_set_entry(pgt_ops, mm_ops, ptep, 0);
@@ -287,8 +297,10 @@ static int pgtable_unmap_cb(struct pkvm_pgtable *pgt, unsigned long vaddr,
 			flush_data->flushtlb |= true;
 		mm_ops->put_page(ptep);
 
-		data->phys = ALIGN_DOWN(data->phys, size);
-		data->phys += size;
+		if (data->phys != INVALID_ADDR) {
+			data->phys = ALIGN_DOWN(data->phys, size);
+			data->phys += size;
+		}
 		return 0;
 	}
 
@@ -577,7 +589,22 @@ int pkvm_pgtable_map(struct pkvm_pgtable *pgt, unsigned long vaddr_start,
 }
 
 int pkvm_pgtable_unmap(struct pkvm_pgtable *pgt, unsigned long vaddr_start,
-		       unsigned long phys_start, unsigned long size)
+		       unsigned long size)
+{
+	struct pkvm_pgtable_unmap_data data = {
+		.phys = INVALID_ADDR,
+	};
+	struct pkvm_pgtable_walker walker = {
+		.cb = pgtable_unmap_cb,
+		.arg = &data,
+		.flags = PKVM_PGTABLE_WALK_LEAF | PKVM_PGTABLE_WALK_TABLE_POST,
+	};
+
+	return pgtable_walk(pgt, vaddr_start, size, true, &walker);
+}
+
+int pkvm_pgtable_unmap_safe(struct pkvm_pgtable *pgt, unsigned long vaddr_start,
+			    unsigned long phys_start, unsigned long size)
 {
 	struct pkvm_pgtable_unmap_data data = {
 		.phys = ALIGN_DOWN(phys_start, PAGE_SIZE),

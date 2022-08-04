@@ -91,7 +91,7 @@ static int __pkvm_setup_lapic(struct pkvm_lapic *lapic, u64 apicbase)
 		/* unmap the previous MMIO mapping then map the new one */
 		if (lapic->apic_base_va) {
 			pkvm_mmu_unmap((unsigned long)lapic->apic_base_va,
-					lapic->apic_base_phys, PAGE_SIZE);
+					PAGE_SIZE);
 			lapic->apic_base_phys = 0;
 			lapic->apic_base_va = NULL;
 		}

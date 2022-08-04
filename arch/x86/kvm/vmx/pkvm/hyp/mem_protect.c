@@ -270,7 +270,7 @@ static int guest_initiate_donation(const struct pkvm_mem_transition *tx)
 	u64 phys = tx->initiator.guest.phys;
 	u64 size = tx->size;
 
-	return pkvm_pgtable_unmap(tx->initiator.guest.pgt, addr, phys, size);
+	return pkvm_pgtable_unmap_safe(tx->initiator.guest.pgt, addr, phys, size);
 }
 
 static int host_complete_donation(const struct pkvm_mem_transition *tx)
@@ -829,7 +829,7 @@ static int guest_complete_unshare(const struct pkvm_mem_transition *tx)
 	u64 phys = tx->completer.guest.phys;
 	u64 size = tx->size;
 
-	return pkvm_pgtable_unmap(pgt, addr, phys, size);
+	return pkvm_pgtable_unmap_safe(pgt, addr, phys, size);
 }
 
 static int __do_unshare(struct pkvm_mem_transition *tx)
