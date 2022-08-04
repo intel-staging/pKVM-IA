@@ -192,11 +192,11 @@ int pkvm_mmu_map(unsigned long vaddr_start, unsigned long phys_start,
 	return ret;
 }
 
-int pkvm_mmu_unmap(unsigned long vaddr_start, unsigned long phys_start, unsigned long size)
+int pkvm_mmu_unmap(unsigned long vaddr_start, unsigned long size)
 {
 	int ret;
 
-	ret = pkvm_pgtable_unmap(&hyp_mmu, vaddr_start, phys_start, size);
+	ret = pkvm_pgtable_unmap(&hyp_mmu, vaddr_start, size);
 
 	return ret;
 }
