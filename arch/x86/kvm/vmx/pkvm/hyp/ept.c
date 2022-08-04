@@ -183,7 +183,7 @@ int pkvm_host_ept_map(unsigned long vaddr_start, unsigned long phys_start,
 int pkvm_host_ept_unmap(unsigned long vaddr_start, unsigned long phys_start,
 			unsigned long size)
 {
-	return pkvm_pgtable_unmap_safe(&host_ept, vaddr_start, phys_start, size);
+	return pkvm_pgtable_unmap_safe(&host_ept, vaddr_start, phys_start, size, NULL);
 }
 
 void pkvm_host_ept_destroy(void)

@@ -203,7 +203,7 @@ int pkvm_mmu_unmap(unsigned long vaddr_start, unsigned long size)
 	int ret;
 
 	pkvm_spin_lock(&_hyp_mmu_lock);
-	ret = pkvm_pgtable_unmap(&hyp_mmu, vaddr_start, size);
+	ret = pkvm_pgtable_unmap(&hyp_mmu, vaddr_start, size, NULL);
 	pkvm_spin_unlock(&_hyp_mmu_lock);
 	return ret;
 }
