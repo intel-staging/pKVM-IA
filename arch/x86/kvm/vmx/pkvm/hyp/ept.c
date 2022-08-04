@@ -617,18 +617,14 @@ void pkvm_invalidate_shadow_ept(struct shadow_ept_desc *desc)
 {
 	struct pkvm_shadow_vm *vm = sept_desc_to_shadow_vm(desc);
 	struct pkvm_pgtable *sept = &desc->sept;
-	struct pkvm_mm_ops *mm_ops = sept->mm_ops;
-	void *root;
+	unsigned long size = sept->pgt_ops->pgt_level_to_size(sept->level + 1);
 
 	pkvm_spin_lock(&vm->lock);
 
 	if (!is_valid_eptp(desc->shadow_eptp))
 		goto out;
 
-	/* do not free sept root page */
-	root = mm_ops->phys_to_virt(sept->root_pa);
-	mm_ops->get_page(root);
-	pkvm_pgtable_destroy(sept, pkvm_shadow_ept_invalidate_leaf);
+	pkvm_pgtable_unmap(sept, 0, size, pkvm_shadow_ept_invalidate_leaf);
 out:
 	pkvm_spin_unlock(&vm->lock);
 }
