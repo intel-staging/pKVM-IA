@@ -111,6 +111,9 @@ static unsigned long handle_vmcall(struct kvm_vcpu *vcpu)
 	case PKVM_HC_TEARDOWN_SHADOW_VCPU:
 		ret = __pkvm_teardown_shadow_vcpu(a0);
 		break;
+	case PKVM_HC_TLB_REMOTE_FLUSH_RANGE:
+		nested_invalidate_shadow_ept(a0, a1, a2);
+		break;
 	default:
 		ret = -EINVAL;
 	}

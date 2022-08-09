@@ -590,11 +590,14 @@ static int pkvm_shadow_ept_invalidate_leaf(struct pkvm_pgtable *pgt, unsigned lo
 	return ret;
 }
 
-void pkvm_invalidate_shadow_ept(struct shadow_ept_desc *desc)
+static void __invalidate_shadow_ept_with_range(struct shadow_ept_desc *desc,
+					       unsigned long vaddr, unsigned long size)
 {
 	struct pkvm_shadow_vm *vm = sept_desc_to_shadow_vm(desc);
 	struct pkvm_pgtable *sept = &desc->sept;
-	unsigned long size = sept->pgt_ops->pgt_level_to_size(sept->level + 1);
+
+	if (!size)
+		return;
 
 	pkvm_spin_lock(&vm->lock);
 
@@ -604,6 +607,20 @@ void pkvm_invalidate_shadow_ept(struct shadow_ept_desc *desc)
 	pkvm_pgtable_unmap(sept, 0, size, pkvm_shadow_ept_invalidate_leaf);
 out:
 	pkvm_spin_unlock(&vm->lock);
+}
+
+void pkvm_invalidate_shadow_ept(struct shadow_ept_desc *desc)
+{
+	struct pkvm_pgtable *sept = &desc->sept;
+	unsigned long size = sept->pgt_ops->pgt_level_to_size(sept->level + 1);
+
+	__invalidate_shadow_ept_with_range(desc, 0, size);
+}
+
+void pkvm_invalidate_shadow_ept_with_range(struct shadow_ept_desc *desc,
+					   unsigned long vaddr, unsigned long size)
+{
+	__invalidate_shadow_ept_with_range(desc, vaddr, size);
 }
 
 void pkvm_shadow_ept_deinit(struct shadow_ept_desc *desc)

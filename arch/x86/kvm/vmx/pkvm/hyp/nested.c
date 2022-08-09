@@ -1307,6 +1307,26 @@ void nested_flush_shadow_ept(struct kvm_vcpu *vcpu)
 	pkvm_flush_shadow_ept(&cur_shadow_vcpu->vm->sept_desc);
 }
 
+void nested_invalidate_shadow_ept(int shadow_vm_handle, u64 start_gpa, u64 size)
+{
+	struct pkvm_shadow_vm *vm = get_shadow_vm(shadow_vm_handle);
+
+	if (!vm)
+		return;
+
+	if (!start_gpa && !size)
+		/*
+		 * With start_gpa = 0 & size = 0, do invalidation
+		 * for the entire shadow EPT
+		 */
+		pkvm_invalidate_shadow_ept(&vm->sept_desc);
+	else
+		pkvm_invalidate_shadow_ept_with_range(&vm->sept_desc,
+						      start_gpa, size);
+
+	put_shadow_vm(shadow_vm_handle);
+}
+
 void pkvm_init_nest(void)
 {
 	init_vmcs_shadow_fields();

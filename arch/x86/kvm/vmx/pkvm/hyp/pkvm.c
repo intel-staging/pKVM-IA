@@ -157,7 +157,7 @@ unsigned long __pkvm_teardown_shadow_vm(int shadow_vm_handle)
 	return pkvm_virt_to_phys(vm);
 }
 
-static struct pkvm_shadow_vm *get_shadow_vm(int shadow_vm_handle)
+struct pkvm_shadow_vm *get_shadow_vm(int shadow_vm_handle)
 {
 	struct shadow_vm_ref *vm_ref;
 
@@ -168,7 +168,7 @@ static struct pkvm_shadow_vm *get_shadow_vm(int shadow_vm_handle)
 	return atomic_inc_not_zero(&vm_ref->refcount) ? vm_ref->vm : NULL;
 }
 
-static void put_shadow_vm(int shadow_vm_handle)
+void put_shadow_vm(int shadow_vm_handle)
 {
 	struct shadow_vm_ref *vm_ref;
 
