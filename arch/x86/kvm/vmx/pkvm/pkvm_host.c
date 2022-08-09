@@ -1087,6 +1087,29 @@ void pkvm_teardown_shadow_vcpu(struct kvm_vcpu *vcpu)
 	free_pages_exact(__va(pa), PAGE_ALIGN(PKVM_SHADOW_VCPU_STATE_SIZE));
 }
 
+int pkvm_tlb_remote_flush_with_range(struct kvm *kvm, struct kvm_tlb_range *range)
+{
+	int shadow_vm_handle = kvm->pkvm.shadow_vm_handle;
+	u64 start_gpa = 0;
+	u64 size = 0;
+
+	if (shadow_vm_handle <= 0)
+		return -EOPNOTSUPP;
+
+	if (range) {
+		start_gpa = range->start_gfn << PAGE_SHIFT;
+		size = range->pages * PAGE_SIZE;
+	}
+
+	return kvm_hypercall3(PKVM_HC_TLB_REMOTE_FLUSH_RANGE,
+			      shadow_vm_handle, start_gpa, size);
+}
+
+int pkvm_tlb_remote_flush(struct kvm *kvm)
+{
+	return pkvm_tlb_remote_flush_with_range(kvm, NULL);
+}
+
 int __init pkvm_init(void)
 {
 	int ret = 0, cpu;

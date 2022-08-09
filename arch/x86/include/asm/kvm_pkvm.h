@@ -192,6 +192,9 @@ int pkvm_init_shadow_vm(struct kvm *kvm);
 void pkvm_teardown_shadow_vm(struct kvm *kvm);
 int pkvm_init_shadow_vcpu(struct kvm_vcpu *vcpu);
 void pkvm_teardown_shadow_vcpu(struct kvm_vcpu *vcpu);
+int pkvm_tlb_remote_flush(struct kvm *kvm);
+int pkvm_tlb_remote_flush_with_range(struct kvm *kvm,
+				     struct kvm_tlb_range *range);
 #else
 static inline void pkvm_reserve(void) {}
 static inline int pkvm_init_shadow_vm(struct kvm *kvm) { return 0; }

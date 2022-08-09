@@ -16,6 +16,7 @@
 #define PKVM_HC_TEARDOWN_SHADOW_VCPU	5
 #define PKVM_HC_MMIO_ACCESS		6
 #define PKVM_HC_ACTIVATE_IOMMU		7
+#define PKVM_HC_TLB_REMOTE_FLUSH_RANGE	8
 
 /* PKVM provided hypercalls for guest use. */
 #define PKVM_GHC_NUM(x)	(x + KVM_HC_PKVM_OP)

@@ -7990,6 +7990,17 @@ static __init int hardware_setup(void)
 	}
 #endif
 
+#if IS_ENABLED(CONFIG_PKVM_INTEL)
+	if (!enable_ept || vmx_x86_ops.tlb_remote_flush ||
+			vmx_x86_ops.tlb_remote_flush_with_range) {
+		pr_err_ratelimited("kvm: EPT or tlb_remote_flush ops not available to pKVM-IA\n");
+		return -EOPNOTSUPP;
+	}
+	vmx_x86_ops.tlb_remote_flush = pkvm_tlb_remote_flush;
+	vmx_x86_ops.tlb_remote_flush_with_range =
+			pkvm_tlb_remote_flush_with_range;
+#endif
+
 	if (!cpu_has_vmx_ple()) {
 		ple_gap = 0;
 		ple_window = 0;
