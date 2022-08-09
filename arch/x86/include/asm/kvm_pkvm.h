@@ -22,6 +22,7 @@
 #define PKVM_HC_INIT_SHADOW_VCPU	3
 #define PKVM_HC_TEARDOWN_SHADOW_VM	4
 #define PKVM_HC_TEARDOWN_SHADOW_VCPU	5
+#define PKVM_HC_TLB_REMOTE_FLUSH_RANGE	8
 
 /* PKVM provided hypercalls for guest use. */
 #define PKVM_GHC_NUM(x)	(x + KVM_HC_PKVM_OP)
@@ -177,6 +178,9 @@ int pkvm_init_shadow_vm(struct kvm *kvm);
 void pkvm_teardown_shadow_vm(struct kvm *kvm);
 int pkvm_init_shadow_vcpu(struct kvm_vcpu *vcpu);
 void pkvm_teardown_shadow_vcpu(struct kvm_vcpu *vcpu);
+int pkvm_tlb_remote_flush(struct kvm *kvm);
+int pkvm_tlb_remote_flush_with_range(struct kvm *kvm,
+				     gfn_t gfn, gfn_t nr_pages);
 #else
 static inline void kvm_hyp_reserve(void) {}
 static inline int pkvm_init_shadow_vm(struct kvm *kvm) { return 0; }
