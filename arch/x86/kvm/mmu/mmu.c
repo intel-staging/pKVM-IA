@@ -1146,7 +1146,8 @@ static void drop_large_spte(struct kvm_vcpu *vcpu, u64 *sptep)
 	if (__drop_large_spte(vcpu->kvm, sptep)) {
 		struct kvm_mmu_page *sp = sptep_to_sp(sptep);
 
-		kvm_flush_remote_tlbs_with_address(vcpu->kvm, sp->gfn,
+		kvm_flush_remote_tlbs_with_address(vcpu->kvm,
+			kvm_mmu_page_get_gfn(sp, sptep - sp->spt),
 			KVM_PAGES_PER_HPAGE(sp->role.level));
 	}
 }
@@ -1594,7 +1595,7 @@ static void rmap_add(struct kvm_vcpu *vcpu, struct kvm_memory_slot *slot,
 	if (rmap_count > RMAP_RECYCLE_THRESHOLD) {
 		kvm_unmap_rmapp(vcpu->kvm, rmap_head, NULL, gfn, sp->role.level, __pte(0));
 		kvm_flush_remote_tlbs_with_address(
-				vcpu->kvm, sp->gfn, KVM_PAGES_PER_HPAGE(sp->role.level));
+				vcpu->kvm, gfn, KVM_PAGES_PER_HPAGE(sp->role.level));
 	}
 }
 
@@ -6035,7 +6036,8 @@ restart:
 			pte_list_remove(kvm, rmap_head, sptep);
 
 			if (kvm_available_flush_tlb_with_range())
-				kvm_flush_remote_tlbs_with_address(kvm, sp->gfn,
+				kvm_flush_remote_tlbs_with_address(kvm,
+					kvm_mmu_page_get_gfn(sp, sptep - sp->spt),
 					KVM_PAGES_PER_HPAGE(sp->role.level));
 			else
 				need_tlb_flush = 1;
