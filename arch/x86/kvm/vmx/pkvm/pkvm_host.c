@@ -24,6 +24,11 @@ struct pkvm_deprivilege_param {
 	int ret;
 };
 
+struct pkvm_tlb_range {
+	u64 start_gfn;
+	u64 pages;
+};
+
 #define is_aligned(POINTER, BYTE_COUNT) \
 		(((uintptr_t)(const void *)(POINTER)) % (BYTE_COUNT) == 0)
 
@@ -917,6 +922,40 @@ void pkvm_teardown_shadow_vcpu(struct kvm_vcpu *vcpu)
 		return;
 
 	free_pages_exact(__va(pa), PAGE_ALIGN(PKVM_SHADOW_VCPU_STATE_SIZE));
+}
+
+static int __pkvm_tlb_remote_flush_with_range(struct kvm *kvm,
+					      struct pkvm_tlb_range *range)
+{
+	int shadow_vm_handle = kvm->pkvm.shadow_vm_handle;
+	u64 start_gpa = 0;
+	u64 size = 0;
+
+	if (shadow_vm_handle <= 0)
+		return -EOPNOTSUPP;
+
+	if (range) {
+		start_gpa = range->start_gfn << PAGE_SHIFT;
+		size = range->pages * PAGE_SIZE;
+	}
+
+	return kvm_hypercall3(PKVM_HC_TLB_REMOTE_FLUSH_RANGE,
+			      shadow_vm_handle, start_gpa, size);
+}
+
+int pkvm_tlb_remote_flush_with_range(struct kvm *kvm, gfn_t start_gfn, gfn_t nr_pages)
+{
+	struct pkvm_tlb_range range = {
+		.start_gfn = start_gfn,
+		.pages = nr_pages,
+	};
+
+	return __pkvm_tlb_remote_flush_with_range(kvm, &range);
+}
+
+int pkvm_tlb_remote_flush(struct kvm *kvm)
+{
+	return __pkvm_tlb_remote_flush_with_range(kvm, NULL);
 }
 
 __init int pkvm_init(void)
