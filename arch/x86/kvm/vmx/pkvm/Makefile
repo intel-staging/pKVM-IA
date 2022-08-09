@@ -4,7 +4,7 @@ KVM_PKVM ?= ../../../../../virt/kvm/pkvm
 ccflags-y += -I $(srctree)/arch/x86/kvm
 ccflags-y += -I $(srctree)/arch/x86/kvm/vmx/pkvm/include
 
-pkvm-obj		:= pkvm_host.o
+pkvm-obj		:= pkvm_host.o pkvm_debugfs.o
 
 pkvm-obj		+= $(KVM_PKVM)/pkvm.o
 
