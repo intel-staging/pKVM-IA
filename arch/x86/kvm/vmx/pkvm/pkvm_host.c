@@ -16,6 +16,7 @@
 #include <pkvm.h>
 #include <vmx/vmx_lib.h>
 #include "pkvm_constants.h"
+#include <capabilities.h>
 
 extern void pkvm_init_debugfs(void);
 
@@ -33,6 +34,7 @@ DEFINE_PER_CPU_READ_MOSTLY(bool, pkvm_enabled);
 #define is_aligned(POINTER, BYTE_COUNT) \
 		(((uintptr_t)(const void *)(POINTER)) % (BYTE_COUNT) == 0)
 
+static u16 pkvm_host_vpid = VMX_NR_VPIDS - 1;
 
 struct gdt_page pkvm_gdt_page = {
 	.gdt = {
@@ -435,6 +437,18 @@ static void init_execution_control(struct vcpu_vmx *vmx,
 			    struct vmcs_config *vmcs_config_ptr,
 			    struct vmx_capability *vmx_cap)
 {
+	/*
+	 * Fixed VPIDs for the host vCPUs, which implies that it could conflict
+	 * with VPIDs from nested guests.
+	 *
+	 * It's safe because cached mappings used in non-root mode are associated
+	 * with EP4TA, which is managed by pKVM and unique for every guest.
+	 */
+	if ((vmcs_config_ptr->cpu_based_2nd_exec_ctrl & SECONDARY_EXEC_ENABLE_VPID) &&
+		vmx_has_invvpid() &&
+		(vmx_has_invvpid_single() || vmx_has_invvpid_global()))
+		vmcs_write16(VIRTUAL_PROCESSOR_ID, pkvm_host_vpid--);
+
 	pin_controls_set(vmx, vmcs_config_ptr->pin_based_exec_ctrl);
 	exec_controls_set(vmx, vmcs_config_ptr->cpu_based_exec_ctrl);
 	secondary_exec_controls_set(vmx, vmcs_config_ptr->cpu_based_2nd_exec_ctrl);
@@ -557,6 +571,7 @@ static int pkvm_host_check_and_setup_vmx_cap(struct pkvm_hyp *pkvm)
 			SECONDARY_EXEC_ENABLE_EPT |
 			SECONDARY_EXEC_SHADOW_VMCS,
 		.cpu_based_2nd_exec_ctrl_opt =
+			SECONDARY_EXEC_ENABLE_VPID |
 			SECONDARY_EXEC_ENABLE_INVPCID |
 			SECONDARY_EXEC_XSAVES |
 			SECONDARY_EXEC_ENABLE_RDTSCP |
