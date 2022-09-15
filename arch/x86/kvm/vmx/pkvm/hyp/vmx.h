@@ -50,6 +50,12 @@ static inline bool vmx_has_invept_context(void)
 	return vmx_ept_capability_check(VMX_EPT_EXTENT_CONTEXT_BIT);
 }
 
+static inline bool vmx_has_vmwrite_any_field(void)
+{
+	return !!(pkvm_hyp->vmcs_config.nested.misc_low &
+			MSR_IA32_VMX_MISC_VMWRITE_SHADOW_RO_FIELDS);
+}
+
 static inline u64 pkvm_construct_eptp(unsigned long root_hpa, int level)
 {
 	u64 eptp = 0;

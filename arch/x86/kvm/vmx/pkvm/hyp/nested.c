@@ -1136,9 +1136,19 @@ static bool nested_handle_ept_violation(struct shadow_vcpu_state *shadow_vcpu,
 	bool handled = false;
 
 	switch (ret) {
-	case PKVM_INJECT_EPT_MISC:
-		/* TODO: inject EPT_MISCONFIG */
+	case PKVM_INJECT_EPT_MISC: {
+		struct vcpu_vmx *vmx = to_vmx(shadow_vcpu->vcpu);
+
+		vmx->exit_reason.full = EXIT_REASON_EPT_MISCONFIG;
+		/*
+		 * Inject EPT_MISCONFIG vmexit reason if can directly modify
+		 * the read-only fields. Otherwise still deliver EPT_VIOLATION
+		 * for simplify.
+		 */
+		if (vmx_has_vmwrite_any_field())
+			vmcs_write32(VM_EXIT_REASON, EXIT_REASON_EPT_MISCONFIG);
 		break;
+	}
 	case PKVM_HANDLED:
 		handled = true;
 		break;
