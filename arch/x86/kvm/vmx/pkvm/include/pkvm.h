@@ -51,16 +51,6 @@ struct pkvm_host_vm {
 	struct pkvm_pgtable *ept;
 };
 
-enum vmx_ctls {
-	PIN_BASED_CTLS = 0,
-	PRIMARY_CTLS,
-	SECONDARY_CTLS,
-	VMFUNC_CTLS,
-	VM_EXIT_CTLS,
-	VM_ENTRY_CTLS,
-	NR_VMX_CTLS_WORDS,
-};
-
 struct pkvm_iommu_info {
 	u64 reg_phys;
 	u64 reg_size;
@@ -71,7 +61,6 @@ struct pkvm_hyp {
 
 	struct vmx_capability vmx_cap;
 	struct vmcs_config vmcs_config;
-	u32 vmx_ctls[NR_VMX_CTLS_WORDS];
 
 	struct pkvm_pgtable_cap mmu_cap;
 	struct pkvm_pgtable_cap ept_cap;
