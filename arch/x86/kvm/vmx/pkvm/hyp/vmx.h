@@ -8,49 +8,6 @@
 
 #include "pkvm_hyp.h"
 
-static inline bool vmx_ept_capability_check(u32 bit)
-{
-	struct vmx_capability *vmx_cap = &pkvm_hyp->vmx_cap;
-
-	return vmx_cap->ept & bit;
-}
-
-static inline bool vmx_has_invept(void)
-{
-	return vmx_ept_capability_check(VMX_EPT_INVEPT_BIT);
-}
-
-static inline bool vmx_ept_has_4levels(void)
-{
-	return vmx_ept_capability_check(VMX_EPT_PAGE_WALK_4_BIT);
-}
-
-static inline bool vmx_ept_has_5levels(void)
-{
-	return vmx_ept_capability_check(VMX_EPT_PAGE_WALK_5_BIT);
-}
-
-static inline bool vmx_ept_has_mt_wb(void)
-{
-	return vmx_ept_capability_check(VMX_EPTP_WB_BIT);
-}
-
-static inline bool vmx_has_invept_context(void)
-{
-	return vmx_ept_capability_check(VMX_EPT_EXTENT_CONTEXT_BIT);
-}
-
-static inline bool vmx_has_ept_execute_only(void)
-{
-	return vmx_ept_capability_check(VMX_EPT_EXECUTE_ONLY_BIT);
-}
-
-static inline bool vmx_has_vmwrite_any_field(void)
-{
-	return !!(pkvm_hyp->vmcs_config.nested.misc_low &
-			MSR_IA32_VMX_MISC_VMWRITE_SHADOW_RO_FIELDS);
-}
-
 static inline u64 pkvm_construct_eptp(unsigned long root_hpa, int level)
 {
 	u64 eptp = 0;

@@ -4,6 +4,7 @@
  */
 
 #include <pkvm.h>
+#include <capabilities.h>
 #include "cpu.h"
 #include "pkvm_hyp.h"
 #include "vmx.h"
