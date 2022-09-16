@@ -11,6 +11,7 @@
 
 #include <pkvm.h>
 #include <gfp.h>
+#include <capabilities.h>
 
 #include "pkvm_hyp.h"
 #include "early_alloc.h"

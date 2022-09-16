@@ -5,6 +5,7 @@
 
 #include <pkvm.h>
 #include <asm/pkvm.h>
+#include <capabilities.h>
 #include "pkvm_hyp.h"
 #include "nested.h"
 #include "cpu.h"
@@ -1057,7 +1058,7 @@ int handle_invept(struct kvm_vcpu *vcpu)
 	unsigned long type;
 	int gpr_index;
 
-	if (!(vmx_cap->ept & VMX_EPT_INVEPT_BIT))
+	if (!vmx_has_invept())
 		/* TODO: inject #UD */
 		return -EINVAL;
 
