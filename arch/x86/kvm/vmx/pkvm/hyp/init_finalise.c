@@ -9,6 +9,7 @@
 #include <asm/kvm_pkvm.h>
 
 #include <pkvm.h>
+#include <capabilities.h>
 #include "pkvm_hyp.h"
 #include "gfp.h"
 #include "early_alloc.h"
