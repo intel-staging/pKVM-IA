@@ -5,6 +5,7 @@
 
 #include <pkvm.h>
 #include <asm/kvm_pkvm.h>
+#include <capabilities.h>
 #include "pkvm_hyp.h"
 #include "nested.h"
 #include "cpu.h"

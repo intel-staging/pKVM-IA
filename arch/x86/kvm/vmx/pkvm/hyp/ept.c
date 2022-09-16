@@ -11,6 +11,7 @@
 #include <mmu/spte.h>
 
 #include <pkvm.h>
+#include <capabilities.h>
 
 #include "pkvm_hyp.h"
 #include "gfp.h"
