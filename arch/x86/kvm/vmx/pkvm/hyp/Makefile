@@ -29,6 +29,9 @@ lib2-dir	:= $(objtree)/lib
 pkvm-hyp-obj	+= $(lib-dir)/memset_64.o
 pkvm-hyp-obj	+= $(lib-dir)/memcpy_64.o
 pkvm-hyp-obj	+= $(lib2-dir)/find_bit.o
+ifdef CONFIG_DEBUG_LIST
+pkvm-hyp-obj	+= $(lib-dir)/list_debug.o
+endif
 ifdef CONFIG_RETPOLINE
 pkvm-hyp-obj	+= $(lib-dir)/retpoline.o
 endif
