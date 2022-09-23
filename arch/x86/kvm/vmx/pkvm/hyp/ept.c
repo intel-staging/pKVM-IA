@@ -187,9 +187,13 @@ static void ept_mk_nopresent(struct pkvm_pgtable *pgt, void *ptep)
 
 static void ept_remap_with_newprot(struct pkvm_pgtable *pgt, int level, void *ptep, u64 new_prot)
 {
+	u64 old_pte = READ_ONCE(*(u64 *)ptep);
 	u64 new_pte;
 
-	new_pte = (READ_ONCE(*(u64 *)ptep) & ~EPT_PROT_MASK) | new_prot;
+	if ((old_pte & EPT_PROT_MASK) == new_prot)
+		return;
+
+	new_pte = (old_pte & ~EPT_PROT_MASK) | new_prot;
 	if (level != PG_LEVEL_4K)
 		pgt->pgt_ops->pgt_entry_mkhuge(&new_pte);
 	pgt->pgt_ops->pgt_set_entry(ptep, new_pte);
@@ -362,8 +366,14 @@ static int pkvm_shadow_ept_map_leaf(struct pkvm_pgtable *pgt, unsigned long vadd
 	 * It is possible that another CPU just created same mapping when
 	 * multiple EPT violations happen on different CPUs.
 	 */
-	if (pgt_ops->pgt_entry_present(ptep))
+	if (pgt_ops->pgt_entry_present(ptep)) {
+		/*
+		 * Update the present entry with the newprot as a mismatching
+		 * property bits can also cause EPT violation.
+		 */
+		ept_remap_with_newprot(pgt, level, ptep, data->prot);
 		goto out;
+	}
 
 	switch (vm->vm_type) {
 	case KVM_X86_DEFAULT_VM:
