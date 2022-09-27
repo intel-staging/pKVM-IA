@@ -124,10 +124,16 @@ static void kvm_vfio_update_coherency(struct kvm_device *dev)
 	mutex_unlock(&kv->lock);
 }
 
+int __weak kvm_arch_add_device_to_pkvm(struct kvm *kvm, struct iommu_group *grp)
+{
+	return 0;
+}
+
 static int kvm_vfio_group_add(struct kvm_device *dev, unsigned int fd)
 {
 	struct kvm_vfio *kv = dev->private;
 	struct kvm_vfio_group *kvg;
+	struct iommu_group *iommu_grp;
 	struct file *filp;
 	int ret;
 
@@ -136,7 +142,8 @@ static int kvm_vfio_group_add(struct kvm_device *dev, unsigned int fd)
 		return -EBADF;
 
 	/* Ensure the FD is a vfio group FD.*/
-	if (!kvm_vfio_file_iommu_group(filp)) {
+	iommu_grp = kvm_vfio_file_iommu_group(filp);
+	if (!iommu_grp) {
 		ret = -EINVAL;
 		goto err_fput;
 	}
@@ -157,6 +164,11 @@ static int kvm_vfio_group_add(struct kvm_device *dev, unsigned int fd)
 	}
 
 	kvg->file = filp;
+
+	ret = kvm_arch_add_device_to_pkvm(dev->kvm, iommu_grp);
+	if (ret)
+		goto free_kvg;
+
 	list_add_tail(&kvg->node, &kv->group_list);
 
 	kvm_arch_start_assignment(dev->kvm);
@@ -167,6 +179,8 @@ static int kvm_vfio_group_add(struct kvm_device *dev, unsigned int fd)
 	kvm_vfio_update_coherency(dev);
 
 	return 0;
+free_kvg:
+	kfree(kvg);
 err_unlock:
 	mutex_unlock(&kv->lock);
 err_fput:
