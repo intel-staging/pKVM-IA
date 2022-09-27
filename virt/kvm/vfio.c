@@ -80,7 +80,6 @@ static bool kvm_vfio_file_is_valid(struct file *file)
 	return ret;
 }
 
-#ifdef CONFIG_SPAPR_TCE_IOMMU
 static struct iommu_group *kvm_vfio_file_iommu_group(struct file *file)
 {
 	struct iommu_group *(*fn)(struct file *file);
@@ -97,6 +96,7 @@ static struct iommu_group *kvm_vfio_file_iommu_group(struct file *file)
 	return ret;
 }
 
+#ifdef CONFIG_SPAPR_TCE_IOMMU
 static void kvm_spapr_tce_release_vfio_group(struct kvm *kvm,
 					     struct kvm_vfio_file *kvf)
 {
@@ -140,10 +140,16 @@ static void kvm_vfio_update_coherency(struct kvm_device *dev)
 	}
 }
 
+int __weak kvm_arch_add_device_to_pkvm(struct kvm *kvm, struct iommu_group *grp)
+{
+	return 0;
+}
+
 static int kvm_vfio_file_add(struct kvm_device *dev, unsigned int fd)
 {
 	struct kvm_vfio *kv = dev->private;
 	struct kvm_vfio_file *kvf;
+	struct iommu_group *iommu_grp;
 	struct file *filp;
 	int ret = 0;
 
@@ -153,6 +159,13 @@ static int kvm_vfio_file_add(struct kvm_device *dev, unsigned int fd)
 
 	/* Ensure the FD is a vfio FD. */
 	if (!kvm_vfio_file_is_valid(filp)) {
+		ret = -EINVAL;
+		goto out_fput;
+	}
+
+	/* Hack for pKVM */
+	iommu_grp = kvm_vfio_file_iommu_group(filp);
+	if (!iommu_grp) {
 		ret = -EINVAL;
 		goto out_fput;
 	}
@@ -173,6 +186,14 @@ static int kvm_vfio_file_add(struct kvm_device *dev, unsigned int fd)
 	}
 
 	kvf->file = get_file(filp);
+
+	ret = kvm_arch_add_device_to_pkvm(dev->kvm, iommu_grp);
+	iommu_group_put(iommu_grp);	/* see how hacky it is */
+	if (ret) {
+		kfree(kvf);
+		goto out_unlock;
+	}
+
 	list_add_tail(&kvf->node, &kv->file_list);
 
 	kvm_arch_start_assignment(dev->kvm);
