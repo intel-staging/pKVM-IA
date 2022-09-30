@@ -361,6 +361,31 @@ void kvm_flush_remote_tlbs(struct kvm *kvm)
 EXPORT_SYMBOL_GPL(kvm_flush_remote_tlbs);
 #endif
 
+int kvm_flush_remote_tlbs_with_range(struct kvm *kvm, struct kvm_tlb_range *range)
+{
+	int ret;
+
+	ret = kvm_arch_flush_remote_tlb_with_range(kvm, range);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(kvm_flush_remote_tlbs_with_range);
+
+static bool kvm_try_flush_remote_tlbs_with_range(struct kvm *kvm,
+	struct kvm_gfn_range *gfn_range)
+{
+#ifdef CONFIG_PKVM_INTEL
+	struct kvm_tlb_range tlb_range = {
+		.start_gfn = gfn_range->start,
+		.pages = gfn_range->end - gfn_range->start,
+	};
+
+	return !!kvm_flush_remote_tlbs_with_range(kvm, &tlb_range);
+#else
+	return true;
+#endif
+}
+
 static void kvm_flush_shadow_all(struct kvm *kvm)
 {
 	kvm_arch_flush_shadow_all(kvm);
@@ -530,7 +555,7 @@ static void kvm_null_fn(void)
 static __always_inline int __kvm_handle_hva_range(struct kvm *kvm,
 						  const struct kvm_hva_range *range)
 {
-	bool ret = false, locked = false;
+	bool ret = false, locked = false, need_global_flush = false;
 	struct kvm_gfn_range gfn_range;
 	struct kvm_memory_slot *slot;
 	struct kvm_memslots *slots;
@@ -584,11 +609,16 @@ static __always_inline int __kvm_handle_hva_range(struct kvm *kvm,
 				if (IS_KVM_NULL_FN(range->handler))
 					break;
 			}
+
 			ret |= range->handler(kvm, &gfn_range);
+			if (range->flush_on_ret && ret)
+				need_global_flush |=
+					kvm_try_flush_remote_tlbs_with_range(kvm, &gfn_range);
+
 		}
 	}
 
-	if (range->flush_on_ret && ret)
+	if (range->flush_on_ret && ret && need_global_flush)
 		kvm_flush_remote_tlbs(kvm);
 
 	if (locked) {

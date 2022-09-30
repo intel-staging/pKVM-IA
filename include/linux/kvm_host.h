@@ -1375,6 +1375,8 @@ int kvm_vcpu_yield_to(struct kvm_vcpu *target);
 void kvm_vcpu_on_spin(struct kvm_vcpu *vcpu, bool usermode_vcpu_not_eligible);
 
 void kvm_flush_remote_tlbs(struct kvm *kvm);
+int kvm_flush_remote_tlbs_with_range(struct kvm *kvm,
+	struct kvm_tlb_range *range);
 
 #ifdef KVM_ARCH_NR_OBJS_PER_MEMORY_CACHE
 int kvm_mmu_topup_memory_cache(struct kvm_mmu_memory_cache *mc, int min);
@@ -1497,6 +1499,14 @@ static inline void kvm_arch_free_vm(struct kvm *kvm)
 
 #ifndef __KVM_HAVE_ARCH_FLUSH_REMOTE_TLB
 static inline int kvm_arch_flush_remote_tlb(struct kvm *kvm)
+{
+	return -ENOTSUPP;
+}
+#endif
+
+#ifndef __KVM_HAVE_ARCH_FLUSH_REMOTE_TLB_WITH_RANGE
+static inline int kvm_arch_flush_remote_tlb_with_range(struct kvm *kvm,
+	struct kvm_tlb_range *range)
 {
 	return -ENOTSUPP;
 }
