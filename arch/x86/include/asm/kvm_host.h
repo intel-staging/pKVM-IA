@@ -1655,6 +1655,17 @@ static inline int kvm_arch_flush_remote_tlb(struct kvm *kvm)
 		return -ENOTSUPP;
 }
 
+#define __KVM_HAVE_ARCH_FLUSH_REMOTE_TLB_WITH_RANGE
+static inline int kvm_arch_flush_remote_tlb_with_range(struct kvm *kvm,
+	struct kvm_tlb_range *range)
+{
+	if (range && kvm_x86_ops.tlb_remote_flush_with_range &&
+	    !static_call(kvm_x86_tlb_remote_flush_with_range)(kvm, range))
+		return 0;
+
+	return -ENOTSUPP;
+}
+
 #define kvm_arch_pmi_in_guest(vcpu) \
 	((vcpu) && (vcpu)->arch.handling_intr_from_guest)
 
