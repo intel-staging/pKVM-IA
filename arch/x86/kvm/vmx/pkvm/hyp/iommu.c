@@ -319,11 +319,39 @@ static bool sync_root_entry(struct pgt_sync_data *sdata)
 static bool sync_shadow_context_entry(struct pgt_sync_data *sdata)
 {
 	struct context_entry *shadow_ce = sdata->shadow_ptep, tmp = {0};
+	struct context_entry *guest_ce = sdata->guest_ptep;
 	bool updated = false;
 
-	if (sdata->guest_ptep && sdata->shadow_pa) {
-		struct context_entry *guest_ce = sdata->guest_ptep;
-
+	/*
+	 * If hardware PT translation(ecap(bit6)) is being used by host,
+	 * pKVM won't shadow I/O paging structures as there are no virtual
+	 * I/O paging structures. Instead, pKVM should consider using EPT
+	 * as the 2nd-stage I/O table to ensure the memory protection.
+	 * (i.e. In legacy mode, although the virtual translation type is
+	 * CONTEXT_TT_PASS_THROUGH, the real translation type is
+	 * CONTEXT_TT_MULTI_LEVEL in pKVM.)
+	 *
+	 * Todo: to fully support legacy mode vIOMMU, either by using EPT as
+	 * 2nd-stage I/O translation table when HW PT translation is being
+	 * used by host or by disabling the HW PT translation cap so that
+	 * virtual I/O paging structures will come out which can be shadowed
+	 * by pKVM IOMMU for the DMA restriction.
+	 *
+	 * (Note: Currently we only support shadow root/context table in legacy
+	 * mode. The shadowing paging structures hasn't been supported yet.
+	 * The the following logic added for LM is to workaround the case in which
+	 * the type is set as CONTEXT_TT_PASS_THROUGH in host. W/o this workaround,
+	 * when virtual vt-d sets a domain type to PASS_THROUGH, the sdata->shadow_pa
+	 * would be 0 as there is no virtual table for this domain in host. However
+	 * "sdata->shadow_pa == 0" would lead shadow context entry not to be updated.
+	 * So add a workaround to make the shadow context entry be updated anyway.
+	 * After the missing piece of shadowing paging structures of legacy mode is
+	 * added, we won't need this workaround anymore.)
+	 */
+	if ((sdata->guest_ptep && sdata->shadow_pa) ||
+		(!ecap_smts(sdata->iommu_ecap) &&
+		 (context_lm_get_tt(guest_ce) == CONTEXT_TT_PASS_THROUGH)
+		 && !sdata->shadow_pa)) {
 		tmp.hi = guest_ce->hi;
 		tmp.lo = sdata->shadow_pa | (guest_ce->lo & 0xfff);
 
@@ -440,21 +468,34 @@ static bool iommu_sm_id_sync_entry(struct pgt_sync_data *sdata)
 	bool ret = false;
 	struct pkvm_pgtable *spgt = sdata->spgt;
 
-	switch (sdata->level) {
-	case IOMMU_PASID_TABLE:
-		ret = sync_shadow_pasid_table_entry(sdata);
-		break;
-	case IOMMU_PASID_DIR:
-		ret = sync_shadow_pasid_dir_entry(sdata);
-		break;
-	case IOMMU_SM_CONTEXT:
-		ret = sync_shadow_context_entry(sdata);
-		break;
-	case IOMMU_SM_ROOT:
-		ret = sync_root_entry(sdata);
-		break;
-	default:
-		break;
+	if (ecap_smts(sdata->iommu_ecap)) {
+		switch (sdata->level) {
+		case IOMMU_PASID_TABLE:
+			ret = sync_shadow_pasid_table_entry(sdata);
+			break;
+		case IOMMU_PASID_DIR:
+			ret = sync_shadow_pasid_dir_entry(sdata);
+			break;
+		case IOMMU_SM_CONTEXT:
+			ret = sync_shadow_context_entry(sdata);
+			break;
+		case IOMMU_SM_ROOT:
+			ret = sync_root_entry(sdata);
+			break;
+		default:
+			break;
+		}
+	} else {
+		switch (sdata->level) {
+		case IOMMU_LM_CONTEXT:
+			ret = sync_shadow_context_entry(sdata);
+			break;
+		case IOMMU_LM_ROOT:
+			ret = sync_root_entry(sdata);
+			break;
+		default:
+			break;
+		}
 	}
 
 	if (ret) {
@@ -572,7 +613,7 @@ static int free_shadow_id_cb(struct pkvm_pgtable *pgt, unsigned long vaddr,
 	sync_data.spgt = pgt;
 
 	/* Un-present a present PASID Table entry */
-	if (level == IOMMU_PASID_TABLE) {
+	if (LAST_LEVEL(level)) {
 		iommu_sm_id_sync_entry(&sync_data);
 		mm_ops->put_page(ptep);
 		return 0;
@@ -603,25 +644,40 @@ static int init_sync_id_data(struct pgt_sync_data *sync_data,
 	int idx = spgt->pgt_ops->pgt_entry_to_index(vaddr, level);
 	int entry_size = spgt->pgt_ops->pgt_level_entry_size(level);
 
-	switch (level) {
-	case IOMMU_PASID_TABLE:
-		sync_data->p_entry = *((struct pasid_entry *)guest_ptep);
-		sync_data->guest_ptep = &sync_data->p_entry;
-		break;
-	case IOMMU_PASID_DIR:
-		sync_data->pd_entry = *((struct pasid_dir_entry *)guest_ptep);
-		sync_data->guest_ptep = &sync_data->pd_entry;
-		break;
-	case IOMMU_SM_CONTEXT:
-		sync_data->ct_entry = *((struct context_entry *)guest_ptep);
-		sync_data->guest_ptep = &sync_data->ct_entry;
-		break;
-	case IOMMU_SM_ROOT:
-		sync_data->root_entry = *((u64 *)guest_ptep);
-		sync_data->guest_ptep = &sync_data->root_entry;
-		break;
-	default:
-		return -EINVAL;
+	if (ecap_smts(iommu->iommu.ecap)) {
+		switch (level) {
+		case IOMMU_PASID_TABLE:
+			sync_data->p_entry = *((struct pasid_entry *)guest_ptep);
+			sync_data->guest_ptep = &sync_data->p_entry;
+			break;
+		case IOMMU_PASID_DIR:
+			sync_data->pd_entry = *((struct pasid_dir_entry *)guest_ptep);
+			sync_data->guest_ptep = &sync_data->pd_entry;
+			break;
+		case IOMMU_SM_CONTEXT:
+			sync_data->ct_entry = *((struct context_entry *)guest_ptep);
+			sync_data->guest_ptep = &sync_data->ct_entry;
+			break;
+		case IOMMU_SM_ROOT:
+			sync_data->root_entry = *((u64 *)guest_ptep);
+			sync_data->guest_ptep = &sync_data->root_entry;
+			break;
+		default:
+			return -EINVAL;
+		}
+	} else {
+		switch (level) {
+		case IOMMU_LM_CONTEXT:
+			sync_data->ct_entry = *((struct context_entry *)guest_ptep);
+			sync_data->guest_ptep = &sync_data->ct_entry;
+			break;
+		case IOMMU_LM_ROOT:
+			sync_data->root_entry = *((u64 *)guest_ptep);
+			sync_data->guest_ptep = &sync_data->root_entry;
+			break;
+		default:
+			return -EINVAL;
+		}
 	}
 
 	/* shadow_pa of current level must be there */
@@ -699,30 +755,39 @@ static int sync_shadow_id_cb(struct pkvm_pgtable *vpgt, unsigned long vaddr,
 		return ret;
 	}
 
-	if (level == IOMMU_PASID_TABLE) {
-		/*
-		 * For PASID_TABLE, cache invalidation may want to
-		 * sync specific PASID with did matched. So do the
-		 * check before sync the entry.
-		 *
-		 * According to vt-d spec 6.2.2.1, software must not
-		 * use domain-id value of 0 on when programming
-		 * context-entries on implementations reporting CM=1
-		 * in the Capability register.
-		 *
-		 * So non-zero DID means a real DID from host software.
-		 */
-		if (data->did && (pasid_get_domain_id(guest_ptep) != data->did))
-			return ret;
+	if (LAST_LEVEL(level)) {
+		if (ecap_smts(iommu->iommu.ecap)) {
+			/*
+			 * For PASID_TABLE, cache invalidation may want to
+			 * sync specific PASID with did matched. So do the
+			 * check before sync the entry.
+			 *
+			 * According to vt-d spec 6.2.2.1, software must not
+			 * use domain-id value of 0 on when programming
+			 * context-entries on implementations reporting CM=1
+			 * in the Capability register.
+			 *
+			 * So non-zero DID means a real DID from host software.
+			 */
+			if (data->did && (pasid_get_domain_id(guest_ptep) != data->did))
+				return ret;
 
-		/*
-		 * The PASID table entry always require to use EPT
-		 * for the second-level translation no matter in nested
-		 * transltion mode or second-level only mode. So get the
-		 * EPT physical address for the leaf entry, which is the
-		 * pasid table entry.
-		 */
-		sync_data.shadow_pa = pkvm_hyp->host_vm.ept->root_pa;
+			/*
+			 * The PASID table entry always require to use EPT
+			 * for the second-level translation no matter in nested
+			 * transltion mode or second-level only mode. So get the
+			 * EPT physical address for the leaf entry, which is the
+			 * pasid table entry.
+			 */
+			sync_data.shadow_pa = pkvm_hyp->host_vm.ept->root_pa;
+		} else {
+			/*
+			 * Right now reference to a virtual 2nd-stage paging table.
+			 * Fixme: Reference to a shadow paging table when shadowing 2nd-stage
+			 * paging table is supported by pKVM.
+			 */
+			sync_data.shadow_pa = vpgt_ops->pgt_entry_to_phys(guest_ptep);
+		}
 	} else if (!shadow_p) {
 		/*
 		 * For a non-present non-leaf (which may be root/context/pasid
@@ -753,7 +818,7 @@ static int sync_shadow_id_cb(struct pkvm_pgtable *vpgt, unsigned long vaddr,
 			spgt->mm_ops->get_page(shadow_ptep);
 	}
 
-	if ((flags == PKVM_PGTABLE_WALK_TABLE_PRE) && (level > IOMMU_PASID_TABLE)) {
+	if ((flags == PKVM_PGTABLE_WALK_TABLE_PRE) && (!LAST_LEVEL(level))) {
 		/*
 		 * As guest page table walking will go to the child level, pass
 		 * the shadow page physical address of the child level to sync.
@@ -799,7 +864,10 @@ static int sync_shadow_id(struct pkvm_iommu *iommu, unsigned long vaddr,
 		return 0;
 
 retry:
-	arg.shadow_pa[IOMMU_SM_ROOT] = iommu->pgt.root_pa;
+	if (ecap_smts(iommu->iommu.ecap))
+		arg.shadow_pa[IOMMU_SM_ROOT] = iommu->pgt.root_pa;
+	else
+		arg.shadow_pa[IOMMU_LM_ROOT] = iommu->pgt.root_pa;
 	/*
 	 * To sync the shadow IOMMU page table, walks the guest IOMMU
 	 * page table
@@ -1070,7 +1138,8 @@ static void set_root_table(struct pkvm_iommu *iommu)
 	u32 sts;
 
 	/* Set scalable mode */
-	val |= DMA_RTADDR_SMT;
+	if (ecap_smts(iommu->iommu.ecap))
+		val |= DMA_RTADDR_SMT;
 
 	writeq(val, reg + DMAR_RTADDR_REG);
 
@@ -1094,7 +1163,8 @@ static void set_root_table(struct pkvm_iommu *iommu)
 	PKVM_IOMMU_WAIT_OP(reg + DMAR_GSTS_REG, readl, (sts & DMA_GSTS_RTPS), sts);
 
 	flush_context_cache(iommu, 0, 0, 0, DMA_CCMD_GLOBAL_INVL);
-	flush_pasid_cache(iommu, 0, QI_PC_GLOBAL, 0);
+	if (ecap_smts(iommu->iommu.ecap))
+		flush_pasid_cache(iommu, 0, QI_PC_GLOBAL, 0);
 	flush_iotlb(iommu, 0, 0, 0, DMA_TLB_GLOBAL_FLUSH);
 }
 
