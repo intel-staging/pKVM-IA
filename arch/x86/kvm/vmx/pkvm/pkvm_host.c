@@ -21,7 +21,6 @@ extern void pkvm_init_debugfs(void);
 MODULE_LICENSE("GPL");
 
 static struct pkvm_hyp *pkvm;
-static bool legacy_iommu;
 
 struct pkvm_deprivilege_param {
 	struct pkvm_hyp *pkvm;
@@ -93,10 +92,21 @@ static int check_and_init_iommu(struct pkvm_hyp *pkvm)
 	if (ret)
 		return ret;
 	/*
-	 * IOMMU will use nested translation which reuse EPT
-	 * as the second-level page table. So IOMMU and EPT
-	 * should use a both supported page table level and
-	 * page size.
+	 * Some cases may require IOMMU and EPT to use both supported page
+	 * table level and page size:
+	 *
+	 * 1) If IOMMU is working in nested translation of scalable-mode,
+	 * pKVM may reuse EPT as the 2nd-level page table.
+	 *
+	 * 2) If IOMMU is working in legacy mode and a device is working
+	 * in IOMMU pass-through mode, pKVM may reuse EPT as the 2nd-level
+	 * page table.
+	 *
+	 * For other cases, though not necessary to use both IOMMU and EPT
+	 * supported page table level and page size, using the same size
+	 * can simplify the implementation, as pKVM doesn't need to check
+	 * IOMMU types of all devices before deciding whether it's necessary
+	 * to use both IOMMU and EPT supported page table level and page size.
 	 */
 	if (pkvm->vmx_cap.ept & VMX_EPT_PAGE_WALK_4_BIT)
 		pgt_level |= PGT_4LEVEL;
@@ -126,12 +136,11 @@ static int check_and_init_iommu(struct pkvm_hyp *pkvm)
 
 		/*
 		 * pkvm requires host IOMMU driver to work in scalable mode with
-		 * first-level translation.
+		 * first-level translation or legacy mode.
 		 */
-		if (!legacy_iommu && (readl(drhd->iommu->reg + DMAR_GSTS_REG) & DMA_GSTS_TES) &&
-			(readq(drhd->iommu->reg + DMAR_RTADDR_REG) &
-			 GENMASK_ULL(11, 10)) != DMA_RTADDR_SMT) {
-			pr_err("pkvm: drhd reg_base 0x%llx: scalable mode not enabled\n",
+		if ((readl(drhd->iommu->reg + DMAR_GSTS_REG) & DMA_GSTS_TES) &&
+			(readq(drhd->iommu->reg + DMAR_RTADDR_REG) & BIT(11))) {
+			pr_err("pkvm: drhd reg_base 0x%llx: scalable/legacy mode not enabled\n",
 				drhd->reg_base_addr);
 			return -EINVAL;
 		}
@@ -148,25 +157,19 @@ static int check_and_init_iommu(struct pkvm_hyp *pkvm)
 		ecap = readq(addr + DMAR_ECAP_REG);
 		iounmap(addr);
 
-		if (legacy_iommu) {
-			info->reg_phys = drhd->reg_base_addr;
-			reg_size = max_t(u64, ecap_max_iotlb_offset(ecap),
-					 cap_max_fault_reg_offset(cap));
-			info->reg_size = max_t(u64, reg_size, VTD_PAGE_SIZE);
-			index++;
-			continue;
-		}
-
-		/* pkvm requires to use nested translation */
-		if (!ecap_nest(ecap)) {
+		/*
+		 * If pkvm IOMMU works in scalable mode, it needs to check SMPWC for
+		 * the coherency of the paging structure accessed through pasid table entry.
+		 */
+		if (ecap_smts(ecap) && !ecap_nest(ecap)) {
 			pr_err("pkvm: drhd reg_base 0x%llx: nested translation not supported\n",
 				drhd->reg_base_addr);
 			return -EINVAL;
 		}
 
 		/*
-		 * pkvm IOMMU works in scalable mode so check SMPWC for the coherent
-		 * of the paging structure accessed through pasid table entry.
+		 * Check SMPWC for the coherency of the paging structure accessed
+		 * through pasid table entry.
 		 */
 		if (!ecap_smpwc(ecap))
 			pkvm->iommu_coherent = false;
@@ -1025,8 +1028,7 @@ static __init int pkvm_init_finalise(void)
 					       NULL, true);
 	}
 
-	if (!legacy_iommu)
-		ret = kvm_hypercall0(PKVM_HC_ACTIVATE_IOMMU);
+	ret = kvm_hypercall0(PKVM_HC_ACTIVATE_IOMMU);
 out:
 	put_cpu();
 
@@ -1214,21 +1216,3 @@ out:
 	pkvm_sym(pkvm_hyp) = NULL;
 	return ret;
 }
-
-static int __init pkvm_setup(char *str)
-{
-	if (!str)
-		return -EINVAL;
-
-	while (*str) {
-		if (!strncmp(str, "legacy_iommu", 12))
-			legacy_iommu = true;
-
-		str += strcspn(str, ",");
-		while (*str == ',')
-			str++;
-	}
-
-	return 1;
-}
-__setup("pkvm=", pkvm_setup);
