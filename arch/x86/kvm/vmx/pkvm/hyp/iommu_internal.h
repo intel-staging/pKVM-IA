@@ -143,6 +143,11 @@ static inline void context_clear_dte(struct context_entry *ce)
 	entry_set_bits(&ce->lo, 1 << 2, 0);
 }
 
+static inline u8 context_lm_get_tt(struct context_entry *ce)
+{
+	return (READ_ONCE(ce->lo) >> 2) & 3;
+}
+
 /* Get PRESENT bit of a PASID table entry. */
 static inline bool pasid_pte_is_present(struct pasid_entry *pte)
 {
