@@ -64,6 +64,9 @@ int read_vmx_msr(struct kvm_vcpu *vcpu, unsigned long msr, u64 *val)
 		/* not support vmfunc */
 		low = high = 0;
 		break;
+	case MSR_IA32_VMX_EPT_VPID_CAP:
+		low &= ~VMX_EPT_AD_BIT;
+		break;
 	default:
 		err = -EACCES;
 		break;
