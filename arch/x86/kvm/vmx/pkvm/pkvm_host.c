@@ -232,7 +232,9 @@ u64 pkvm_total_reserve_pages(void)
 	total += host_ept_pgtable_pages();
 	total += pkvm_iommu_pages(PKVM_MAX_PASID, PKVM_PASIDDEV_NUM,
 				  PKVM_PDEV_NUM, PKVM_IOMMU_NUM,
-				  PKVM_IOMMU_QI_SIZE);
+				  PKVM_IOMMU_QI_DESC_SIZE,
+				  PKVM_IOMMU_QI_DESC_STATUS_SIZE,
+				  num_possible_cpus());
 	total += pkvm_shadow_ept_pgtable_pages(PKVM_MAX_VM_NUM);
 
 	return total;
