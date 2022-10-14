@@ -23,6 +23,7 @@ void pkvm_init_nest(void);
 #define LIST_OF_VMX_MSRS        		\
 	MSR_IA32_VMX_MISC,                      \
 	MSR_IA32_VMX_PROCBASED_CTLS2,           \
+	MSR_IA32_VMX_EPT_VPID_CAP,              \
 	MSR_IA32_VMX_VMFUNC
 
 bool is_vmx_msr(unsigned long msr);
