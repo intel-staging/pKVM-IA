@@ -366,6 +366,8 @@ int kvm_flush_remote_tlbs_with_range(struct kvm *kvm, struct kvm_tlb_range *rang
 	int ret;
 
 	ret = kvm_arch_flush_remote_tlb_with_range(kvm, range);
+	if (!ret)
+		++kvm->stat.generic.remote_tlb_flush_with_range;
 
 	return ret;
 }
