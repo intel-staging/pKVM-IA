@@ -99,6 +99,7 @@ struct kvm_mmu_memory_cache {
 struct kvm_vm_stat_generic {
 	u64 remote_tlb_flush;
 	u64 remote_tlb_flush_requests;
+	u64 remote_tlb_flush_with_range;
 };
 
 struct kvm_vcpu_stat_generic {
