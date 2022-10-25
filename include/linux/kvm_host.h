@@ -1960,7 +1960,8 @@ struct _kvm_stats_desc {
 
 #define KVM_GENERIC_VM_STATS()						       \
 	STATS_DESC_COUNTER(VM_GENERIC, remote_tlb_flush),		       \
-	STATS_DESC_COUNTER(VM_GENERIC, remote_tlb_flush_requests)
+	STATS_DESC_COUNTER(VM_GENERIC, remote_tlb_flush_requests),	       \
+	STATS_DESC_COUNTER(VM_GENERIC, remote_tlb_flush_with_range)
 
 #define KVM_GENERIC_VCPU_STATS()					       \
 	STATS_DESC_COUNTER(VCPU_GENERIC, halt_successful_poll),		       \
