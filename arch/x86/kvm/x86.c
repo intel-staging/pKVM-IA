@@ -10140,10 +10140,12 @@ static int kvm_pkvm_hypercall(struct kvm_vcpu *vcpu)
 	 */
 	switch (nr) {
 	case PKVM_GHC_IOREAD:
+		vcpu->mmio_is_write = 0;
 		ret = kvm_sev_es_mmio_read(vcpu, gpa, size,
 				&vcpu->arch.regs[VCPU_REGS_RAX]);
 		break;
 	case PKVM_GHC_IOWRITE:
+		vcpu->mmio_is_write = 1;
 		ret = kvm_sev_es_mmio_write(vcpu, gpa, size, &val);
 		break;
 	default:
