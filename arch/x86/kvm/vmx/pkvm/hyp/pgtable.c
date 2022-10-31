@@ -714,3 +714,56 @@ int pkvm_pgtable_annotate(struct pkvm_pgtable *pgt, unsigned long addr,
 	return __pkvm_pgtable_map(pgt, addr, INVALID_ADDR, size,
 			1 << PG_LEVEL_4K, 0, NULL, annotation);
 }
+
+static int pgtable_sync_map_cb(struct pkvm_pgtable *pgt, unsigned long vaddr,
+			       unsigned long vaddr_end, int level, void *ptep,
+			       unsigned long flags, struct pgt_flush_data *flush_data,
+			       void *const arg)
+{
+	struct pkvm_pgtable_ops *pgt_ops = pgt->pgt_ops;
+	struct pkvm_pgtable_sync_data *data = arg;
+	unsigned long phys;
+	unsigned long size;
+	u64 prot;
+
+	if (!pgt->pgt_ops->pgt_entry_present(ptep))
+		return 0;
+
+	phys = pgt_ops->pgt_entry_to_phys(ptep);
+	size = pgt_ops->pgt_level_to_size(level);
+	if (data->prot_override)
+		prot = *data->prot_override;
+	else
+		prot = pgt_ops->pgt_entry_to_prot(ptep);
+
+	return pkvm_pgtable_map(data->dest_pgt, vaddr, phys,
+				size, 0, prot, data->map_leaf_override);
+}
+
+/*
+ * pkvm_pgtable_sync_map() - map the destination pgtable_pgt according to the source
+ * pgtable_pgt, with the same phys address and desired property bits.
+ *
+ * @src:	source pgtable_pgt.
+ * @dest:	destination pgtable_pgt.
+ * @prot:	desired property bits. Can be NULL if use the same property
+ *		bits as the source pgtable_pgt
+ * @map_leaf:	function to map the leaf entry for destination pgtable_pgt.
+ */
+int pkvm_pgtable_sync_map(struct pkvm_pgtable *src, struct pkvm_pgtable *dest,
+			  u64 *prot, pgtable_leaf_ov_fn_t map_leaf)
+{
+	struct pkvm_pgtable_sync_data data = {
+		.dest_pgt = dest,
+		.prot_override = prot,
+		.map_leaf_override = map_leaf,
+	};
+	struct pkvm_pgtable_walker walker = {
+		.cb = pgtable_sync_map_cb,
+		.flags = PKVM_PGTABLE_WALK_LEAF,
+		.arg = &data,
+	};
+	unsigned long size = src->pgt_ops->pgt_level_to_size(src->level + 1);
+
+	return pgtable_walk(src, 0, size, true, &walker);
+}
