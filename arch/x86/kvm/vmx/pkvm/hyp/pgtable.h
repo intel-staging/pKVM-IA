@@ -97,6 +97,13 @@ struct pkvm_pgtable_free_data {
 	pgtable_leaf_ov_fn_t free_leaf_override;
 };
 
+struct pkvm_pgtable_sync_data {
+	struct pkvm_pgtable *dest_pgt;
+	u64 *prot_override;
+
+	pgtable_leaf_ov_fn_t map_leaf_override;
+};
+
 #define PGTABLE_WALK_DONE      1
 
 struct pkvm_pgtable_walker {
@@ -131,4 +138,6 @@ void pkvm_pgtable_lookup(struct pkvm_pgtable *pgt, unsigned long vaddr,
 void pkvm_pgtable_destroy(struct pkvm_pgtable *pgt, pgtable_leaf_ov_fn_t free_leaf);
 int pkvm_pgtable_annotate(struct pkvm_pgtable *pgt, unsigned long addr,
 			  unsigned long size, u64 annotation);
+int pkvm_pgtable_sync_map(struct pkvm_pgtable *src, struct pkvm_pgtable *dest,
+			  u64 *prot, pgtable_leaf_ov_fn_t map_leaf);
 #endif
