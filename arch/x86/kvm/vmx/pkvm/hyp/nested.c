@@ -845,6 +845,15 @@ int handle_vmptrld(struct kvm_vcpu *vcpu)
 						 * this shadow EPTP at last time.
 						 */
 						pkvm_flush_shadow_ept(&shadow_vcpu->vm->sept_desc);
+
+						/*
+						 * Write the #VE information physical address.
+						 */
+						if (shadow_vcpu->vm->vm_type == KVM_X86_PROTECTED_VM) {
+							memset(&shadow_vcpu->ve_info, 0, sizeof(shadow_vcpu->ve_info));
+							vmcs_write64(VE_INFO_ADDR, __pkvm_pa(&shadow_vcpu->ve_info));
+						}
+
 						shadow_vcpu->last_cpu = vcpu->cpu;
 						shadow_vcpu->vmcs02_initied = true;
 					} else {
@@ -854,6 +863,9 @@ int handle_vmptrld(struct kvm_vcpu *vcpu)
 							shadow_vcpu->last_cpu = vcpu->cpu;
 						}
 					}
+
+					pkvm_hvcpu->current_shadow_vcpu = shadow_vcpu;
+
 					copy_shadow_fields_vmcs12_to_vmcs02(vmx, vmcs12);
 					sync_vmcs12_dirty_fields_to_vmcs02(vmx, vmcs12);
 					vmcs_clear_track(vmx, vmcs02);
@@ -867,7 +879,6 @@ int handle_vmptrld(struct kvm_vcpu *vcpu)
 					vmcs_write64(VMCS_LINK_POINTER, __pkvm_pa(vmcs02));
 
 					vmx->nested.current_vmptr = vmptr;
-					pkvm_hvcpu->current_shadow_vcpu = shadow_vcpu;
 
 					nested_vmx_result(VMsucceed, 0);
 				} else {
@@ -1276,6 +1287,26 @@ static bool nested_handle_ept_violation(struct shadow_vcpu_state *shadow_vcpu,
 	return handled;
 }
 
+static void pkvm_get_ve_info(struct kvm_vcpu *vcpu)
+{
+	struct shadow_vcpu_state *shadow_vcpu = to_pkvm_hvcpu(vcpu)->current_shadow_vcpu;
+	struct pkvm_ve_info *ve;
+
+	ve = &shadow_vcpu->ve_info;
+
+	kvm_rcx_write(vcpu, ve->exit_reason);
+	kvm_rdx_write(vcpu, ve->exit_qual);
+	kvm_r8_write(vcpu, ve->gla);
+	kvm_r9_write(vcpu, ve->gpa);
+
+	/*
+	 * When virtualization exception happens, the valid filed in #VE
+	 * information will be set to 0xffffffff. We need to clear it to 0 when
+	 * protected VM handles this #VE, so another #VE can continue to happen.
+	 */
+	ve->valid = 0;
+}
+
 static bool nested_handle_vmcall(struct kvm_vcpu *vcpu)
 {
 	u64 nr, a0, a1, a2, a3;
@@ -1301,6 +1332,10 @@ static bool nested_handle_vmcall(struct kvm_vcpu *vcpu)
 		break;
 	case PKVM_GHC_UNSHARE_MEM:
 		ret = __pkvm_guest_unshare_host(guest_pgt, a0, a1);
+		handled = true;
+		break;
+	case PKVM_GHC_GET_VE_INFO:
+		pkvm_get_ve_info(vcpu);
 		handled = true;
 		break;
 	default:
