@@ -17,6 +17,7 @@
 #define PKVM_HC_MMIO_ACCESS		6
 #define PKVM_HC_ACTIVATE_IOMMU		7
 #define PKVM_HC_TLB_REMOTE_FLUSH_RANGE	8
+#define PKVM_HC_SET_MMIO_VE		9
 
 /*
  * 15bits for PASID, DO NOT change it, based on it,
