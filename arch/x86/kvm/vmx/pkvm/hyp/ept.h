@@ -14,6 +14,8 @@
 #define EPT_PROT_MASK		(VMX_EPT_RWX_MASK | VMX_EPT_MT_MASK | VMX_EPT_IPAT_BIT)
 #define EPT_PROT_DEF		SUPPRESS_VE
 
+#define SHADOW_EPT_MMIO_ENTRY	0
+
 enum sept_handle_ret {
 	PKVM_NOT_HANDLED,
 	PKVM_HANDLED,
@@ -41,6 +43,7 @@ void pkvm_invalidate_shadow_ept(struct shadow_ept_desc *desc);
 void pkvm_invalidate_shadow_ept_with_range(struct shadow_ept_desc *desc,
 					   unsigned long vaddr, unsigned long size);
 void pkvm_flush_shadow_ept(struct shadow_ept_desc *desc);
+void pkvm_shadow_clear_suppress_ve(struct kvm_vcpu *vcpu, unsigned long gfn);
 
 static inline bool is_valid_eptp(u64 eptp)
 {
