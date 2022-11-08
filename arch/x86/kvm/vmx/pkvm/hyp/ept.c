@@ -580,6 +580,9 @@ static int pkvm_shadow_ept_free_leaf(struct pkvm_pgtable *pgt, unsigned long vad
 			ret = __pkvm_host_undonate_guest(phys, pgt, vaddr, size);
 			pgt->mm_ops->put_page(ptep);
 			flush_data->flushtlb |= true;
+		} else if (*(u64 *)ptep == SHADOW_EPT_MMIO_ENTRY) {
+			pgt->pgt_ops->pgt_set_entry(ptep, pgt->pgt_ops->default_prot);
+			pgt->mm_ops->put_page(ptep);
 		}
 		break;
 	default:
@@ -603,8 +606,13 @@ static int pkvm_shadow_ept_invalidate_leaf(struct pkvm_pgtable *pgt, unsigned lo
 	struct pkvm_shadow_vm *vm = sept_to_shadow_vm(pgt);
 	int ret = 0;
 
-	if (!pgt->pgt_ops->pgt_entry_present(ptep))
+	if (!pgt->pgt_ops->pgt_entry_present(ptep)) {
+		if (*(u64 *)ptep == SHADOW_EPT_MMIO_ENTRY) {
+			pgt->pgt_ops->pgt_set_entry(ptep, pgt->pgt_ops->default_prot);
+			pgt->mm_ops->put_page(ptep);
+		}
 		return 0;
+	}
 
 	/*
 	 * We need do invalidation for all present page table entry.
@@ -817,4 +825,23 @@ void pkvm_flush_shadow_ept(struct shadow_ept_desc *desc)
 		return;
 
 	flush_ept(desc->shadow_eptp);
+}
+
+void pkvm_shadow_clear_suppress_ve(struct kvm_vcpu *vcpu, unsigned long gfn)
+{
+	unsigned long gpa = gfn * PAGE_SIZE;
+	struct pkvm_host_vcpu *pkvm_hvcpu = to_pkvm_hvcpu(vcpu);
+	struct shadow_vcpu_state *shadow_vcpu = pkvm_hvcpu->current_shadow_vcpu;
+	struct pkvm_shadow_vm *vm = shadow_vcpu->vm;
+	struct shadow_ept_desc *desc = &vm->sept_desc;
+	struct pkvm_pgtable *sept = &desc->sept;
+
+	if (vm->vm_type != KVM_X86_PROTECTED_VM)
+		return;
+
+	/*
+	 * Set the mmio_pte with prot 0, which means it is invalid and with
+	 * "Suppress #VE" bit cleared. Accessing this pte will trigger #VE.
+	 */
+	pkvm_pgtable_annotate(sept, gpa, PAGE_SIZE, SHADOW_EPT_MMIO_ENTRY);
 }

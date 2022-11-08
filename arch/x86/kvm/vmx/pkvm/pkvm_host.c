@@ -1157,6 +1157,16 @@ int pkvm_tlb_remote_flush(struct kvm *kvm)
 	return __pkvm_tlb_remote_flush_with_range(kvm, NULL);
 }
 
+int pkvm_set_mmio_ve(struct kvm_vcpu *vcpu, unsigned long gfn)
+{
+	if (vcpu->kvm->arch.vm_type == KVM_X86_PROTECTED_VM) {
+		kvm_hypercall1(PKVM_HC_SET_MMIO_VE, gfn);
+		return 1;
+	}
+
+	return 0;
+}
+
 __init int pkvm_init(void)
 {
 	int ret = 0, cpu;
