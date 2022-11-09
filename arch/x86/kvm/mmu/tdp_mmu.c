@@ -9,6 +9,7 @@
 
 #include <asm/cmpxchg.h>
 #include <trace/events/kvm.h>
+#include <asm/kvm_pkvm.h>
 
 static bool __read_mostly tdp_mmu_enabled = true;
 module_param_named(tdp_mmu, tdp_mmu_enabled, bool, 0644);
@@ -1072,8 +1073,12 @@ static int tdp_mmu_map_handle_target_level(struct kvm_vcpu *vcpu,
 	bool wrprot = false;
 
 	WARN_ON(sp->role.level != fault->goal_level);
-	if (unlikely(!fault->slot))
+	if (unlikely(!fault->slot)) {
 		new_spte = make_mmio_spte(vcpu, iter->gfn, ACC_ALL);
+
+		if (pkvm_set_mmio_ve(vcpu, iter->gfn))
+			return RET_PF_RETRY;
+	}
 	else
 		wrprot = make_spte(vcpu, sp, fault->slot, ACC_ALL, iter->gfn,
 					 fault->pfn, iter->old_spte, fault->prefetch, true,
