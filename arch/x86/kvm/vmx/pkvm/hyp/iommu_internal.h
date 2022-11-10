@@ -126,6 +126,8 @@ do {									\
 #define QI_DESC_PC_DID(qw)		((qw & GENMASK_ULL(31, 16)) >> 16)
 #define QI_DESC_PC_PASID(qw)		((qw & GENMASK_ULL(51, 32)) >> 32)
 
+#define pgt_to_pkvm_iommu(pgt) container_of(pgt, struct pkvm_iommu, pgt)
+
 struct pasid_dir_entry {
 	u64 val;
 };
