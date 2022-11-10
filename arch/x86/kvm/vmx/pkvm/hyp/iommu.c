@@ -463,7 +463,7 @@ static bool sync_shadow_pasid_table_entry(struct pgt_sync_data *sdata)
 	return pasid_copy_entry(shadow_pte, &tmp_pte);
 }
 
-static bool iommu_sm_id_sync_entry(struct pgt_sync_data *sdata)
+static bool iommu_id_sync_entry(struct pgt_sync_data *sdata)
 {
 	bool ret = false;
 	struct pkvm_pgtable *spgt = sdata->spgt;
@@ -609,6 +609,7 @@ static int free_shadow_id_cb(struct pkvm_pgtable *pgt, unsigned long vaddr,
 	struct pkvm_pgtable_ops *pgt_ops = pgt->pgt_ops;
 	struct pkvm_mm_ops *mm_ops = pgt->mm_ops;
 	struct pgt_sync_data sync_data = {0};
+	struct pkvm_iommu *iommu = pgt_to_pkvm_iommu(pgt);
 	void *child_ptep;
 
 	/* Doesn't need to do anything if the shadow entry is not present */
@@ -618,10 +619,11 @@ static int free_shadow_id_cb(struct pkvm_pgtable *pgt, unsigned long vaddr,
 	sync_data.shadow_ptep = ptep;
 	sync_data.level = level;
 	sync_data.spgt = pgt;
+	sync_data.iommu_ecap = iommu->iommu.ecap;
 
 	/* Un-present a present PASID Table entry */
 	if (LAST_LEVEL(level)) {
-		iommu_sm_id_sync_entry(&sync_data);
+		iommu_id_sync_entry(&sync_data);
 		mm_ops->put_page(ptep);
 		return 0;
 	}
@@ -633,7 +635,7 @@ static int free_shadow_id_cb(struct pkvm_pgtable *pgt, unsigned long vaddr,
 	 */
 	child_ptep = mm_ops->phys_to_virt(pgt_ops->pgt_entry_to_phys(ptep));
 	if (mm_ops->page_count(child_ptep) == 1) {
-		iommu_sm_id_sync_entry(&sync_data);
+		iommu_id_sync_entry(&sync_data);
 		mm_ops->put_page(ptep);
 		mm_ops->put_page(child_ptep);
 	}
@@ -816,7 +818,7 @@ static int sync_shadow_id_cb(struct pkvm_pgtable *vpgt, unsigned long vaddr,
 		 */
 		sync_data.shadow_pa = spgt->pgt_ops->pgt_entry_to_phys(shadow_ptep);
 
-	if (iommu_sm_id_sync_entry(&sync_data)) {
+	if (iommu_id_sync_entry(&sync_data)) {
 		if (!shadow_p)
 			/*
 			 * A non-present to present changing require to get
