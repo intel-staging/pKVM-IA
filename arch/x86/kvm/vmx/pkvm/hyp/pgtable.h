@@ -25,6 +25,7 @@ struct pkvm_pgtable_ops {
 	unsigned long (*pgt_entry_to_phys)(void *pte);
 	u64 (*pgt_entry_to_prot)(void *pte);
 	int (*pgt_entry_to_index)(unsigned long vaddr, int level);
+	u64 (*pgt_level_page_mask)(int level);
 	bool (*pgt_entry_is_leaf)(void *ptep, int level);
 	int (*pgt_level_entry_size)(int level);
 	int (*pgt_level_to_entries)(int level);
@@ -51,6 +52,8 @@ typedef int (*pgtable_visit_fn_t)(struct pkvm_pgtable *pgt, unsigned long vaddr,
 				  unsigned long flags, struct pgt_flush_data *flush_data,
 				  void *const arg);
 
+#define PGTABLE_WALK_DONE      1
+
 struct pkvm_pgtable_walker {
 	const pgtable_visit_fn_t cb;
 	void *const arg;
@@ -72,5 +75,7 @@ int pkvm_pgtable_map(struct pkvm_pgtable *pgt, unsigned long vaddr_start,
 		int pgsz_mask, u64 entry_prot);
 int pkvm_pgtable_unmap(struct pkvm_pgtable *pgt, unsigned long vaddr_start,
 		unsigned long phys_start, unsigned long size);
+void pkvm_pgtable_lookup(struct pkvm_pgtable *pgt, unsigned long vaddr,
+		unsigned long *pphys, u64 *pprot, int *plevel);
 void pkvm_pgtable_destroy(struct pkvm_pgtable *pgt);
 #endif
