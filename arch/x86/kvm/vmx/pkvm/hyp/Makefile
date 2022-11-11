@@ -2,8 +2,38 @@
 
 ccflags-y += -I $(srctree)/arch/x86/kvm
 ccflags-y += -I $(srctree)/arch/x86/kvm/vmx/pkvm/include
+ccflags-y += -fno-stack-protector
+ccflags-y += -D__DISABLE_EXPORTS
 ccflags-y += -D__PKVM_HYP__
+
+lib-dir		:= lib
 
 pkvm-hyp-y	:= vmx_asm.o vmexit.o
 
-obj-$(CONFIG_PKVM_INTEL)	+= $(pkvm-hyp-y)
+pkvm-hyp-$(CONFIG_MITIGATION_RETPOLINE)	+= $(lib-dir)/retpoline.o
+
+pkvm-obj 	:= $(patsubst %.o,%.pkvm.o,$(pkvm-hyp-y))
+obj-$(CONFIG_PKVM_INTEL)	+= pkvm.o
+targets += $(pkvm-obj) pkvm.tmp.o pkvm.lds
+
+$(obj)/%.pkvm.o: $(src)/%.c FORCE
+	$(call if_changed_rule,cc_o_c)
+$(obj)/%.pkvm.o: $(src)/%.S FORCE
+	$(call if_changed_rule,as_o_S)
+
+$(obj)/pkvm.lds: $(src)/pkvm.lds.S FORCE
+	$(call if_changed_dep,cpp_lds_S)
+
+LDFLAGS_pkvm.tmp.o := -r -T
+$(obj)/pkvm.tmp.o: $(obj)/pkvm.lds $(addprefix $(obj)/,$(pkvm-obj)) FORCE
+	$(call if_changed,ld)
+
+$(obj)/pkvm.o: $(obj)/pkvm.tmp.o FORCE
+	$(call if_changed,pkvmcopy)
+
+quiet_cmd_pkvmcopy = PKVMPCOPY $@
+      cmd_pkvmcopy = $(OBJCOPY) --prefix-symbols=__pkvm_ --remove-section=.retpoline_sites --remove-section=.return_sites $< $@
+
+# Remove ftrace, Shadow Call Stack, and CFI CFLAGS.
+# This is equivalent to the 'notrace', '__noscs', and '__nocfi' annotations.
+KBUILD_CFLAGS := $(filter-out $(CC_FLAGS_FTRACE) $(CC_FLAGS_SCS) $(CC_FLAGS_CFI), $(KBUILD_CFLAGS))
