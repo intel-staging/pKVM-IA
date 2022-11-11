@@ -27,6 +27,13 @@ struct pkvm_pgtable_unmap_data {
 	unsigned long phys;
 };
 
+struct pkvm_pgtable_lookup_data {
+	unsigned long vaddr;
+	unsigned long phys;
+	u64 prot;
+	int level;
+};
+
 static bool leaf_mapping_allowed(struct pkvm_pgtable_ops *pgt_ops,
 				unsigned long vaddr,
 				unsigned long vaddr_end,
@@ -273,6 +280,41 @@ static int pgtable_unmap_cb(struct pkvm_pgtable *pgt, unsigned long vaddr,
 	return 0;
 }
 
+static int pgtable_lookup_cb(struct pkvm_pgtable *pgt,
+			    unsigned long aligned_vaddr,
+			    unsigned long aligned_vaddr_end,
+			    int level,
+			    void *ptep,
+			    unsigned long flags,
+			    struct pgt_flush_data *flush_data,
+			    void *const arg)
+{
+	struct pkvm_pgtable_lookup_data *data = arg;
+	struct pkvm_pgtable_ops *pgt_ops = pgt->pgt_ops;
+	u64 pte = atomic64_read((atomic64_t *)ptep);
+
+	data->phys = INVALID_ADDR;
+	data->prot = 0;
+	data->level = level;
+
+	/*
+	 * This cb shall only be called for leaf, if now it is not a leaf
+	 * that means the pte is changed by others, we shall re-walk the pgtable
+	 */
+	if (unlikely(!pgt_ops->pgt_entry_is_leaf(&pte, level)))
+		return -EAGAIN;
+
+	if (pgt_ops->pgt_entry_present(&pte)) {
+		unsigned long offset =
+			data->vaddr & ~pgt_ops->pgt_level_page_mask(level);
+
+		data->phys = pgt_ops->pgt_entry_to_phys(&pte) + offset;
+		data->prot = pgt_ops->pgt_entry_to_prot(&pte);
+	}
+
+	return PGTABLE_WALK_DONE;
+}
+
 static int pgtable_free_cb(struct pkvm_pgtable *pgt,
 			    unsigned long vaddr,
 			    unsigned long vaddr_end,
@@ -367,7 +409,7 @@ static int _pgtable_walk(struct pgt_walk_data *data, void *ptep, int level)
 			break;
 
 		ret = pgtable_visit(data, (ptep + idx * entry_size), level);
-		if (ret < 0)
+		if (ret)
 			return ret;
 	}
 
@@ -467,6 +509,36 @@ int pkvm_pgtable_unmap(struct pkvm_pgtable *pgt, unsigned long vaddr_start,
 	};
 
 	return pgtable_walk(pgt, vaddr_start, size, &walker);
+}
+
+void pkvm_pgtable_lookup(struct pkvm_pgtable *pgt, unsigned long vaddr,
+		     unsigned long *pphys, u64 *pprot, int *plevel)
+{
+	struct pkvm_pgtable_lookup_data data = {
+		.vaddr = vaddr,
+	};
+	struct pkvm_pgtable_walker walker = {
+		.cb = pgtable_lookup_cb,
+		.arg = &data,
+		.flags = PKVM_PGTABLE_WALK_LEAF,
+	};
+	int ret, retry_cnt = 0;
+
+retry:
+	ret = pgtable_walk(pgt, vaddr, PAGE_SIZE, &walker);
+	/*
+	 * we give 5 times chance to re-walk pgtable if others change the
+	 * PTE during above pgtable walk.
+	 */
+	if ((ret == -EAGAIN) && (retry_cnt++ < 5))
+		goto retry;
+
+	if (pphys)
+		*pphys = data.phys;
+	if (pprot)
+		*pprot = data.prot;
+	if (plevel)
+		*plevel = data.level;
 }
 
 void pkvm_pgtable_destroy(struct pkvm_pgtable *pgt)

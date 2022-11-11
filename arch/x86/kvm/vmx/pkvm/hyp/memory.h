@@ -7,6 +7,8 @@
 
 #include <asm/kvm_pkvm.h>
 
+#define INVALID_ADDR (~0UL)
+
 unsigned long pkvm_virt_to_symbol_phys(void *virt);
 #define __pkvm_pa_symbol(x) pkvm_virt_to_symbol_phys((void *)x)
 
