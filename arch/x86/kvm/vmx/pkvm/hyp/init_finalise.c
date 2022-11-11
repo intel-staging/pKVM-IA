@@ -289,6 +289,21 @@ switch_pgt:
 	secondary_exec_controls_setbit(&pkvm_host_vcpu->vmx, SECONDARY_EXEC_ENABLE_EPT);
 	vmcs_write64(EPT_POINTER, eptp);
 
+	/* enable vpid */
+	if (pkvm_hyp->vmcs_config.cpu_based_2nd_exec_ctrl & SECONDARY_EXEC_ENABLE_VPID) {
+		static u16 pkvm_host_vpid = VMX_NR_VPIDS - 1;
+
+		/*
+		 * Fixed VPIDs for the host vCPUs, which implies that it could conflict
+		 * with VPIDs from nested guests.
+		 *
+		 * It's safe because cached mappings used in non-root mode are associated
+		 * with EP4TA, which is managed by pKVM and unique for every guest.
+		 */
+		vmcs_write16(VIRTUAL_PROCESSOR_ID, pkvm_host_vpid--);
+		secondary_exec_controls_setbit(&pkvm_host_vcpu->vmx, SECONDARY_EXEC_ENABLE_VPID);
+	}
+
 	ept_sync_global();
 
 out:
