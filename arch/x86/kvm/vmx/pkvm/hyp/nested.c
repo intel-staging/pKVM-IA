@@ -17,7 +17,7 @@
 /*
  * Not support shadow vmcs & vmfunc;
  * Not support descriptor-table exiting
- * as it requires to access guest memory
+ * as it requires guest memory access
  * to decode and emulate instructions
  * which is not supported for protected VM.
  */
@@ -80,7 +80,7 @@ int read_vmx_msr(struct kvm_vcpu *vcpu, unsigned long msr, u64 *val)
 
 /**
  * According to SDM Appendix B Field Encoding in VMCS, some fields only
- * exist on processor that support the 1-setting of the corresponding
+ * exist on processors that support the 1-setting of the corresponding
  * fields in the control regs.
  */
 static bool has_vmcs_field(u16 encoding)
@@ -590,7 +590,7 @@ static void sync_vmcs12_dirty_fields_to_vmcs02(struct vcpu_vmx *vmx, struct vmcs
 			if (field.encoding == EPT_POINTER)
 				/*
 				 * EPTP is configured as shadow EPTP when the first
-				 * time the vmcs02 is loading. As shadow EPTP is not
+				 * time the vmcs02 is loaded. As shadow EPTP is not
 				 * changed at the runtime, also cannot use the virtual
 				 * EPT from KVM high, no need to sync to vmcs02 again.
 				 */
@@ -614,14 +614,14 @@ static void prepare_vmcs01_guest_state(struct vcpu_vmx *vmx, struct vmcs12 *vmcs
 	vmcs_writel(GUEST_SYSENTER_EIP, vmcs12->host_ia32_sysenter_eip);
 	vmcs_write32(GUEST_SYSENTER_CS, vmcs12->host_ia32_sysenter_cs);
 
-	/* Both cases want vmcs01 take EFER/PAT from L2
+	/* Both cases want vmcs01 to take EFER/PAT from L2
 	 * 1. L1 host wishes to load its own MSRs on L2 guest VMExit
-	 *    such vmcs12's host states shall set as vmcs01's guest states
+	 *    such vmcs12's host states shall be set as vmcs01's guest states
 	 * 2. L1 host wishes to keep use MSRs from L2 guest after its VMExit
-	 *    such vmcs02's guest state shall set as vmcs01's guest states
+	 *    such vmcs02's guest state shall be set as vmcs01's guest states
 	 *    the vmcs02's guest state were recorded in vmcs12 host
 	 *
-	 * For case 1, IA32_PERF_GLOBAL_CTRL is separate checked.
+	 * For case 1, IA32_PERF_GLOBAL_CTRL is separately checked.
 	 */
 	vmcs_write64(GUEST_IA32_EFER, vmcs12->host_ia32_efer);
 	vmcs_write64(GUEST_IA32_PAT, vmcs12->host_ia32_pat);
@@ -681,7 +681,7 @@ static void nested_release_vmcs12(struct kvm_vcpu *vcpu)
 	/*
 	 * Flush the current used shadow EPT to make sure
 	 * nested_flush_shadow_ept() won't miss any flushing due to vmclear.
-	 * See commints in nested_flush_shadow_ept().
+	 * See comments in nested_flush_shadow_ept().
 	 */
 	pkvm_flush_shadow_ept(&cur_shadow_vcpu->vm->sept_desc);
 	kvm_clear_request(PKVM_REQ_TLB_FLUSH_SHADOW_EPT, vcpu);
@@ -1093,8 +1093,8 @@ int handle_invept(struct kvm_vcpu *vcpu)
 
 	/*
 	 * Shadow EPT TLB is flushed when doing vmclear for a shadow vcpu, so if
-	 * this CPU doesn't have a shadow vcpu loaded, then there is no shadow
-	 * EPT TLB entries left on this CPU, and no need to execut invept.
+	 * this CPU doesn't have a shadow vcpu loaded, there is no shadow
+	 * EPT TLB entries left on this CPU, and no need to execute invept.
 	 */
 	shadow_vcpu = to_pkvm_hvcpu(vcpu)->current_shadow_vcpu;
 	if (!shadow_vcpu)
@@ -1120,7 +1120,7 @@ int handle_invept(struct kvm_vcpu *vcpu)
 
 		/*
 		 * For single context invept with a guest eptp, do the invept
-		 * if the guest eptp matches with the shadow eptp of this
+		 * if the guest eptp matches the shadow eptp of this
 		 * loaded shadow vcpu.
 		 */
 		vmcs12 = (struct vmcs12 *)shadow_vcpu->cached_vmcs12;
@@ -1266,7 +1266,7 @@ static bool nested_handle_ept_violation(struct shadow_vcpu_state *shadow_vcpu,
 		/*
 		 * Inject EPT_MISCONFIG vmexit reason if can directly modify
 		 * the read-only fields. Otherwise still deliver EPT_VIOLATION
-		 * for simplify.
+		 * for simplification.
 		 */
 		if (vmx_has_vmwrite_any_field())
 			vmcs_write32(VM_EXIT_REASON, EXIT_REASON_EPT_MISCONFIG);
@@ -1418,7 +1418,7 @@ void nested_flush_shadow_ept(struct kvm_vcpu *vcpu)
 		return;
 
 	/*
-	 * And probably the shadow EPT is not the one want to be flushed
+	 * And probably the shadow EPT is not the one wanting to be flushed
 	 * if another shadow vcpu is loaded after kick, and cannot tell
 	 * this case without additional hints. So always do the shadow
 	 * ept flushing.

@@ -41,7 +41,7 @@ static int allocate_shadow_vm_handle(struct pkvm_shadow_vm *vm)
 	int handle;
 
 	/*
-	 * The shadow_vm_handle is a int so cannot exceed the INT_MAX.
+	 * The shadow_vm_handle is an int so it cannot exceed INT_MAX.
 	 * Meanwhile shadow_vm_handle will also be used as owner_id in
 	 * the page state machine so it also cannot exceed the max
 	 * owner_id.
@@ -278,7 +278,7 @@ static s64 attach_shadow_vcpu_to_vm(struct pkvm_shadow_vm *vm,
 
 	/*
 	 * Shadow_vcpu_handle is a s64 value combined with shadow_vm_handle
-	 * and shadow_vcpu index from the arrary. So the array size cannot be
+	 * and shadow_vcpu index from the array. So the array size cannot be
 	 * larger than the shadow_vcpu index mask.
 	 */
 	BUILD_BUG_ON(KVM_MAX_VCPUS > SHADOW_VCPU_INDEX_MASK);
@@ -286,7 +286,7 @@ static s64 attach_shadow_vcpu_to_vm(struct pkvm_shadow_vm *vm,
 	/*
 	 * Save a shadow_vm pointer in shadow_vcpu requires additional
 	 * get so that later when use this pointer at runtime no need
-	 * to get again. This will be put when detach this shadow_vcpu.
+	 * to get again. This will be put when detaching this shadow_vcpu.
 	 */
 	shadow_vcpu->vm = get_shadow_vm(vm->shadow_vm_handle);
 	if (!shadow_vcpu->vm)
@@ -341,8 +341,8 @@ detach_shadow_vcpu_from_vm(struct pkvm_shadow_vm *vm, s64 shadow_vcpu_handle)
 	if (shadow_vcpu) {
 		remove_shadow_vcpu_vmcs12_map(shadow_vcpu);
 		/*
-		 * Paried with the get_shadow_vm when saving the shadow_vm pointer
-		 * during attach shadow_vcpu.
+		 * Paired with the get_shadow_vm when saving the shadow_vm pointer
+		 * during attaching shadow_vcpu.
 		 */
 		put_shadow_vm(shadow_vcpu->vm->shadow_vm_handle);
 	}

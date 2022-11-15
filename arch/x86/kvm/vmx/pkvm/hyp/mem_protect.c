@@ -71,12 +71,12 @@ static int host_ept_set_owner_locked(struct pkvm_pgtable *pgt_override, phys_add
 	u64 annotation = pkvm_init_invalid_leaf_owner(owner_id);
 
 	/*
-	 * The memory [addr, addr + size) will be unmaped from host ept. At the
+	 * The memory [addr, addr + size) will be unmapped from host ept. At the
 	 * same time, the annotation with a NOPAGE flag will be put in the
-	 * invalid pte that has been unmaped. And these information record that
-	 * the page has been used by some guest and it's id can be read from
-	 * annotation. Also when later these page back to host, the annotation
-	 * will help to check the right page transition.
+	 * invalid pte that has been unmapped. And the information shows that
+	 * the page has been used by some guest and its id can be read from
+	 * annotation. Also when later these pages are back to host, the annotation
+	 * will be helpful to check the right page transition.
 	 */
 	return pkvm_pgtable_annotate(pgt_override ? pgt_override : pkvm_hyp->host_vm.ept,
 				     addr, size, annotation);
@@ -183,8 +183,8 @@ static int guest_request_donation(const struct pkvm_mem_transition *tx)
 					};
 
 	/*
-	 * When destroying vm, there may be multiple page state in the guest
-	 * pgstate pgt. In this case, both page state is ok to be reclaimed
+	 * When destroying vm, there may be multiple page states in the guest
+	 * pgstate ept. In such case, both page states are ok to be reclaimed
 	 * back by host.
 	 */
 	return check_page_state_range(tx->initiator.guest.pgt,
@@ -336,9 +336,9 @@ static int __do_donate(const struct pkvm_mem_transition *tx)
  * Initiator: OWNED	=> NO_PAGE
  * Completer: NO_APGE	=> OWNED
  *
- * The special component is pkvm_hyp, due to pkvm_hyp can access all of the
- * memory, so there need to do nothing if the page owner transfer to hyp or
- * hyp transfer to other entity.
+ * The special component is pkvm_hyp. Since pkvm_hyp can access all the
+ * memory, nothing needs to be done if the page owner is transferred to hyp or
+ * hyp transfers the ownership to other entities.
  */
 static int do_donate(const struct pkvm_mem_transition *donation)
 {
@@ -906,7 +906,7 @@ static int __do_unshare(struct pkvm_mem_transition *tx)
 }
 
 /*
- * do_unshare() - The page owner take back the page access for another
+ * do_unshare() - The page owner takes back the page access for another
  * component.
  *
  * Initiator: SHARED_OWNED	=> OWNED

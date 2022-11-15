@@ -80,8 +80,8 @@ static int check_translation(struct kvm_vcpu *vcpu, gva_t gva, gpa_t gpa,
 	bool cr0_wp = vmcs_readl(GUEST_CR0) & X86_CR0_WP;
 
 	/*
-	 * As pkvm hypervisor will not do instruction emulation, here does not
-	 * expect access guest memory for instruction fetch.
+	 * As pkvm hypervisor will not do instruction emulation, here we do not
+	 * expect guest memory access for instruction fetch.
 	 */
 	WARN_ON(access & PFERR_FETCH_MASK);
 
@@ -115,9 +115,9 @@ static int check_translation(struct kvm_vcpu *vcpu, gva_t gva, gpa_t gpa,
 		 * When SMAP is on, we only need to apply check when address is
 		 * user-mode address.
 		 *
-		 * Also SMAP only impact the supervisor-mode access.
+		 * Also SMAP only impacts the supervisor-mode access.
 		 */
-		/* if smap is enabled and supervisor-mode access */
+		/* if SMAP is enabled and supervisor-mode access */
 		if (cr4_smap && (!user_mode_access) && user_mode_addr) {
 			bool acflag = vmcs_readl(GUEST_RFLAGS) & X86_EFLAGS_AC;
 
@@ -320,7 +320,7 @@ static void pkvm_clflush_cache_range_opt(void *vaddr, unsigned int size)
 
 /**
  * pkvm_clflush_cache_range - flush a cache range with clflush
- * which is implemented refer to clflush_cache_range() in kernel.
+ * which is implemented by referring to clflush_cache_range() in kernel.
  *
  * @vaddr:	virtual start address
  * @size:	number of bytes to flush

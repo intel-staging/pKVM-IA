@@ -74,8 +74,8 @@ static inline void pkvm_update_iommu_virtual_caps(u64 *cap, u64 *ecap)
 {
 	if (cap)
 		/*
-		 * Set caching mode as linux OS will runs in a VM
-		 * with controlling a virtual IOMMU device emulated
+		 * Set caching mode as linux OS will run in a VM
+		 * controlling a virtual IOMMU device emulated
 		 * by pkvm.
 		 */
 		*cap |= 1 << 7;
@@ -92,13 +92,13 @@ static inline void pkvm_update_iommu_virtual_caps(u64 *cap, u64 *ecap)
 		 * 1. using nested translation with the first-level from the deprivileged
 		 * linux IOMMU driver and EPT as second-level.
 		 * 2. using second-level only translation with EPT.
-		 * The linux IOMMU driver then uses an virtual IOMMU device emulated by
+		 * The linux IOMMU driver then uses a virtual IOMMU device emulated by
 		 * pkvm IOMMU driver.
 		 *
-		 * Way#1 and way#2 can only support the linux IOMMU driver works in
+		 * Way#1 and way#2 can only support the linux IOMMU driver working in
 		 * first-level translation mode or HW pass-through mode. To guarantee
-		 * this, let linux IOMMU driver to pick up the supported capabilities
-		 * when running at the bare metal if pkvm is enabled, to make it as a
+		 * this, let linux IOMMU driver pick up the supported capabilities
+		 * when running at the bare metal if pkvm is enabled, to make it a
 		 * pkvm-awared IOMMU kernel driver.
 		 *
 		 * So disable SLTS and Nest.
@@ -113,11 +113,11 @@ static inline void pkvm_update_iommu_virtual_caps(u64 *cap, u64 *ecap)
 		/*
 		 * Disable Device TLB capability for security.
 		 *
-		 * ATS is only enabled for trusted device by the host OS.
+		 * ATS is only enabled for trusted devices by the host OS.
 		 * However with pkvm, the host OS including the device driver
 		 * is treated as untrusted software. A malicious software in
-		 * host OS may enable ATS for untrusted device so that the
-		 * untrusted device can still exploit the ATS weekness to bypass
+		 * host OS may enable ATS for untrusted devices so that one
+		 * untrusted device can still exploit the ATS weakness to bypass
 		 * VT-d's translation protection and access the isolated memory.
 		 *
 		 * To resolve this, tell the host IOMMU driver not to enable

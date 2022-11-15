@@ -41,8 +41,8 @@ struct pkvm_ve_info {
 struct shadow_vcpu_state {
 	/*
 	 * A unique id to the shadow vcpu, which is combined by
-	 * shadow_vm_handle and shadow_vcpu index in the arrary.
-	 * As shadow_vm_handle is in the high end and it is a
+	 * shadow_vm_handle and shadow_vcpu index in the array.
+	 * As shadow_vm_handle is in the high end and it is an
 	 * int, so define the shadow_vcpu_handle as a s64.
 	 */
 	s64 shadow_vcpu_handle;
@@ -84,7 +84,7 @@ struct shadow_vcpu_state {
  * Shadow_vcpu_array will be appended to the end of the pkvm_shadow_vm area
  * implicitly, so that the shadow_vcpu_state pointer cannot be got directly
  * from the pkvm_shadow_vm, but needs to be done through the interface
- * get/put_shadow_vcpu. This can prevent the shadow_vcpu_state point been
+ * get/put_shadow_vcpu. This can prevent the shadow_vcpu_state pointer from being
  * abused without getting/putting the refcount.
  */
 struct shadow_vcpu_array {
@@ -117,7 +117,7 @@ struct pkvm_shadow_vm {
 
 	/*
 	 * VM's shadow EPT. All vCPU shares one mapping.
-	 * Have potential security issue if some vCPUs are
+	 * FIXME: a potential security issue if some vCPUs are
 	 * in SMM but the others are not.
 	 */
 	struct shadow_ept_desc sept_desc;

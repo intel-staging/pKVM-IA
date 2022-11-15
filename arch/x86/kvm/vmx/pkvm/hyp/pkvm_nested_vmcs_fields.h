@@ -53,8 +53,8 @@ EMULATED_FIELD_RW(VMCS_LINK_POINTER, vmcs_link_pointer)
  *
  * These fields are HW shadowing in vmcs02, we try to shadow all non-host
  * fields except emulated ones.
- * Host state fields need be recorded in cached_vmcs12 and restore to vmcs01's
- * guest state when return to L1 host, so please ensure __NO__ host fields below.
+ * Host state fields need to be recorded in cached_vmcs12 and restored to vmcs01's
+ * guest state when returning to L1 host, so please ensure __NO__ host fields below.
  */
 
 /* 16-bits */

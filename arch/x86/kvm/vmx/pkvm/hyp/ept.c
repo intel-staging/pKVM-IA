@@ -575,19 +575,19 @@ static int pkvm_pgstate_pgt_free_leaf(struct pkvm_pgtable *pgt, unsigned long va
 
 	/*
 	 * For normal VM, call __pkvm_host_unshare_guest() to unshare all previous
-	 * shared pages, the page table entry with present bits indicate the page
+	 * shared pages. A page table entry with present bits indicates the page
 	 * was shared before.
 	 *
 	 * For protected VM, call __pkvm_host_undonate_guest() to undonate all
 	 * previous donated pages, the donated pages are indicated by their page
-	 * table entry which is present.
+	 * table entries which state is present.
 	 *
-	 * And the pgtable_free_cb in this current page walker is still walking
-	 * the page state table so cannot allow the  __pkvm_host_unshare_guest()
-	 * or __pkvm_host_undonate_guest() release page state table pages. So
-	 * we shall get_page before these APIs called, then put_page to allow
-	 * pgtable_free_cb free table pages with correct refcount.
-	 *
+	 * Since the pgtable_free_cb in this current page walker is still
+	 * walking the page state table, the __pkvm_host_unshare_guest() or
+	 * __pkvm_host_undonate_guest() are not allowed to release page state
+	 * table pages. So get_page() should be called before these APIs, then
+	 * put_page() to allow pgtable_free_cb free table pages with correct
+	 * refcount.
 	 */
 	switch(vm->vm_type) {
 	case KVM_X86_DEFAULT_VM:

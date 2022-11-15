@@ -59,7 +59,7 @@ SYM_CODE_END(__x86_indirect_thunk_array)
  * 2) The instruction at zen_untrain_ret must contain, and not
  *    end with, the 0xc3 byte of the RET.
  * 3) STIBP must be enabled, or SMT disabled, to prevent the sibling thread
- *    from re-poisioning the BTB prediction.
+ *    from re-poisoning the BTB prediction.
  */
 	.align 64
 	.skip 63, 0xcc

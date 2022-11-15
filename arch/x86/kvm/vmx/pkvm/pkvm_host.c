@@ -54,7 +54,7 @@ static int check_pci_device_count(void)
 	/*
 	 * pkvm has reserved the memory for IOMMU during early boot, and that
 	 * memory is estimated with PKVM_MAX_PDEV_NUM and PKVM_MAX_PASID_PDEV_NUM.
-	 * The actual number larger than this may cause IOMMU fail to create
+	 * The actual number larger than this will make IOMMU fail to create
 	 * translation tables.
 	 */
 	for_each_pci_dev(pdev) {
@@ -895,11 +895,11 @@ static int pkvm_host_deprivilege_cpus(struct pkvm_hyp *pkvm)
 	if (p.ret) {
 		/*
 		 * TODO:
-		 * We are here because there is CPU failed to be deprivileged, so
+		 * We are here because some CPU failed to be deprivileged, so
 		 * the failed CPU will stay in root mode. But the others already
 		 * in the non-root mode. In this case, we should let non-root mode
-		 * CPUs back to root mode, then the system can still run natively
-		 * without KVM enabled.
+		 * CPUs go back to root mode, then the system can still run natively
+		 * without pKVM enabled.
 		 */
 		pr_err("%s: WARNING - failed to deprivilege  all CPUs!\n", __func__);
 	} else {
@@ -997,7 +997,7 @@ static int pkvm_init_finalise(void)
 	/*
 	 * First hypercall to recreate the pgtable for pkvm, and init
 	 * memory pool for later use, on boot cpu.
-	 * Input parameters are only needed for first hypercall.
+	 * Input parameters are only needed for the first hypercall.
 	 */
 	ret = this_cpu_do_finalise_hc(sections, ARRAY_SIZE(sections));
 	if (ret) {

@@ -152,7 +152,7 @@ static int finalize_host_mappings_walker(struct pkvm_pgtable *mmu,
 	/*
 	 * Fix-up the refcount for the page-table pages as the early allocator
 	 * was unable to access the pkvm_vmemmap and so the buddy allocator has
-	 * initialised the refcount to '1'.
+	 * initialized the refcount to '1'.
 	 */
 	mm_ops->get_page(ptep);
 
