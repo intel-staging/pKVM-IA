@@ -54,13 +54,13 @@ static const pkvm_id pkvm_hyp_id = 0;
  * __pkvm_host_donate_hyp() - Donate pages from host to hyp, then host cannot
  * access these donated pages.
  *
- * @hpa:	Start hpa of being donated pages, must be continues.
- * @size:	The size of memory to being donated.
+ * @hpa:	Start hpa of being donated pages, must be continuous.
+ * @size:	The size of memory to be donated.
  *
  * A range of pages [hpa, hpa + size) will be donated from host to hyp. And
  * this will unmap these pages from host ept and set the page owner as hyp_id
- * in the pte in host ept. For hyp mmu, it will do nothing, due to hyp mmu can
- * access the all memory by default, but modify host ept is necessary because a
+ * in the pte in host ept. For hyp mmu, it will do nothing as hyp mmu can
+ * access all the memory by default, but modifying host ept is necessary because a
  * page used by pkvm is private and can't be accessed by host.
  */
 int __pkvm_host_donate_hyp(u64 hpa, u64 size);
@@ -69,44 +69,44 @@ int __pkvm_host_donate_hyp(u64 hpa, u64 size);
  * __pkvm_hyp_donate_host() - Donate pages from hyp to host, then host can
  * access these pages.
  *
- * @hpa:	Start hpa of being donated pages, must be continues.
- * @size:	The size of memory to being donated.
+ * @hpa:	Start hpa of being donated pages, must be continuous.
+ * @size:	The size of memory to be donated.
  *
  * A range of pages [hpa, hpa + size) will be donated from hyp to host. This
  * will create mapping in host ept for these pages, and nothing to do with hyp
- * mmu. This is paired with __pkvm_host_donate_hyp(), and sames as host reclaim
+ * mmu. This is paired with __pkvm_host_donate_hyp(), and same as host reclaiming
  * these pages back.
  */
 int __pkvm_hyp_donate_host(u64 hpa, u64 size);
 
 /*
- * __pkvm_host_share_guest() - Share pages between host and guest, host still
- * ownes the page and guest will have temporary access for these pages.
+ * __pkvm_host_share_guest() - Share pages between host and guest. Host still
+ * ownes the page and guest will have temporary access to these pages.
  *
- * @hpa:	Start hpa of being shared pages, must be continues.
+ * @hpa:	Start hpa of being shared pages, must be continuous.
  * @guest_pgt:	The guest ept pagetable.
  * @gpa:	Start gpa that will be used for mapping into the guest ept.
- * @size:	The size of pages to being shared.
+ * @size:	The size of pages to be shared.
  * @prot:	The prot that will be used for creating mapping for guest ept.
  *
- * A range of pages [hpa, hpa + size) in host ept that it's page state
- * will be modified from PAGE_OWNED to PAGE_SHARED_OWNED. And there will have
- * mapping to be created in guest ept that maps the gfn to pfn, and the @prot
- * and PAGE_SHARED_BORROWED will be used to create the mapping.
+ * A range of pages [hpa, hpa + size) in host ept that their page state
+ * will be modified from PAGE_OWNED to PAGE_SHARED_OWNED. There will be
+ * mapping from gfn to pfn to be created in guest ept. The @prot
+ * and PAGE_SHARED_BORROWED will be used to create such mapping.
  */
 int __pkvm_host_share_guest(u64 hpa, struct pkvm_pgtable *guest_pgt,
 			    u64 gpa, u64 size, u64 prot);
 
 /*
- * __pkvm_host_unshare_guest() - Host unshare pages that being shared to guest
- * previously. Guest will can't access these pages.
+ * __pkvm_host_unshare_guest() - Host unshare pages that have been shared to guest
+ * previously. Guest will not be able to access these pages.
  *
- * @hpa:	Start hpa of being shared pages, must be continues.
+ * @hpa:	Start hpa of being shared pages, must be continuous.
  * @guest_pgt:	The guest ept pagetable.
- * @gpa:	Start gpa of shared pages that being mapped in guest ept.
- * @size:	The size of pages to being shared.
+ * @gpa:	Start gpa of shared pages being mapped in guest ept.
+ * @size:	The size of pages to be shared.
  *
- * Unmap the range [gfn, gfn + nr_pages) in guest ept pagetable. And tranverse
+ * Unmap the range [gfn, gfn + nr_pages) in guest ept pagetable. And change
  * the page state from PAGE_SHARED_BORROWED to PAGE_OWNED in the host ept.
  */
 int __pkvm_host_unshare_guest(u64 hpa, struct pkvm_pgtable *guest_pgt,
@@ -116,7 +116,7 @@ int __pkvm_host_unshare_guest(u64 hpa, struct pkvm_pgtable *guest_pgt,
  * __pkvm_host_donate_guest() - Host donate pages to guest. Then host can't
  * access these pages and guest can access.
  *
- * @hpa:	Start hpa of being donated pages, must be continues.
+ * @hpa:	Start hpa of being donated pages, must be continuous.
  * @guest_pgt:	The guest ept pagetable.
  * @gpa:	Start gpa of donated pages that will be mapped in guest ept.
  * @size:	The size of pages to being donated.
@@ -147,10 +147,10 @@ int __pkvm_host_donate_guest_fastpath(u64 hpa, struct pkvm_pgtable *guest_pgt,
  * __pkvm_host_undoate_guest() - Host reclaim these pages donated to guest.
  * Then guest can't access these pages and host can access.
  *
- * @hpa:	Start hpa of being donated pages, must be continues.
+ * @hpa:	Start hpa of being donated pages, must be continuous.
  * @guest_pgt:	The guest ept pagetable.
  * @gpa:	Start gpa of donated pages that will be unmapped in guest ept.
- * @size:	The size of pages to being donated.
+ * @size:	The size of pages to be donated.
  *
  * A range of pages [hpa, hpa + size) will be donated from guest to host. And
  * this will unmap these pages [gpa, gpa + size) from guest ept. In the same
@@ -159,23 +159,23 @@ int __pkvm_host_donate_guest_fastpath(u64 hpa, struct pkvm_pgtable *guest_pgt,
 int __pkvm_host_undonate_guest(u64 hpa, struct pkvm_pgtable *guest_pgt,
 			       u64 gpa, u64 size);
 /*
- * __pkvm_guest_share_host() - Guest share pages to host, guest still
- * ownes the pages and host will have temporary access for these pages.
+ * __pkvm_guest_share_host() - Guest share pages to host. Guest still
+ * ownes the pages and host will have temporary access to these pages.
  *
  * @guest_pgt:	The guest ept pagetable.
- * @gpa:	Start gpa of being shared pages, must be continues.
+ * @gpa:	Start gpa of being shared pages, must be continuous.
  * @size:	The size of pages to be shared, should be PAGE_ALIGNED.
  *
- * Here no hpa in the paramter, due to the caller don't know it. So the hpa
- * depends on lookup the guest ept to get it.
+ * The parameter does not have hpa, as the caller does not know it. The hpa
+ * depends on looking up the guest ept to get it.
  *
- * Now the function will share one PAGE at a time, if the size larger than
- * PAGE_SIZE, it will split it into multiple PAGE_SIZE page and share them using
+ * Now the function will share one PAGE at a time. If the size is larger than
+ * PAGE_SIZE, it will split it into multiple PAGE_SIZE pages and share them using
  * a loop.
  *
- * A range of pages [gpa, gpa + size) in guest ept that it's page state
- * will be modified from PAGE_OWNED to PAGE_SHARED_OWNED. And there will have
- * mapping to be created in host ept for addr hpa, and it's page state will be
+ * A range of pages [gpa, gpa + size) in guest ept that its page state
+ * will be modified from PAGE_OWNED to PAGE_SHARED_OWNED. There will be
+ * mapping to be created in host ept for addr hpa, and its page state will be
  * PAGE_SHARED_BORROWED.
  */
 int __pkvm_guest_share_host(struct pkvm_pgtable *guest_pgt,
@@ -186,18 +186,18 @@ int __pkvm_guest_share_host(struct pkvm_pgtable *guest_pgt,
  * Then host can't access these pages and guest still ownes it.
  *
  * @guest_pgt:	The guest ept pagetable.
- * @gpa:	Start gpa of being unshared pages, must be continues.
+ * @gpa:	Start gpa of being unshared pages, must be continuous.
  * @size:	The size of pages to be unshared, should be PAGE_ALIGNED.
  *
- * Here no hpa in the paramter, due to the caller don't know it. So the hpa
- * depends on lookup the guest ept to get it.
+ * The parameter does not have hpa, as the caller does not know it. The hpa
+ * depends on looking up the guest ept to get it.
  *
- * Now the function will unshare one PAGE at a time, if the size larger than
- * PAGE_SIZE, it will split it into multiple PAGE_SIZE page and unshare them
+ * Now the function will unshare one PAGE at a time. If the size is larger than
+ * PAGE_SIZE, it will split it into multiple PAGE_SIZE pages and unshare them
  * using a loop.
  *
- * A range of pages [gpa, gpa + size) in guest ept that it's page state will be
- * modified from PAGE_SHARED_OWNED to PAGE_OWNED. And the mapping for these
+ * A range of pages [gpa, gpa + size) in guest ept that its page state will be
+ * modified from PAGE_SHARED_OWNED to PAGE_OWNED. The mapping for these
  * pages in host ept will be unmapped and the owner_id will be set to guest_id.
  */
 int __pkvm_guest_unshare_host(struct pkvm_pgtable *guest_pgt,

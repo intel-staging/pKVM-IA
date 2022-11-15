@@ -9285,7 +9285,7 @@ int kvm_pkvm_hypercall(struct kvm_vcpu *vcpu)
 	}
 
 	/*
-	 * We assume calling this function will always success which will update
+	 * We assume calling this function will always succeed which will update
 	 * the GUEST_RIP to skip the current instruction.
 	 */
 	static_call(kvm_x86_skip_emulated_instruction)(vcpu);

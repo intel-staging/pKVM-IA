@@ -88,8 +88,8 @@ static int pkvm_back_vmemmap(phys_addr_t back_pa)
 		start_va = ALIGN_DOWN((unsigned long)pkvm_phys_to_page(start),
 				   PAGE_SIZE);
 		/*
-		 * The begining of the pkvm_vmemmap region for the current
-		 * memblock may already be backed by the page backing the end
+		 * The beginning of the pkvm_vmemmap region for the current
+		 * memblock may already be backed by the page backing the end of
 		 * the previous region, so avoid mapping it twice.
 		 */
 		start_va = max(start_va, end_va);
@@ -144,7 +144,7 @@ static int create_mmu_mapping(const struct pkvm_section sections[],
 #else
 	/*
 	 * Create mapping for the memory in memblocks.
-	 * This will includes all the memory host kernel can see, as well
+	 * This will include all the memory host kernel can see, as well
 	 * as the memory pkvm allocated during init.
 	 *
 	 * The virtual address for this mapping is the same with the kernel

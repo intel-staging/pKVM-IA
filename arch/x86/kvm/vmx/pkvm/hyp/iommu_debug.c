@@ -148,13 +148,13 @@ static void ctx_tbl_walk(struct pkvm_iommu *iommu, u16 bus)
 		/*
 		 * Scalable mode root entry points to upper scalable mode
 		 * context table and lower scalable mode context table. Each
-		 * scalable mode context table has 128 context entries where as
+		 * scalable mode context table has 128 context entries whereas
 		 * legacy mode context table has 256 context entries. So in
-		 * scalable mode, the context entries for former 128 devices are
+		 * scalable mode, the context entries for the former 128 devices are
 		 * in the lower scalable mode context table, while the latter
 		 * 128 devices are in the upper scalable mode context table.
 		 * In scalable mode, when devfn > 127, iommu_context_addr()
-		 * automatically refers to upper scalable mode context table and
+		 * automatically refers to the upper scalable mode context table and
 		 * hence the caller doesn't have to worry about differences
 		 * between scalable mode and non scalable mode.
 		 */

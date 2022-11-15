@@ -510,9 +510,9 @@ static bool sync_shadow_pasid_table_entry(struct pgt_sync_data *sdata)
 		 * As the host IOMMU driver in the pkvm enabled kernel has
 		 * already been configured to use first-level only or
 		 * pass-through mode, it will not use any other mode. But
-		 * in case this has happened, reset the ptdev vpgt/did while
-		 * keep ptdev linked to this IOMMU, and clear the shadow entry
-		 * so that not to support it.
+		 * in case this happens, reset the ptdev vpgt/did, keep ptdev
+		 * linked to this IOMMU, and clear the shadow entry in order
+		 * not to support it.
 		 */
 		pkvm_setup_ptdev_vpgt(ptdev, 0, NULL, NULL, NULL);
 		pkvm_setup_ptdev_did(ptdev, 0);
@@ -891,11 +891,11 @@ static int sync_shadow_id_cb(struct pkvm_pgtable *vpgt, unsigned long vaddr,
 		if (ecap_smts(iommu->iommu.ecap)) {
 			/*
 			 * For PASID_TABLE, cache invalidation may want to
-			 * sync specific PASID with did matched. So do the
-			 * check before sync the entry.
+			 * sync specific PASID with DID matched. So do the
+			 * check before syncing the entry.
 			 *
 			 * According to vt-d spec 6.2.2.1, software must not
-			 * use domain-id value of 0 on when programming
+			 * use domain-id value of 0 when programming
 			 * context-entries on implementations reporting CM=1
 			 * in the Capability register.
 			 *
@@ -942,7 +942,7 @@ static int sync_shadow_id_cb(struct pkvm_pgtable *vpgt, unsigned long vaddr,
 		 * For a non-present non-leaf (which may be root/context/pasid
 		 * dir) entry, needs to allocate a new page to make this entry
 		 * present. Root and context page are always one page with 4K
-		 * size. As we fixed the pasid only support 15bits, which makes
+		 * size. As we fixed the pasid to only support 15 bits,
 		 * the pasid dir is also one page with 4K size.
 		 */
 		void *shadow = spgt->mm_ops->zalloc_page();
@@ -961,7 +961,7 @@ static int sync_shadow_id_cb(struct pkvm_pgtable *vpgt, unsigned long vaddr,
 	if (iommu_id_sync_entry(&sync_data)) {
 		if (!shadow_p)
 			/*
-			 * A non-present to present changing require to get
+			 * A non-present to present changing needs to get
 			 * a new reference count for the shadow page.
 			 */
 			spgt->mm_ops->get_page(shadow_ptep);
@@ -988,7 +988,7 @@ static int free_shadow_id(struct pkvm_iommu *iommu, unsigned long vaddr,
 	};
 
 	/*
-	 * To free the shadow IOMMU page table, walks the shadow IOMMU
+	 * To free the shadow IOMMU page table, walk the shadow IOMMU
 	 * page table.
 	 */
 	if (!(iommu->viommu.vreg.gsts & DMA_GSTS_TES))
@@ -1068,7 +1068,7 @@ static int create_qi_desc(struct pkvm_iommu *iommu)
 
 	pkvm_spinlock_init(&iommu->qi_lock);
 	/*
-	 * Before switching the descriptor, need to wait any pending
+	 * Before switching the descriptor, need to wait for any pending
 	 * invalidation descriptor completed. According to spec 6.5.2,
 	 * The invalidation queue is considered quiesced when the queue
 	 * is empty (head and tail registers equal) and the last
@@ -1109,8 +1109,8 @@ static int create_qi_desc(struct pkvm_iommu *iommu)
 		 * Wait until the wait descriptor is completed.
 		 *
 		 * The desc_status is from host. Checking this in pkvm
-		 * is relying on host IOMMU driver won't release the
-		 * desc_status after it is completed, and this is guarantee
+		 * relies on host IOMMU driver not to release the
+		 * desc_status after it is completed, and this is guaranteed
 		 * by the current Linux IOMMU driver.
 		 */
 		while (READ_ONCE(*desc_status) == QI_IN_USE)
@@ -1376,9 +1376,9 @@ static int activate_iommu(struct pkvm_iommu *iommu)
 	set_root_table(iommu);
 
 	/*
-	 * It is possible that some of the IOMMU devices doesn't have memory
+	 * It is possible that some IOMMU devices do not have memory
 	 * remapping translation enabled by the host IOMMU driver during boot
-	 * time, so pkvm IOMMU driver needs to make sure enabling this to
+	 * time, so pkvm IOMMU driver needs to make sure this enabled to
 	 * guarantee the IO isolation from the devices behind this IOMMU.
 	 *
 	 */
@@ -1617,7 +1617,7 @@ static int handle_qi_invalidation(struct pkvm_iommu *iommu, unsigned long val)
 	if (likely(!ret)) {
 		/*
 		 * Submit the descriptor to hardware. The desc_status
-		 * will be taken cared by hardware.
+		 * will be taken care by hardware.
 		 */
 		handle_qi_submit(iommu, desc, head, count);
 	} else {
@@ -1656,7 +1656,7 @@ static void handle_gcmd_te(struct pkvm_iommu *iommu, bool en)
 	 * Free shadow to emulate Translation disable.
 	 *
 	 * Not really disable translation as still
-	 * need to protect agains the device.
+	 * need to protect against the device.
 	 */
 	free_shadow_id(iommu, vaddr, vaddr_end);
 	viommu->vreg.gsts &= ~DMA_GSTS_TES;

@@ -148,7 +148,7 @@ void pkvm_apic_base_msr_write(struct kvm_vcpu *vcpu, u64 apicbase)
 
 	/*
 	 * MSR is accessed before the init finalizing phase
-	 * so pkvm not setup lapic yet. In this case, let the
+	 * that pkvm has not setup lapic yet. In this case, let the
 	 * wrmsr directly go to the hardware.
 	 */
 	if (!is_lapic_setup(pcpu)) {
@@ -170,7 +170,7 @@ int pkvm_x2apic_msr_write(struct kvm_vcpu *vcpu, u32 msr, u64 val)
 
 	/*
 	 * MSR is accessed before the init finalizing phase
-	 * so pkvm not setup lapic yet. In this case, let the
+	 * that pkvm has not setup lapic yet. In this case, let the
 	 * wrmsr directly go to the hardware.
 	 */
 	if (!is_lapic_setup(pcpu)) {
@@ -186,7 +186,7 @@ int pkvm_x2apic_msr_write(struct kvm_vcpu *vcpu, u32 msr, u64 val)
 	case APIC_ID:
 		/*
 		 * Not allow primary VM to modify the lapic ID which
-		 * can result in pkvm failed to kick.
+		 * can result in the failure of pkvm to kick.
 		 */
 		PKVM_ASSERT(lapic->apic_id == (u32)val);
 		break;

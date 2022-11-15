@@ -39,16 +39,16 @@ void handle_nmi(void)
 	 * For the before case, should record a pending NMI.
 	 * For the after case, if no NMI is injected in guest
 	 * we also need to record a pending NMI. If NMI is
-	 * injected already, then it is not neccessary to inject
-	 * again but inject it in the next round should also
+	 * injected already, it is not necessary to inject
+	 * again but injecting it in the next round should also
 	 * be fine. So simply record a pending NMI here.
 	 */
 	pkvm_host_vcpu->pending_nmi = true;
 
 	pkvm_dbg("%s: CPU%d pending NMI\n", __func__, cpu_id);
 
-	/* For case that NMI happens that the injection code is
-	 * already exected, open the NMI window. For the case
+	/* For case that when NMI happens the injection code is
+	 * already executed, open the NMI window. For the case
 	 * happens before, opening NMI window doesn't cause trouble.
 	 */
 	_vmx_enable_nmi_window(vmx, false);

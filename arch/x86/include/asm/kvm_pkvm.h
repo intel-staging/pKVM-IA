@@ -131,7 +131,7 @@ static inline unsigned long pkvm_iommu_pages(int max_pasid, int nr_pasid_pdev,
 	/* PASID page table pages (PASID dir + PASID table) for each normal pdev */
 	res += 2 * nr_pdev;
 	/*
-	 * Context table page count is the minumal value of
+	 * Context table page count is the minimal value of
 	 * total pdev number and 256 bus * 2 (in scalable mode).
 	 * Each pdev may require a context page if its bdf is
 	 * discrete enough.
@@ -147,14 +147,14 @@ static inline unsigned long pkvm_iommu_pages(int max_pasid, int nr_pasid_pdev,
 
 /*
  * Calculate the total pages for shadow EPT. The assumptions are that:
- * 1. There are no shared memory between normal VMs or between secure VMs.
+ * 1. There is no shared memory between normal VMs or between secure VMs.
  * 2. The normal VM or secure VM memory size is no larger than the platform
  * memory size.
  * 3. The virtual MMIO range for each VM is no larger than 1G.
- * With these assumptions, can reserve enough memory for normal VMs and
+ * With these assumptions, we can reserve enough memory for normal VMs and
  * secure VMs.
- * 4. Each VM only have one shadow EPT. This will make vSMM mode and non-vSMM
- * mode sharing the same shadow EPT for a VM, which brings security weakness for
+ * 4. Each VM only has one shadow EPT. This will make vSMM mode and non-vSMM
+ * mode share the same shadow EPT for a VM, which brings security weakness for
  * the vSMM mode.
  */
 static inline unsigned long pkvm_shadow_ept_pgtable_pages(int nr_vm)
@@ -175,8 +175,8 @@ static inline unsigned long pkvm_shadow_ept_pgtable_pages(int nr_vm)
 	 * enough to satisfy the level1 page table pages for all VMs but not
 	 * enough to satisfy the level2:level5 page table pages. Each VM will
 	 * require its own level2:level5 pages. Because __pkvm_pgtable_total_pages
-	 * has already allocated 1 level2:level5, so we just minus 1 from total
-	 * number of VMs. And multiple with 2 considerring SMM mode.
+	 * has already allocated 1 level2:level5, we just minus 1 from the total
+	 * number of VMs, and multiply it by 2 considering SMM mode.
 	 */
 	res += __pkvm_pgtable_max_pages(pgtable_pages) * (nr_vm - 1) * 2;
 

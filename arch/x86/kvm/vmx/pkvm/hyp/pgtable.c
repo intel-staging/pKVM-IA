@@ -172,10 +172,10 @@ static int pgtable_map_walk_leaf(struct pkvm_pgtable *pgt,
 		return ret;
 
 	/*
-	 * Be here is because the mapping need be done on smaller(or level-1)
-	 * page size. We need allocate a table page for the smaller(level-1)
-	 * page mapping. And for current level, if the huge page mapping already
-	 * present, we need futher split it.
+	 * Be here is because the mapping needs to be done on smaller(or level-1)
+	 * page size. We need to allocate a table page for the smaller(level-1)
+	 * page mapping. And for current level, if the huge page mapping is already
+	 * present, we need further split it.
 	 */
 	page = mm_ops->zalloc_page();
 	if (!page)
@@ -227,7 +227,7 @@ static int pgtable_map_cb(struct pkvm_pgtable *pgt, unsigned long vaddr,
 }
 
 /*
- * put_page_to_free_list(): the page added to the freelist should not be using
+ * put_page_to_free_list(): the page added to the freelist should not be used
  * by any one as this page will be used as a node linked to the freelist.
  */
 static inline void put_page_to_freelist(void *page, struct list_head *head)
@@ -333,7 +333,7 @@ static int pgtable_unmap_cb(struct pkvm_pgtable *pgt, unsigned long vaddr,
 
 	if (pgt_ops->pgt_entry_huge(ptep)) {
 		/*
-		 * if is huge pte, then split and goto next level.
+		 * if it is huge pte, split and goto next level.
 		 */
 		u64 prot = pgt_ops->pgt_entry_to_prot(ptep);
 		void *page = mm_ops->zalloc_page();
@@ -379,8 +379,8 @@ static int pgtable_lookup_cb(struct pkvm_pgtable *pgt,
 	data->level = level;
 
 	/*
-	 * this cb shall only be call for leaf, if now it's not a leaf
-	 * means the pte changed by others, we shall re-walk the pgtable
+	 * This cb shall only be called for leaf. If now it is not a leaf
+	 * that means the pte is changed by others, and we shall re-walk the pgtable
 	 */
 	if (unlikely(!pgt_ops->pgt_entry_is_leaf(&pte, level)))
 		return -EAGAIN;
