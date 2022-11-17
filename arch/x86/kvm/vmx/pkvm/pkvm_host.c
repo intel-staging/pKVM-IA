@@ -190,8 +190,8 @@ static int check_and_init_iommu(struct pkvm_hyp *pkvm)
 			mask |= 1 << PG_LEVEL_1G;
 
 		/* Get the both supported page table level */
-		pgt_level = min(pgt_level, level);
-		pgsz_mask = min(pgsz_mask, mask);
+		pgt_level &= level;
+		pgsz_mask &= mask;
 
 		index++;
 	}
