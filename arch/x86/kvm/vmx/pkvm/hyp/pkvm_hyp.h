@@ -54,7 +54,7 @@ struct shadow_vcpu_state {
 
 	struct hlist_node hnode;
 	unsigned long vmcs12_pa;
-	bool vmcs02_initied;
+	bool vmcs02_inited;
 
 	struct vcpu_vmx vmx;
 

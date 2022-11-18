@@ -824,7 +824,7 @@ int handle_vmptrld(struct kvm_vcpu *vcpu)
 					save_vmcs01_fields_for_emulation(vcpu);
 
 					WRITE_ONCE(shadow_vcpu->vcpu, vcpu);
-					if (!shadow_vcpu->vmcs02_initied) {
+					if (!shadow_vcpu->vmcs02_inited) {
 						memset(vmcs02, 0, pkvm_hyp->vmcs_config.size);
 						vmcs02->hdr.revision_id = pkvm_hyp->vmcs_config.revision_id;
 						vmcs_load_track(vmx, vmcs02);
@@ -855,7 +855,7 @@ int handle_vmptrld(struct kvm_vcpu *vcpu)
 						}
 
 						shadow_vcpu->last_cpu = vcpu->cpu;
-						shadow_vcpu->vmcs02_initied = true;
+						shadow_vcpu->vmcs02_inited = true;
 					} else {
 						vmcs_load_track(vmx, vmcs02);
 						if (shadow_vcpu->last_cpu != vcpu->cpu) {
