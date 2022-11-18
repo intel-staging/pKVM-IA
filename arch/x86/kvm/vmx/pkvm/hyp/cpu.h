@@ -28,10 +28,10 @@ static inline void pkvm_msr_write(u32 reg, u64 msr_val)
 	asm volatile (" wrmsr " : : "c" (reg), "a" ((u32)msr_val), "d" ((u32)(msr_val >> 32U)));
 }
 
-#define pkvm_wrmsr(msr, low, high)              \
-do {                                            \
-	u64 __val = (u64)high << 32 | (u64)low; \
-	pkvm_msr_write(msr, __val);             \
+#define pkvm_wrmsr(msr, low, high)                      \
+do {                                                    \
+	u64 __val = (u64)(high) << 32 | (u64)(low);     \
+	pkvm_msr_write(msr, __val);                     \
 } while (0)
 
 #define pkvm_wrmsrl(msr, val)   pkvm_msr_write(msr, val)
