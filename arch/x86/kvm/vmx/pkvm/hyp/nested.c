@@ -129,6 +129,78 @@ enum VMXResult {
 	VMfailInvalid,
 };
 
+struct shadow_vmcs_field {
+	u16	encoding;
+	u16	offset;
+};
+
+static u8 vmx_vmread_bitmap[PAGE_SIZE] __aligned(PAGE_SIZE);
+static u8 vmx_vmwrite_bitmap[PAGE_SIZE] __aligned(PAGE_SIZE);
+
+static struct shadow_vmcs_field shadow_read_only_fields[] = {
+#define SHADOW_FIELD_RO(x, y) { x, offsetof(struct vmcs12, y) },
+#include "pkvm_nested_vmcs_fields.h"
+};
+static int max_shadow_read_only_fields =
+	ARRAY_SIZE(shadow_read_only_fields);
+static struct shadow_vmcs_field shadow_read_write_fields[] = {
+#define SHADOW_FIELD_RW(x, y) { x, offsetof(struct vmcs12, y) },
+#include "pkvm_nested_vmcs_fields.h"
+};
+static int max_shadow_read_write_fields =
+	ARRAY_SIZE(shadow_read_write_fields);
+
+static void init_vmcs_shadow_fields(void)
+{
+	int i, j;
+
+	memset(vmx_vmread_bitmap, 0xff, PAGE_SIZE);
+	memset(vmx_vmwrite_bitmap, 0xff, PAGE_SIZE);
+
+	for (i = j = 0; i < max_shadow_read_only_fields; i++) {
+		struct shadow_vmcs_field entry = shadow_read_only_fields[i];
+		u16 field = entry.encoding;
+
+		if (!has_vmcs_field(field))
+			continue;
+
+		if (vmcs_field_width(field) == VMCS_FIELD_WIDTH_U64 &&
+		    (i + 1 == max_shadow_read_only_fields ||
+		     shadow_read_only_fields[i + 1].encoding != field + 1)) {
+			pkvm_err("Missing field from shadow_read_only_field %x\n",
+			       field + 1);
+		}
+
+		clear_bit(field, (unsigned long *)vmx_vmread_bitmap);
+		if (field & 1)
+			continue;
+		shadow_read_only_fields[j++] = entry;
+	}
+	max_shadow_read_only_fields = j;
+
+	for (i = j = 0; i < max_shadow_read_write_fields; i++) {
+		struct shadow_vmcs_field entry = shadow_read_write_fields[i];
+		u16 field = entry.encoding;
+
+		if (!has_vmcs_field(field))
+			continue;
+
+		if (vmcs_field_width(field) == VMCS_FIELD_WIDTH_U64 &&
+		    (i + 1 == max_shadow_read_write_fields ||
+		     shadow_read_write_fields[i + 1].encoding != field + 1)) {
+			pkvm_err("Missing field from shadow_read_write_field %x\n",
+			       field + 1);
+		}
+
+		clear_bit(field, (unsigned long *)vmx_vmwrite_bitmap);
+		clear_bit(field, (unsigned long *)vmx_vmread_bitmap);
+		if (field & 1)
+			continue;
+		shadow_read_write_fields[j++] = entry;
+	}
+	max_shadow_read_write_fields = j;
+}
+
 static void nested_vmx_result(enum VMXResult result, int error_number)
 {
 	u64 rflags = vmcs_readl(GUEST_RFLAGS);
@@ -307,4 +379,9 @@ int handle_vmxoff(struct kvm_vcpu *vcpu)
 	}
 
 	return 0;
+}
+
+void pkvm_init_nest(void)
+{
+	init_vmcs_shadow_fields();
 }
