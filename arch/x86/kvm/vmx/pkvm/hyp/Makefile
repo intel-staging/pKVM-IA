@@ -12,7 +12,7 @@ ccflags-y += -D__PKVM_HYP__
 virt-dir	:= ../../../../../../$(KVM_PKVM)
 
 pkvm-hyp-y	:= vmx_asm.o vmexit.o memory.o early_alloc.o pgtable.o mmu.o pkvm.o \
-		   init_finalise.o ept.o idt.o irq.o nested.o vmx.o
+		   init_finalise.o ept.o idt.o irq.o nested.o vmx.o vmsr.o
 
 ifndef CONFIG_PKVM_INTEL_DEBUG
 lib-dir		:= lib
