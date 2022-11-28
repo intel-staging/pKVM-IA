@@ -96,6 +96,9 @@ void pkvm_detach_ptdev(struct pkvm_ptdev *ptdev)
 {
 	/* Reset what the attach API has set */
 	ptdev->shadow_vm_handle = 0;
+	ptdev->pgt = pkvm_hyp->host_vm.ept;
+	pkvm_iommu_sync(ptdev->bdf, ptdev->pasid);
+
 	pkvm_put_ptdev(ptdev);
 }
 
@@ -128,6 +131,16 @@ struct pkvm_ptdev *pkvm_attach_ptdev(u16 bdf, u32 pasid, struct pkvm_shadow_vm *
 		pkvm_err("%s: ptdev with bdf 0x%x pasid 0x%x is already attached\n",
 			 __func__, bdf, pasid);
 		pkvm_put_ptdev(ptdev);
+		return NULL;
+	}
+
+	/*
+	 * Reset pgt of this ptdev to VM's pgstate_pgt so need to update
+	 * IOMMU page table accordingly.
+	 */
+	ptdev->pgt = &vm->pgstate_pgt;
+	if (pkvm_iommu_sync(ptdev->bdf, ptdev->pasid)) {
+		pkvm_detach_ptdev(ptdev);
 		return NULL;
 	}
 
