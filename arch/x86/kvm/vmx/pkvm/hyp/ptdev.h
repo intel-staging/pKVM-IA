@@ -37,4 +37,10 @@ static inline bool match_ptdev(struct pkvm_ptdev *ptdev, u16 bdf, u32 pasid)
 {
 	return ptdev && (ptdev->bdf == bdf) && (ptdev->pasid == pasid);
 }
+
+static inline bool ptdev_attached_to_vm(struct pkvm_ptdev *ptdev)
+{
+	/* Attached ptdev has non-zero shadow_vm_handle */
+	return cmpxchg(&ptdev->shadow_vm_handle, 0, 0) != 0;
+}
 #endif

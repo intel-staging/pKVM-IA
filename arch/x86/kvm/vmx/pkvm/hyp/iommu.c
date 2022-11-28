@@ -464,19 +464,23 @@ static bool sync_shadow_pasid_table_entry(struct pgt_sync_data *sdata)
 	if (type == PASID_ENTRY_PGTT_FL_ONLY) {
 		struct pkvm_pgtable_cap cap;
 
-		/*
-		 * When host IOMMU driver is using first-level only
-		 * translation, pkvm IOMMU will actually use nested
-		 * translation to add one more layer translation to
-		 * guarantee the protection. This one more layer is the
-		 * EPT.
-		 */
-		type = PASID_ENTRY_PGTT_NESTED;
+		if (ptdev_attached_to_vm(ptdev))
+			/*
+			 * For the attached ptdev, use SL Only mode with
+			 * using ptdev->pgt so that the translation is
+			 * totally controlled by pkvm.
+			 */
+			type = PASID_ENTRY_PGTT_SL_ONLY;
+		else
+			/*
+			 * For the other ptdev, pkvm IOMMU will use nested
+			 * translation to add one more layer translation to
+			 * guarantee the protection. This one more layer is the
+			 * primary VM's EPT.
+			 */
+			type = PASID_ENTRY_PGTT_NESTED;
 
-		/*
-		 * For nested translation, ptdev vpgt can be initialized
-		 * with flptr.
-		 */
+		/* ptdev vpgt can be initialized with flptr */
 		cap.level = pasid_get_flpm(guest_pte) == 0 ? 4 : 5;
 		cap.allowed_pgsz = pkvm_hyp->mmu_cap.allowed_pgsz;
 		pkvm_setup_ptdev_vpgt(ptdev, pasid_get_flptr(guest_pte),
@@ -514,6 +518,12 @@ static bool sync_shadow_pasid_table_entry(struct pgt_sync_data *sdata)
 	if (!is_pgt_ops_ept(ptdev->pgt))
 		return false;
 
+	/*
+	 * Copy all the bits from guest_pte. As the translation type will
+	 * be re-configured in below, even some bits inherit from guest_pte
+	 * but hardware will ignore those bits according to the translation
+	 * type.
+	 */
 	memcpy(&tmp_pte, guest_pte, sizeof(struct pasid_entry));
 
 	pasid_set_page_snoop(&tmp_pte, !!ecap_smpwc(sdata->iommu_ecap));
@@ -1894,4 +1904,86 @@ bool is_mem_range_overlap_iommu(unsigned long start, unsigned long end)
 	}
 
 	return false;
+}
+
+static struct pkvm_iommu *bdf_pasid_to_iommu(u16 bdf, u32 pasid)
+{
+	struct pkvm_iommu *iommu, *find = NULL;
+	struct pkvm_ptdev *p;
+
+	for_each_valid_iommu(iommu) {
+		pkvm_spin_lock(&iommu->lock);
+		list_for_each_entry(p, &iommu->ptdev_head, iommu_node) {
+			if (match_ptdev(p, bdf, pasid)) {
+				find = iommu;
+				break;
+			}
+		}
+		pkvm_spin_unlock(&iommu->lock);
+		if (find)
+			break;
+	}
+
+	return find;
+}
+
+/*
+ * pkvm_iommu_sync() - Sync IOMMU context/pasid entry according to a ptdev
+ *
+ * @bdf/pasid:		The corresponding IOMMU page table entry needs to sync.
+ */
+int pkvm_iommu_sync(u16 bdf, u32 pasid)
+{
+	struct pkvm_iommu *iommu = bdf_pasid_to_iommu(bdf, pasid);
+	unsigned long id_addr, id_addr_end;
+	struct pkvm_ptdev *ptdev;
+	u16 old_did;
+	int ret;
+
+	/*
+	 * TODO:
+	 * Currently assume that the bdf/pasid has ever been synced
+	 * before so that the IOMMU can be found. If has not, then
+	 * the iommu pointer will be NULL. To handle this case, pKVM
+	 * IOMMU driver needs to check the DMAR to know which IOMMU
+	 * should be used for this bdf/pasid.
+	 */
+	if (!iommu)
+		return -ENODEV;
+
+	ptdev = pkvm_get_ptdev(bdf, pasid);
+	if (!ptdev)
+		return -ENODEV;
+
+	old_did = ptdev->did;
+
+	if (ecap_smts(iommu->iommu.ecap)) {
+		id_addr = ((unsigned long)bdf << DEVFN_SHIFT) |
+			  ((unsigned long)pasid & ((1UL << MAX_NR_PASID_BITS) - 1));
+		id_addr_end = id_addr + 1;
+	} else {
+		pkvm_err("%s: No support for legacy IOMMU.\n", __func__);
+		ret = -EOPNOTSUPP;
+		goto out;
+	}
+
+	pkvm_spin_lock(&iommu->lock);
+	ret = sync_shadow_id(iommu, id_addr, id_addr_end, 0);
+	if (!ret) {
+		if (old_did != ptdev->did) {
+			/* Flush pasid cache and IOTLB for the valid old_did */
+			if (ecap_smts(iommu->iommu.ecap))
+				flush_pasid_cache(iommu, old_did, QI_PC_PASID_SEL, pasid);
+			flush_iotlb(iommu, old_did, 0, 0, DMA_TLB_DSI_FLUSH);
+		}
+
+		/* Flush pasid cache and IOTLB to make sure no stale TLB for the new did */
+		if (ecap_smts(iommu->iommu.ecap))
+			flush_pasid_cache(iommu, ptdev->did, QI_PC_PASID_SEL, pasid);
+		flush_iotlb(iommu, ptdev->did, 0, 0, DMA_TLB_DSI_FLUSH);
+	}
+	pkvm_spin_unlock(&iommu->lock);
+out:
+	pkvm_put_ptdev(ptdev);
+	return ret;
 }
