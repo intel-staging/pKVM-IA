@@ -39,6 +39,9 @@ struct pkvm_iommu {
 	struct q_inval qi;
 	pkvm_spinlock_t qi_lock;
 	u64 piommu_iqa;
+
+	/* Link ptdev information of this IOMMU */
+	struct list_head ptdev_head;
 };
 
 enum lm_level {
@@ -188,6 +191,26 @@ static inline u16
 pasid_get_domain_id(struct pasid_entry *pe)
 {
 	return (u16)(READ_ONCE(pe->val[1]) & GENMASK_ULL(15, 0));
+}
+
+/*
+ * Get the FLPTPTR(First Level Page Table Pointer) field (Bit 140 ~ 191)
+ * of a scalable mode PASID entry.
+ */
+static inline u64
+pasid_get_flptr(struct pasid_entry *pe)
+{
+	return (u64)(READ_ONCE(pe->val[2]) & VTD_PAGE_MASK);
+}
+
+/*
+ * Get the First Level Paging Mode field (Bit 130~131) of a
+ * scalable mode PASID entry.
+ */
+static inline u8
+pasid_get_flpm(struct pasid_entry *pe)
+{
+	return (u8)((READ_ONCE(pe->val[2]) & GENMASK_ULL(3, 2)) >> 2);
 }
 
 /*
