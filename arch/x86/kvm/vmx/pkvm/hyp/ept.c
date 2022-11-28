@@ -218,7 +218,7 @@ struct pkvm_pgtable_ops ept_ops = {
 	.default_prot = EPT_PROT_DEF,
 };
 
-static bool is_pgt_ops_ept(struct pkvm_pgtable *pgt)
+bool is_pgt_ops_ept(struct pkvm_pgtable *pgt)
 {
 	return pgt && (pgt->pgt_ops == &ept_ops);
 }

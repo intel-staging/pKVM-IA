@@ -18,6 +18,7 @@ pkvm-hyp-obj	:= $(obj)/vmx_asm.o $(obj)/vmexit.o \
 		   $(obj)/vmx.o $(obj)/vmsr.o \
 		   $(obj)/iommu.o $(obj)/iommu_debug.o \
 		   $(obj)/mem_protect.o $(obj)/lapic.o \
+		   $(obj)/ptdev.o \
 		   $(obj)/trace.o
 
 virt-dir	:= $(objtree)/$(KVM_PKVM)
