@@ -13,6 +13,7 @@
 #include "pgtable.h"
 #include "iommu_internal.h"
 #include "debug.h"
+#include "ptdev.h"
 
 #define for_each_valid_iommu(p)						\
 	for ((p) = iommus; (p) < iommus + PKVM_MAX_IOMMU_NUM; (p)++)	\
@@ -69,6 +70,7 @@ struct pgt_sync_data {
 	u64 iommu_ecap;
 	u64 shadow_pa;
 	struct pkvm_pgtable *spgt;
+	unsigned long vaddr;
 };
 
 static inline void *iommu_zalloc_pages(size_t size)
@@ -393,25 +395,75 @@ static bool sync_shadow_pasid_dir_entry(struct pgt_sync_data *sdata)
 	return false;
 }
 
+static struct pkvm_ptdev *iommu_find_ptdev(struct pkvm_iommu *iommu, u16 bdf, u32 pasid)
+{
+	struct pkvm_ptdev *p;
+
+	list_for_each_entry(p, &iommu->ptdev_head, iommu_node) {
+		if (match_ptdev(p, bdf, pasid))
+			return p;
+	}
+
+	return NULL;
+}
+
+static struct pkvm_ptdev *iommu_add_ptdev(struct pkvm_iommu *iommu, u16 bdf, u32 pasid)
+{
+	struct pkvm_ptdev *ptdev = pkvm_get_ptdev(bdf, pasid);
+
+	if (!ptdev)
+		return NULL;
+
+	list_add_tail(&ptdev->iommu_node, &iommu->ptdev_head);
+	return ptdev;
+}
+
+static void iommu_del_ptdev(struct pkvm_iommu *iommu, struct pkvm_ptdev *ptdev)
+{
+	list_del_init(&ptdev->iommu_node);
+	pkvm_put_ptdev(ptdev);
+}
+
 /* sync pasid table entry when guest_ptep valid, otherwise un-present it */
 static bool sync_shadow_pasid_table_entry(struct pgt_sync_data *sdata)
 {
+	u16 bdf = sdata->vaddr >> DEVFN_SHIFT;
+	u32 pasid = sdata->vaddr & ((1UL << MAX_NR_PASID_BITS) - 1);
+	struct pkvm_iommu *iommu = pgt_to_pkvm_iommu(sdata->spgt);
+	struct pkvm_ptdev *ptdev = iommu_find_ptdev(iommu, bdf, pasid);
 	struct pasid_entry *shadow_pte = sdata->shadow_ptep, tmp_pte = {0};
 	struct pasid_entry *guest_pte;
+	bool synced = false;
 	u64 type, aw;
+
+	if (!ptdev) {
+		ptdev = iommu_add_ptdev(iommu, bdf, pasid);
+		if (!ptdev)
+			return false;
+	}
 
 	if (!sdata->guest_ptep) {
 		if (pasid_pte_is_present(shadow_pte)) {
-			pasid_clear_entry(shadow_pte);
-			return true;
-		}
+			/*
+			 * Making a pasid entry not present needs to remove
+			 * the corresponding ptdev from IOMMU. It also means
+			 * a ptdev's vpgt/did should be reset as well as
+			 * deleting ptdev from this iommu.
+			 */
+			pkvm_setup_ptdev_vpgt(ptdev, 0, NULL, NULL, NULL);
+			pkvm_setup_ptdev_did(ptdev, 0);
+			iommu_del_ptdev(iommu, ptdev);
 
-		return false;
+			synced = pasid_copy_entry(shadow_pte, &tmp_pte);
+		}
+		return synced;
 	}
 
 	guest_pte = sdata->guest_ptep;
 	type = pasid_pte_get_pgtt(guest_pte);
-	if (type == PASID_ENTRY_PGTT_FL_ONLY)
+	if (type == PASID_ENTRY_PGTT_FL_ONLY) {
+		struct pkvm_pgtable_cap cap;
+
 		/*
 		 * When host IOMMU driver is using first-level only
 		 * translation, pkvm IOMMU will actually use nested
@@ -420,7 +472,16 @@ static bool sync_shadow_pasid_table_entry(struct pgt_sync_data *sdata)
 		 * EPT.
 		 */
 		type = PASID_ENTRY_PGTT_NESTED;
-	else if (type == PASID_ENTRY_PGTT_PT)
+
+		/*
+		 * For nested translation, ptdev vpgt can be initialized
+		 * with flptr.
+		 */
+		cap.level = pasid_get_flpm(guest_pte) == 0 ? 4 : 5;
+		cap.allowed_pgsz = pkvm_hyp->mmu_cap.allowed_pgsz;
+		pkvm_setup_ptdev_vpgt(ptdev, pasid_get_flptr(guest_pte),
+				      &viommu_mm_ops, &mmu_ops, &cap);
+	} else if (type == PASID_ENTRY_PGTT_PT) {
 		/*
 		 * When host IOMMU driver is using pass-through mode, pkvm
 		 * IOMMU will actually use the second-level only translation
@@ -428,18 +489,30 @@ static bool sync_shadow_pasid_table_entry(struct pgt_sync_data *sdata)
 		 * the EPT.
 		 */
 		type = PASID_ENTRY_PGTT_SL_ONLY;
-	else {
+	} else {
 		/*
 		 * As the host IOMMU driver in the pkvm enabled kernel has
 		 * already been configured to use first-level only or
-		 * pass-through mode, it will not to use any other mode. But
-		 * in case this happened, just clear the shadow entry and not
-		 * to support it.
+		 * pass-through mode, it will not use any other mode. But
+		 * in case this has happened, reset the ptdev vpgt/did while
+		 * keep ptdev linked to this IOMMU, and clear the shadow entry
+		 * so that not to support it.
 		 */
+		pkvm_setup_ptdev_vpgt(ptdev, 0, NULL, NULL, NULL);
+		pkvm_setup_ptdev_did(ptdev, 0);
+
 		pkvm_err("pkvm: unsupported pasid type %lld\n", type);
-		pasid_clear_entry(shadow_pte);
-		return true;
+
+		return pasid_copy_entry(shadow_pte, &tmp_pte);
 	}
+
+	pkvm_setup_ptdev_did(ptdev, pasid_get_domain_id(guest_pte));
+	/*
+	 * ptdev->pgt will be used as second-level translation table
+	 * which should be EPT format.
+	 */
+	if (!is_pgt_ops_ept(ptdev->pgt))
+		return false;
 
 	memcpy(&tmp_pte, guest_pte, sizeof(struct pasid_entry));
 
@@ -454,8 +527,8 @@ static bool sync_shadow_pasid_table_entry(struct pgt_sync_data *sdata)
 	 * Reuse FPD/P
 	 */
 	pasid_set_translation_type(&tmp_pte, type);
-	pasid_set_slptr(&tmp_pte, sdata->shadow_pa);
-	aw = (pkvm_hyp->ept_iommu_pgt_level == 4) ? 2 : 3;
+	pasid_set_slptr(&tmp_pte, ptdev->pgt->root_pa);
+	aw = (ptdev->pgt->level == 4) ? 2 : 3;
 	pasid_set_address_width(&tmp_pte, aw);
 	pasid_set_ssade(&tmp_pte, 0);
 	pasid_set_ssee(&tmp_pte, 0);
@@ -570,6 +643,8 @@ int pkvm_init_iommu(unsigned long mem_base, unsigned long nr_pages)
 		if (!info->reg_phys)
 			break;
 
+		INIT_LIST_HEAD(&piommu->ptdev_head);
+
 		pkvm_spin_lock_init(&piommu->lock);
 		piommu->iommu.reg_phys = info->reg_phys;
 		piommu->iommu.reg_size = info->reg_size;
@@ -620,11 +695,12 @@ static int free_shadow_id_cb(struct pkvm_pgtable *pgt, unsigned long vaddr,
 	sync_data.level = level;
 	sync_data.spgt = pgt;
 	sync_data.iommu_ecap = iommu->iommu.ecap;
+	sync_data.vaddr = vaddr;
 
 	/* Un-present a present PASID Table entry */
 	if (LAST_LEVEL(level)) {
-		iommu_id_sync_entry(&sync_data);
-		mm_ops->put_page(ptep);
+		if (iommu_id_sync_entry(&sync_data))
+			mm_ops->put_page(ptep);
 		return 0;
 	}
 
@@ -635,9 +711,10 @@ static int free_shadow_id_cb(struct pkvm_pgtable *pgt, unsigned long vaddr,
 	 */
 	child_ptep = mm_ops->phys_to_virt(pgt_ops->pgt_entry_to_phys(ptep));
 	if (mm_ops->page_count(child_ptep) == 1) {
-		iommu_id_sync_entry(&sync_data);
-		mm_ops->put_page(ptep);
-		mm_ops->put_page(child_ptep);
+		if (iommu_id_sync_entry(&sync_data)) {
+			mm_ops->put_page(ptep);
+			mm_ops->put_page(child_ptep);
+		}
 	}
 
 	return 0;
@@ -701,6 +778,7 @@ static int init_sync_id_data(struct pgt_sync_data *sync_data,
 	sync_data->spgt = spgt;
 	sync_data->iommu_ecap = iommu->iommu.ecap;
 	sync_data->shadow_pa = 0;
+	sync_data->vaddr = vaddr;
 
 	return 0;
 }
@@ -782,13 +860,10 @@ static int sync_shadow_id_cb(struct pkvm_pgtable *vpgt, unsigned long vaddr,
 				return ret;
 
 			/*
-			 * The PASID table entry always require to use EPT
-			 * for the second-level translation no matter in nested
-			 * transltion mode or second-level only mode. So get the
-			 * EPT physical address for the leaf entry, which is the
-			 * pasid table entry.
+			 * The shadow_pa to configur the PASID table entry is
+			 * depending on the pgt used by the corresponding ptdev.
+			 * So no need to set sync_data.shadow_pa.
 			 */
-			sync_data.shadow_pa = pkvm_hyp->host_vm.ept->root_pa;
 		} else {
 			/*
 			 * Right now reference to a virtual 2nd-stage paging table.
