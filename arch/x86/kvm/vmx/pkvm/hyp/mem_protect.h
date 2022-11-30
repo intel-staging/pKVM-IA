@@ -50,8 +50,6 @@ static inline enum pkvm_page_state pkvm_getstate(u64 pte)
 typedef u32 pkvm_id;
 static const pkvm_id pkvm_hyp_id = 0;
 
-int host_ept_set_owner(phys_addr_t addr, u64 size, pkvm_id owner_id);
-
 /*
  * __pkvm_host_donate_hyp() - Donate pages from host to hyp, then host cannot
  * access these donated pages.
