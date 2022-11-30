@@ -26,6 +26,7 @@ struct pkvm_mem_trans_desc {
 	enum pkvm_component_id	id;
 	union {
 		struct {
+			struct pkvm_pgtable	*pgt_override;
 			u64	addr;
 		} host;
 
@@ -65,11 +66,10 @@ static u64 pkvm_init_invalid_leaf_owner(pkvm_id owner_id)
 		FIELD_PREP(PKVM_PAGE_STATE_PROT_MASK, PKVM_NOPAGE);
 }
 
-static int host_ept_set_owner_locked(phys_addr_t addr, u64 size, pkvm_id owner_id)
+static int host_ept_set_owner_locked(struct pkvm_pgtable *pgt_override, phys_addr_t addr,
+				     u64 size, pkvm_id owner_id)
 {
 	u64 annotation = pkvm_init_invalid_leaf_owner(owner_id);
-	int ret;
-
 
 	/*
 	 * The memory [addr, addr + size) will be unmapped from host ept. At the
@@ -79,14 +79,15 @@ static int host_ept_set_owner_locked(phys_addr_t addr, u64 size, pkvm_id owner_i
 	 * annotation. Also when later these pages are back to host, the annotation
 	 * will be helpful to check the right page transition.
 	 */
-	ret = pkvm_pgtable_annotate(pkvm_hyp->host_vm.ept, addr, size, annotation);
-
-	return ret;
+	return pkvm_pgtable_annotate(pgt_override ? pgt_override : pkvm_hyp->host_vm.ept,
+				     addr, size, annotation);
 }
 
-static int host_ept_create_idmap_locked(u64 addr, u64 size, int pgsz_mask, u64 prot)
+static int host_ept_create_idmap_locked(struct pkvm_pgtable *pgt_override, u64 addr,
+					u64 size, int pgsz_mask, u64 prot)
 {
-	return pkvm_pgtable_map(pkvm_hyp->host_vm.ept, addr, addr, size, pgsz_mask, prot, NULL);
+	return pkvm_pgtable_map(pgt_override ? pgt_override : pkvm_hyp->host_vm.ept,
+				addr, addr, size, pgsz_mask, prot, NULL);
 }
 
 static int
@@ -121,11 +122,12 @@ static int check_page_state_range(struct pkvm_pgtable *pgt, u64 addr, u64 size,
 	return pgtable_walk(pgt, addr, size, true, &walker);
 }
 
-static int __host_check_page_state_range(u64 addr, u64 size,
-					 enum pkvm_page_state state)
+static int __host_check_page_state_range(struct pkvm_pgtable *pgt_override, u64 addr,
+					 u64 size, enum pkvm_page_state state)
 {
-	return check_page_state_range(pkvm_hyp->host_vm.ept, addr,
-				      size, &state, 1);
+	struct pkvm_pgtable *host_ept = pgt_override ? pgt_override : pkvm_hyp->host_vm.ept;
+
+	return check_page_state_range(host_ept, addr, size, &state, 1);
 }
 
 static pkvm_id pkvm_guest_id(struct pkvm_pgtable *pgt)
@@ -169,7 +171,8 @@ static int host_request_donation(const struct pkvm_mem_transition *tx)
 	u64 addr = tx->initiator.host.addr;
 	u64 size = tx->size;
 
-	return __host_check_page_state_range(addr, size, PKVM_PAGE_OWNED);
+	return __host_check_page_state_range(tx->initiator.host.pgt_override,
+					     addr, size, PKVM_PAGE_OWNED);
 }
 
 static int guest_request_donation(const struct pkvm_mem_transition *tx)
@@ -196,10 +199,12 @@ static int host_ack_donation(const struct pkvm_mem_transition *tx)
 	enum pkvm_page_state states[] = { PKVM_NOPAGE,
 					  PKVM_PAGE_SHARED_BORROWED,
 					};
+	struct pkvm_pgtable *host_ept = tx->completer.host.pgt_override ?
+					tx->completer.host.pgt_override :
+					pkvm_hyp->host_vm.ept;
 
 	/* Same as guest_request_donation. */
-	return check_page_state_range(pkvm_hyp->host_vm.ept, addr, size,
-				      states, ARRAY_SIZE(states));
+	return check_page_state_range(host_ept, addr, size, states, ARRAY_SIZE(states));
 }
 
 static int guest_ack_donation(const struct pkvm_mem_transition *tx)
@@ -258,7 +263,8 @@ static int host_initiate_donation(const struct pkvm_mem_transition *tx)
 	if (owner_id == OWNER_ID_INV)
 		return -EINVAL;
 	else
-		return host_ept_set_owner_locked(addr, size, owner_id);
+		return host_ept_set_owner_locked(tx->initiator.host.pgt_override,
+						 addr, size, owner_id);
 }
 
 static int guest_initiate_donation(const struct pkvm_mem_transition *tx)
@@ -276,7 +282,7 @@ static int host_complete_donation(const struct pkvm_mem_transition *tx)
 	u64 size = tx->size;
 	u64 prot = pkvm_mkstate(tx->completer.prot, PKVM_PAGE_OWNED);
 
-	return host_ept_create_idmap_locked(addr, size, 0, prot);
+	return host_ept_create_idmap_locked(tx->completer.host.pgt_override, addr, size, 0, prot);
 }
 
 static int guest_complete_donation(const struct pkvm_mem_transition *tx)
@@ -478,7 +484,8 @@ static int host_request_share(const struct pkvm_mem_transition *tx)
 	u64 addr = tx->initiator.host.addr;
 	u64 size = tx->size;
 
-	return __host_check_page_state_range(addr, size, PKVM_PAGE_OWNED);
+	return __host_check_page_state_range(tx->initiator.host.pgt_override,
+					     addr, size, PKVM_PAGE_OWNED);
 }
 
 static int guest_request_share(const struct pkvm_mem_transition *tx)
@@ -495,7 +502,8 @@ static int host_ack_share(const struct pkvm_mem_transition *tx)
 	u64 addr = tx->completer.host.addr;
 	u64 size = tx->size;
 
-	return __host_check_page_state_range(addr, size, PKVM_NOPAGE);
+	return __host_check_page_state_range(tx->completer.host.pgt_override,
+					     addr, size, PKVM_NOPAGE);
 }
 
 static int guest_ack_share(const struct pkvm_mem_transition *tx)
@@ -545,7 +553,7 @@ static int host_initiate_share(const struct pkvm_mem_transition *tx)
 	u64 size = tx->size;
 	u64 prot = pkvm_mkstate(tx->initiator.prot, PKVM_PAGE_SHARED_OWNED);
 
-	return host_ept_create_idmap_locked(addr, size, 0, prot);
+	return host_ept_create_idmap_locked(tx->initiator.host.pgt_override, addr, size, 0, prot);
 }
 
 static int guest_initiate_share(const struct pkvm_mem_transition *tx)
@@ -565,7 +573,7 @@ static int host_complete_share(const struct pkvm_mem_transition *tx)
 	u64 size = tx->size;
 	u64 prot = pkvm_mkstate(tx->completer.prot, PKVM_PAGE_SHARED_BORROWED);
 
-	return host_ept_create_idmap_locked(addr, size, 0, prot);
+	return host_ept_create_idmap_locked(tx->completer.host.pgt_override, addr, size, 0, prot);
 }
 
 static int guest_complete_share(const struct pkvm_mem_transition *tx)
@@ -728,7 +736,8 @@ static int host_request_unshare(const struct pkvm_mem_transition *tx)
 	u64 addr = tx->initiator.host.addr;
 	u64 size = tx->size;
 
-	return __host_check_page_state_range(addr, size, PKVM_PAGE_SHARED_OWNED);
+	return __host_check_page_state_range(tx->initiator.host.pgt_override, addr,
+					     size, PKVM_PAGE_SHARED_OWNED);
 }
 
 static int guest_request_unshare(const struct pkvm_mem_transition *tx)
@@ -745,8 +754,8 @@ static int host_ack_unshare(const struct pkvm_mem_transition *tx)
 	u64 addr = tx->completer.host.addr;
 	u64 size = tx->size;
 
-	return __host_check_page_state_range(addr, size,
-					     PKVM_PAGE_SHARED_BORROWED);
+	return __host_check_page_state_range(tx->completer.host.pgt_override, addr,
+					     size, PKVM_PAGE_SHARED_BORROWED);
 }
 
 static int guest_ack_unshare(const struct pkvm_mem_transition *tx)
@@ -796,7 +805,7 @@ static int host_initiate_unshare(const struct pkvm_mem_transition *tx)
 	u64 size = tx->size;
 	u64 prot = pkvm_mkstate(tx->initiator.prot, PKVM_PAGE_OWNED);
 
-	return host_ept_create_idmap_locked(addr, size, 0, prot);
+	return host_ept_create_idmap_locked(tx->initiator.host.pgt_override, addr, size, 0, prot);
 }
 
 static int guest_initiate_unshare(const struct pkvm_mem_transition *tx)
@@ -816,7 +825,7 @@ static int host_complete_unshare(const struct pkvm_mem_transition *tx)
 	u64 size = tx->size;
 	u64 owner_id = initiator_owner_id(tx);
 
-	return host_ept_set_owner_locked(addr, size, owner_id);
+	return host_ept_set_owner_locked(tx->completer.host.pgt_override, addr, size, owner_id);
 }
 
 static int guest_complete_unshare(const struct pkvm_mem_transition *tx)
