@@ -37,6 +37,7 @@ struct pkvm_host_vcpu {
 
 struct pkvm_host_vm {
 	struct pkvm_host_vcpu *host_vcpus[CONFIG_NR_CPUS];
+	struct pkvm_pgtable *ept;
 };
 
 struct pkvm_hyp {

@@ -5,6 +5,11 @@
 #ifndef __PKVM_EPT_H
 #define __PKVM_EPT_H
 
+#define HOST_EPT_DEF_MEM_PROT   (VMX_EPT_RWX_MASK |				\
+				(MTRR_TYPE_WRBACK << VMX_EPT_MT_EPTE_SHIFT))
+#define HOST_EPT_DEF_MMIO_PROT	(VMX_EPT_RWX_MASK |				\
+				(MTRR_TYPE_UNCACHABLE << VMX_EPT_MT_EPTE_SHIFT))
+
 int pkvm_host_ept_map(unsigned long vaddr_start, unsigned long phys_start,
 		unsigned long size, int pgsz_mask, u64 prot);
 int pkvm_host_ept_unmap(unsigned long vaddr_start, unsigned long phys_start,

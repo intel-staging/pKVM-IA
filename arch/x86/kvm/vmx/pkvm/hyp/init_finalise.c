@@ -15,10 +15,13 @@
 #include "memory.h"
 #include "pgtable.h"
 #include "mmu.h"
+#include "ept.h"
+#include "vmx.h"
 #include "debug.h"
 
 void *pkvm_mmu_pgt_base;
 void *pkvm_vmemmap_base;
+void *host_ept_pgt_base;
 
 static int divide_memory_pool(phys_addr_t phys, unsigned long size)
 {
@@ -38,6 +41,11 @@ static int divide_memory_pool(phys_addr_t phys, unsigned long size)
 	nr_pages = pkvm_mmu_pgtable_pages();
 	pkvm_mmu_pgt_base = pkvm_early_alloc_contig(nr_pages);
 	if (!pkvm_mmu_pgt_base)
+		return -ENOMEM;
+
+	nr_pages = host_ept_pgtable_pages();
+	host_ept_pgt_base = pkvm_early_alloc_contig(nr_pages);
+	if (!host_ept_pgt_base)
 		return -ENOMEM;
 
 	return 0;
@@ -140,6 +148,77 @@ static int create_mmu_mapping(const struct pkvm_section sections[],
 	return 0;
 }
 
+static int create_host_ept_mapping(void)
+{
+	struct memblock_region *reg;
+	int ret, i;
+	unsigned long phys = 0;
+	u64 entry_prot;
+
+	ret = pkvm_host_ept_init(&pkvm_hyp->ept_cap,
+			host_ept_pgt_base, host_ept_pgtable_pages());
+	if (ret)
+		return ret;
+
+	/*
+	 * Create EPT mapping for memory with WB + RWX property
+	 */
+	entry_prot = HOST_EPT_DEF_MEM_PROT;
+
+	for (i = 0; i < hyp_memblock_nr; i++) {
+		reg = &hyp_memory[i];
+		ret = pkvm_host_ept_map((unsigned long)reg->base,
+				  (unsigned long)reg->base,
+				  (unsigned long)reg->size,
+				  0, entry_prot);
+		if (ret)
+			return ret;
+	}
+
+	/*
+	 * The holes in memblocks are treated as MMIO with the
+	 * mapping UC + RWX.
+	 */
+	entry_prot = HOST_EPT_DEF_MMIO_PROT;
+	for (i = 0; i < hyp_memblock_nr; i++, phys = reg->base + reg->size) {
+		reg = &hyp_memory[i];
+		ret = pkvm_host_ept_map(phys, phys, (unsigned long)reg->base - phys,
+				  0, entry_prot);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+
+static int protect_pkvm_pages(const struct pkvm_section sections[],
+		       int section_sz, phys_addr_t phys, unsigned long size)
+{
+	int i, ret;
+
+	for (i = 0; i < section_sz; i++) {
+		u64 pa, size;
+
+		if (sections[i].type == PKVM_CODE_DATA_SECTIONS) {
+			pa = __pkvm_pa_symbol(sections[i].addr);
+			size = sections[i].size;
+			ret = pkvm_host_ept_unmap(pa, pa, size);
+			if (ret) {
+				pkvm_err("%s: failed to protect section\n", __func__);
+				return ret;
+			}
+		}
+	}
+
+	ret = pkvm_host_ept_unmap(phys, phys, size);
+	if (ret) {
+		pkvm_err("%s: failed to protect reserved memory\n", __func__);
+		return ret;
+	}
+
+	return 0;
+}
+
 #define TMP_SECTION_SZ	16UL
 int __pkvm_init_finalise(struct kvm_vcpu *vcpu, struct pkvm_section sections[],
 			 int section_sz)
@@ -151,6 +230,7 @@ int __pkvm_init_finalise(struct kvm_vcpu *vcpu, struct pkvm_section sections[],
 	struct pkvm_section tmp_sections[TMP_SECTION_SZ];
 	phys_addr_t hyp_mem_base;
 	unsigned long hyp_mem_size = 0;
+	u64 eptp;
 
 	if (pkvm_init)
 		goto switch_pgt;
@@ -188,14 +268,28 @@ int __pkvm_init_finalise(struct kvm_vcpu *vcpu, struct pkvm_section sections[],
 	if (ret)
 		goto out;
 
-	/* TODO: setup host EPT page table */
+	ret = create_host_ept_mapping();
+	if (ret)
+		goto out;
+
+	ret = protect_pkvm_pages(tmp_sections, section_sz,
+			hyp_mem_base, hyp_mem_size);
+	if (ret)
+		goto out;
 
 	pkvm_init = true;
 
 switch_pgt:
-	/* switch mmu, TODO: switch EPT */
+	/* switch mmu */
 	vmcs_writel(HOST_CR3, pkvm_hyp->mmu->root_pa);
 	pcpu->cr3 = pkvm_hyp->mmu->root_pa;
+
+	/* enable ept */
+	eptp = pkvm_construct_eptp(pkvm_hyp->host_vm.ept->root_pa, pkvm_hyp->host_vm.ept->level);
+	secondary_exec_controls_setbit(&pkvm_host_vcpu->vmx, SECONDARY_EXEC_ENABLE_EPT);
+	vmcs_write64(EPT_POINTER, eptp);
+
+	ept_sync_global();
 
 out:
 	return ret;
