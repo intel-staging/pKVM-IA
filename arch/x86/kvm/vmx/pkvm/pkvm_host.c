@@ -854,7 +854,7 @@ __init int pkvm_init(void)
 
 	pkvm->num_cpus = num_possible_cpus();
 
-	return 0;
+	return pkvm_init_finalise();
 
 out:
 	pkvm_sym(pkvm_hyp) = NULL;
