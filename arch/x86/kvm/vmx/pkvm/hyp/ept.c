@@ -49,11 +49,7 @@ static inline void pkvm_init_ept_page(void *page)
 	 * For simplicity, unconditionally initialize SEPT to set "suppress
 	 * #VE".
 	 */
-	asm volatile ("rep stosq\n\t"
-		      :
-		      : "a"(EPT_PROT_DEF), "c"(512), "D"(page)
-		      : "memory"
-	);
+	memset64((u64 *)page, EPT_PROT_DEF, 512);
 }
 
 static void *ept_zalloc_page(struct hyp_pool *pool)
