@@ -1350,6 +1350,32 @@ static bool nested_handle_vmcall(struct kvm_vcpu *vcpu)
 	return handled;
 }
 
+static bool nested_handle_cpuid(struct kvm_vcpu *vcpu)
+{
+	struct shadow_vcpu_state *shadow_vcpu = to_pkvm_hvcpu(vcpu)->current_shadow_vcpu;
+	u32 leaf;
+
+	if (!shadow_vcpu_is_protected(shadow_vcpu))
+		return false;
+
+	leaf = vcpu->arch.regs[VCPU_REGS_RAX];
+
+	/*
+	 * Reuse the KVM_CPUID_SIGNATURE, which has been used by KVM. By
+	 * intercept the process of detecting hypervisor, the protected vm will
+	 * detect PKVM hypervisor instead of KVM.
+	 */
+	if (leaf == KVM_CPUID_SIGNATURE) {
+		const u32 *sigptr = (const u32 *)"PKVMPKVMPKVM";
+		vcpu->arch.regs[VCPU_REGS_RBX] = sigptr[0];
+		vcpu->arch.regs[VCPU_REGS_RCX] = sigptr[1];
+		vcpu->arch.regs[VCPU_REGS_RDX] = sigptr[2];
+		return true;
+	}
+
+	return false;
+}
+
 int nested_vmexit(struct kvm_vcpu *vcpu, bool *skip_instruction)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
@@ -1379,6 +1405,12 @@ int nested_vmexit(struct kvm_vcpu *vcpu, bool *skip_instruction)
 		 * When this vmexit reason happens, no need back to primary VM.
 		 */
 		return 0;
+	case EXIT_REASON_CPUID:
+		if (nested_handle_cpuid(vcpu)) {
+			*skip_instruction = true;
+			return 0;
+		}
+		break;
 	default:
 		break;
 	}
