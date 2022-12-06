@@ -849,7 +849,7 @@ int handle_vmptrld(struct kvm_vcpu *vcpu)
 						/*
 						 * Write the #VE information physical address.
 						 */
-						if (shadow_vcpu->vm->vm_type == KVM_X86_PROTECTED_VM) {
+						if (shadow_vcpu_is_protected(shadow_vcpu)) {
 							memset(&shadow_vcpu->ve_info, 0, sizeof(shadow_vcpu->ve_info));
 							vmcs_write64(VE_INFO_ADDR, __pkvm_pa(&shadow_vcpu->ve_info));
 						}
@@ -1316,7 +1316,7 @@ static bool nested_handle_vmcall(struct kvm_vcpu *vcpu)
 	int ret = 0;
 
 	/* All normal guest's vmcall should be handled by KVM. */
-	if (shadow_vcpu->vm->vm_type == KVM_X86_DEFAULT_VM)
+	if (!shadow_vcpu_is_protected(shadow_vcpu))
 		return false;
 
 	nr = vcpu->arch.regs[VCPU_REGS_RAX];
