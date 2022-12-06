@@ -1348,6 +1348,29 @@ static bool nested_handle_vmcall(struct kvm_vcpu *vcpu)
 	return handled;
 }
 
+static bool nested_handle_cpuid(struct kvm_vcpu *vcpu)
+{
+	u32 leaf, subleaf;
+
+	leaf = vcpu->arch.regs[VCPU_REGS_RAX];
+	subleaf = vcpu->arch.regs[VCPU_REGS_RCX];
+
+	/*
+	 * CPUID 0x21 is undefined, so:
+	 *
+	 * TDX use leaf=0x21, subleaf=0x0 to detect if guest running on TDX.
+	 * pKVM also reuse this cpuid to detect if guest running on pKVM, but
+	 * return different value in register.
+	 */
+	if (leaf == 0x21 && subleaf == 0x0) {
+		/* Translated to string will be "pkvm". */
+		vcpu->arch.regs[VCPU_REGS_RAX] = 0x6d766b70;
+		return true;
+	}
+
+	return false;
+}
+
 int nested_vmexit(struct kvm_vcpu *vcpu, bool *skip_instruction)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
@@ -1377,6 +1400,12 @@ int nested_vmexit(struct kvm_vcpu *vcpu, bool *skip_instruction)
 		 * When this vmexit reason happens, no need back to primary VM.
 		 */
 		return 0;
+	case EXIT_REASON_CPUID:
+		if (nested_handle_cpuid(vcpu)) {
+			*skip_instruction = true;
+			return 0;
+		}
+		break;
 	default:
 		break;
 	}
