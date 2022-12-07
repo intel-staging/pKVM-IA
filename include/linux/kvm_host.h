@@ -390,6 +390,12 @@ struct kvm_vcpu {
 	 */
 	struct kvm_memory_slot *last_used_slot;
 	u64 last_used_slot_gen;
+
+	/*
+	 * Save the handle returned from the pkvm when init a shadow vcpu. This
+	 * will be used when teardown this shadow vcpu.
+	 */
+	s64 pkvm_shadow_vcpu_handle;
 };
 
 /*
@@ -805,6 +811,8 @@ struct kvm {
 	struct notifier_block pm_notifier;
 #endif
 	char stats_id[KVM_STATS_NAME_SIZE];
+
+	struct kvm_protected_vm pkvm;
 };
 
 #define kvm_err(fmt, ...) \

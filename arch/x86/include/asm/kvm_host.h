@@ -1750,6 +1750,10 @@ struct kvm_arch_async_pf {
 	bool direct_map;
 };
 
+struct kvm_protected_vm {
+	int shadow_vm_handle;
+};
+
 extern u32 __read_mostly kvm_nr_uret_msrs;
 extern u64 __read_mostly host_efer;
 extern bool __read_mostly allow_smaller_maxphyaddr;
