@@ -902,6 +902,15 @@ config INTEL_TDX_GUEST
 	  memory contents and CPU state. TDX guests are protected from
 	  some attacks from the VMM.
 
+config PKVM_GUEST
+	bool "PKVM Guest Support"
+	depends on X86_64 && !PKVM_INTEL
+	default n
+	help
+	  Support running as a protected guest under Protected KVM.
+	  Without this support, the guest kernel can not boot or run
+	  under Protected KVM.
+
 endif # HYPERVISOR_GUEST
 
 source "arch/x86/Kconfig.cpu"
