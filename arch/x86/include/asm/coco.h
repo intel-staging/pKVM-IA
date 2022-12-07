@@ -9,6 +9,7 @@ enum cc_vendor {
 	CC_VENDOR_AMD,
 	CC_VENDOR_HYPERV,
 	CC_VENDOR_INTEL,
+	CC_VENDOR_PKVM,
 };
 
 void cc_set_vendor(enum cc_vendor v);
