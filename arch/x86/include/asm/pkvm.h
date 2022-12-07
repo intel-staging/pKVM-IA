@@ -129,4 +129,14 @@ static inline void pkvm_update_iommu_virtual_caps(u64 *cap, u64 *ecap)
 }
 #endif
 
+#ifdef CONFIG_PKVM_GUEST
+
+void pkvm_guest_early_init(void);
+
+#else
+
+static inline void pkvm_guest_early_init(void) {}
+
+#endif
+
 #endif

@@ -41,6 +41,7 @@
 #include <asm/trapnr.h>
 #include <asm/sev.h>
 #include <asm/tdx.h>
+#include <asm/pkvm.h>
 
 /*
  * Manage page tables very early on.
@@ -523,6 +524,9 @@ asmlinkage __visible void __init x86_64_start_kernel(char * real_mode_data)
 
 	/* Needed before cc_platform_has() can be used for TDX */
 	tdx_early_init();
+
+	/* Needed before cc_platform_has() can be used for pkvm. */
+	pkvm_guest_early_init();
 
 	copy_bootdata(__va(real_mode_data));
 
