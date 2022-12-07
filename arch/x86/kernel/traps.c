@@ -65,7 +65,7 @@
 #include <asm/insn.h>
 #include <asm/insn-eval.h>
 #include <asm/vdso.h>
-#include <asm/tdx.h>
+#include <asm/virt_exception.h>
 #include <asm/cfi.h>
 
 #ifdef CONFIG_X86_64
@@ -1373,15 +1373,15 @@ DEFINE_IDTENTRY(exc_virtualization_exception)
 	 * till TDGETVEINFO TDCALL is executed. This ensures that VE
 	 * info cannot be overwritten by a nested #VE.
 	 */
-	tdx_get_ve_info(&ve);
+	get_ve_info(&ve);
 
 	cond_local_irq_enable(regs);
 
 	/*
-	 * If tdx_handle_virt_exception() could not process
+	 * If handle_virt_exception() could not process
 	 * it successfully, treat it as #GP(0) and handle it.
 	 */
-	if (!tdx_handle_virt_exception(regs, &ve))
+	if (!handle_virt_exception(regs, &ve))
 		ve_raise_fault(regs, 0, ve.gla);
 
 	cond_local_irq_disable(regs);
