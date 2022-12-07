@@ -7,6 +7,7 @@
 #include <linux/bits.h>
 #include <asm/ptrace.h>
 #include <asm/shared/tdx.h>
+#include <asm/virt_exception.h>
 
 /*
  * SW-defined error codes.
@@ -33,22 +34,6 @@ struct tdx_module_output {
 	u64 r9;
 	u64 r10;
 	u64 r11;
-};
-
-/*
- * Used by the #VE exception handler to gather the #VE exception
- * info from the TDX module. This is a software only structure
- * and not part of the TDX module/VMM ABI.
- */
-struct ve_info {
-	u64 exit_reason;
-	u64 exit_qual;
-	/* Guest Linear (virtual) Address */
-	u64 gla;
-	/* Guest Physical Address */
-	u64 gpa;
-	u32 instr_len;
-	u32 instr_info;
 };
 
 #ifdef CONFIG_INTEL_TDX_GUEST
