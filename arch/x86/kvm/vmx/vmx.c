@@ -49,6 +49,7 @@
 #include <asm/mwait.h>
 #include <asm/spec-ctrl.h>
 #include <asm/vmx.h>
+#include <asm/kvm_pkvm.h>
 
 #include <trace/events/ipi.h>
 
@@ -7525,6 +7526,8 @@ void vmx_vcpu_free(struct kvm_vcpu *vcpu)
 	nested_vmx_free_vcpu(vcpu);
 	free_loaded_vmcs(vmx->loaded_vmcs);
 	free_page((unsigned long)vmx->ve_info);
+
+	pkvm_teardown_shadow_vcpu(vcpu);
 }
 
 int vmx_vcpu_create(struct kvm_vcpu *vcpu)
@@ -7636,7 +7639,7 @@ int vmx_vcpu_create(struct kvm_vcpu *vcpu)
 		WRITE_ONCE(to_kvm_vmx(vcpu->kvm)->pid_table[vcpu->vcpu_id],
 			   __pa(&vmx->pi_desc) | PID_TABLE_ENTRY_VALID);
 
-	return 0;
+	return pkvm_init_shadow_vcpu(vcpu);
 
 free_vmcs:
 	free_loaded_vmcs(vmx->loaded_vmcs);
@@ -7678,7 +7681,13 @@ int vmx_vm_init(struct kvm *kvm)
 			break;
 		}
 	}
-	return 0;
+
+	return pkvm_init_shadow_vm(kvm);
+}
+
+void vmx_vm_free(struct kvm *kvm)
+{
+	pkvm_teardown_shadow_vm(kvm);
 }
 
 u8 vmx_get_mt_mask(struct kvm_vcpu *vcpu, gfn_t gfn, bool is_mmio)
