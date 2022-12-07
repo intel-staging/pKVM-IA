@@ -24,8 +24,18 @@ struct ve_info {
 
 int ve_handle_mmio(struct pt_regs *regs, struct ve_info *ve);
 
-bool mmio_read(int size, unsigned long addr, unsigned long *val);
-bool mmio_write(int size, unsigned long addr, unsigned long val);
+void get_ve_info(struct ve_info *ve);
+
+bool handle_virt_exception(struct pt_regs *regs, struct ve_info *ve);
+
+struct ve_x86_ops {
+	bool (*mmio_read)(int size, unsigned long addr, unsigned long *val);
+	bool (*mmio_write)(int size, unsigned long addr, unsigned long val);
+	bool (*handle_virt_exception)(struct pt_regs *regs, struct ve_info *ve);
+	void (*get_ve_info)(struct ve_info *ve);
+};
+
+extern struct ve_x86_ops ve_x86_ops;
 
 #endif /* !__ASSEMBLY__ */
 #endif /* _ASM_X86_VIRT_EXCEPTION_H */
