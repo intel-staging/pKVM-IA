@@ -16,6 +16,38 @@
 static enum cc_vendor vendor __ro_after_init;
 static u64 cc_mask __ro_after_init;
 
+static bool pkvm_cc_platform_has(enum cc_attr attr)
+{
+	/*
+	 * Since primary VM can't access pkvm guest's memory, pkvm guest need
+	 * explicitly share DMA buffer with primary VM to make virtio work. By
+	 * using these attribute, pkvm guest will using bounce buffer for DMA
+	 * operation, and share the bounce buffer with primary VM.
+	 *
+	 * CC_ATTR_GUEST_UNROLL_STRING_IO: Since string io cause KVM to do
+	 * instruction decode, to avoid it, using this attribute will unroll the
+	 * string io. For example, in <asm/io.h>, the definition of the outsb
+	 * check to attribute to determine if using string io.
+	 *
+	 * CC_ATTR_GUEST_MEM_ENCRYPT: This attribute has been checked in the
+	 * force_dma_unencrypted(). Which means all DMA buffer will be shared
+	 * between pkvm guest and primary VM. And checked in
+	 * pci_swiotlb_detect(), this makes pkvm guest using bounce buffer.
+	 *
+	 * CC_ATTR_MEM_ENCRYPT: This attribute has been checked in the
+	 * mem_encrypt_init(). Which will make all bounce buffer being shared
+	 * between pkvm guest and primary VM.
+	 */
+	switch (attr) {
+	case CC_ATTR_GUEST_UNROLL_STRING_IO:
+	case CC_ATTR_GUEST_MEM_ENCRYPT:
+	case CC_ATTR_MEM_ENCRYPT:
+		return true;
+	default:
+		return false;
+	}
+}
+
 static bool intel_cc_platform_has(enum cc_attr attr)
 {
 	switch (attr) {
@@ -90,6 +122,8 @@ bool cc_platform_has(enum cc_attr attr)
 		return intel_cc_platform_has(attr);
 	case CC_VENDOR_HYPERV:
 		return hyperv_cc_platform_has(attr);
+	case CC_VENDOR_PKVM:
+		return pkvm_cc_platform_has(attr);
 	default:
 		return false;
 	}
