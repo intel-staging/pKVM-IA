@@ -339,6 +339,9 @@ host VM. The memory which is not expected to be accessed by host VM will be
 unmapped from EPT in the finalize phase, like reserved memory and hypervisor's
 code/data sections.
 
+In the end of finalize phase, hypervisor code also initializes nested related
+data, like shadow vmcs fields and emulated vmcs fields.
+
 Although each CPU will execute the finalize vmcall, only the first finalize
 vmcall needs to divide reserved memory and set up the buddy allocator/MMU/EPT
 as these are onetime jobs. Once these are done, the other finalize vmcalls
@@ -370,6 +373,90 @@ violation to the hypervisor, which guarantees the pKVM hypervisor is isolated
 from host VM.
 
 
+VMX Emulation (Shadow VMCS)
+===========================
+
+Host VM wants the capability to run its guest, it needs VMX support.
+
+pKVM is designed to emulate VMX for host VM based on shadow vmcs.
+This requires "VMCS shadowing" feature support in VMX secondary
+processor-based VM-Execution controls field [9].
+
+    +--------------------+   +-----------------+
+    |     host VM        |   |   guest VM      |
+    |                    |   |                 |
+    |         +--------+ |   |                 |
+    |         | vmcs12 | |   |                 |
+    |         +--------+ |   |                 |
+    +--------------------+   +-----------------+
+    +------------------------------------------+       +---------+
+    |     +--------+           +--------+      |       | shadow  |
+    |     | vmcs01 |           | vmcs02 +------+---+-->|  vcpu   |
+    |     +--------+           +--------+      |   |   |  state  |
+    |                      +---------------+   |   |   +---------+
+    |                      | cached_vmcs12 +---+---+
+    | pKVM                 +---------------+   |
+    +------------------------------------------+
+
+"VMCS shadowing" use a shadow vmcs page (vmcs02) to cache vmcs fields
+accessing from host VM through VMWRITE/VMREAD, avoid causing vmexit.
+The fields cached in vmcs02 is pre-defined by VMREAD/VMWRITE bitmap.
+Meanwhile for other fields not in VMREAD/VMWRITE bitmap, accessing from
+host VM cause VMREAD/VMWRITE vmexit, pKVM need to cache them in another
+place - cached_vmcs12 is introduced for this purpose.
+
+The vmcs02 page in root mode is kept in the structure shadow_vcpu_state,
+which allocated then donated from host VM when it initializes vcpus for
+its launched guest (nested). Same for field of cached_vmcs12.
+
+pKVM use vmcs02 with two purposes, one is mentioned above, using it
+as the shadow vmcs page of nested guest when host VM program its vmcs
+fields. The other one is using it as ordinary (or active) vmcs for the
+same guest during the vmlaunch/vmresume.
+
+For a nested guest, during its vmcs programing from host VM, according
+to above, its virtual vmcs (vmcs12) is saved in two places: vmcs02 for
+shadow fields and cached_vmcs12 for no shadow fields. Meanwhile for
+cached_vmcs12, there are also two parts for its fields: one is emulated
+fields, the other one is host state fields. The emulated fields shall be
+emulated to the physical value then fill into vmcs02 before vmcs02 active
+to do vmlaunch/vmresume for the nested guest. The host state fields are
+guest state of host vcpu, it shall be restored to guest state of host
+vcpu vmcs (vmcs01) before return to host VM.
+
+Below is a summary for contents of different vmcs fields in each above
+mentioned vmcs:
+
+               host state      guest state          control
+ ---------------------------------------------------------------
+ vmcs12*:       host VM	      nested guest         host VM
+ vmcs02*:        pKVM         nested guest      host VM + pKVM*
+ vmcs01*:        pKVM            host VM             pKVM
+
+ [*]vmcs12: virtual vmcs of a nested guest
+ [*]vmcs02: vmcs of a nested guest
+ [*]vmcs01: vmcs of host VM
+ [*]the security related control fields of vmcs02 is controlled by pKVM
+  (e.g., EPT_POINTER)
+
+Below show the vmcs emulation method for different vmcs fields for a
+nested guest:
+
+                host state      guest state         control
+ ---------------------------------------------------------------
+ virutal vmcs:  cached_vmcs12*     vmcs02*          emulated*
+
+ [*]cached_vmcs12: vmexit then get value from cached_vmcs12
+ [*]vmcs02:        no-vmexit and directly shadow from vmcs02
+ [*]emulated:      vmexit then do the emulation
+
+The vmcs02 & cached_vmcs12 is sync back to vmcs12 during VMCLEAR
+emulation, and updated from vmcs12 when emulating VMPTRLD. And before
+the nested guest vmentry(vmlaunch/vmresume emulation), the vmcs02 is
+further sync dirty fields (caused by vmwrite) from cached_vmcs12 and
+update emulated fields through emulation.
+
+
 Misc
 ====
 
@@ -395,6 +482,8 @@ but not cause any trouble.
 [3]: https://lwn.net/Articles/895790/
 [4]: https://kvmforum2020.sched.com/event/eE24/virtualization-for-the-masses-exposing-kvm-on-android-will-deacon-google
 [5]: https://software.intel.com/content/www/us/en/develop/articles/intel-trust-domain-extensions.html
+<<<<<<< HEAD:Documentation/virt/kvm/x86/pkvm-intel.rst
 [6]: https://lore.kernel.org/linux-arm-kernel/20230201125328.2186498-1-jean-philippe@linaro.org/T/
 [7]: https://kvmforum2022.sched.com/event/15jKc/supporting-tee-on-x86-client-platforms-with-pkvm-jason-chen-intel
 [8]: https://lore.kernel.org/r/20210319100146.1149909-13-qperret@google.com
+[9]: SDM: Virtual Machine Control Structures chapter, VMCS TYPES.
