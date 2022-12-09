@@ -313,9 +313,10 @@ The finalize vmcall takes the struct pkvm_section as input parameters, which
 contains the range of the reserved memory and hypervisor's code/data sections.
 The reserved memory is divided into several parts through early_alloc mechanism:
 #1 pkvm_hyp data structures; #2 vmemmap metadata of buddy allocator; #3
-hypervisor MMU pages; #4 host EPT pages (Note: part#1 is already allocated
-before deprivilege, and the reset parts should not overlap with part#1). Then
-hypervisor will set up the MMU/EPT with the divided memory pages.
+hypervisor MMU pages; #4 host EPT pages; #5 shadow EPT pages (Note: part#1 is
+already allocated before deprivilege, and the reset parts should not overlap
+with part#1). Then hypervisor will set up the MMU/EPT with the divided memory
+pages.
 
 To enable the buddy allocator for a more flexible memory management, the vmemmap
 metadata should be mapped in hypervisor's MMU first. So creating hypervisor's
@@ -340,7 +341,7 @@ unmapped from EPT in the finalize phase, like reserved memory and hypervisor's
 code/data sections.
 
 In the end of finalize phase, hypervisor code also initializes nested related
-data, like shadow vmcs fields and emulated vmcs fields.
+data, like shadow vmcs fields, emulated vmcs fields and shadow EPT pages pool.
 
 Although each CPU will execute the finalize vmcall, only the first finalize
 vmcall needs to divide reserved memory and set up the buddy allocator/MMU/EPT
@@ -352,15 +353,15 @@ EPT.
 -----------------------
 
 As talked above, pKVM hypervisor finally needs to manage page tables for its
-MMU, host VM EPT. To help supporting these different page tables, pKVM provides
-a general page table walker framework. Such framework provides interface for
-different operations like pgtable_ops and mm_ops. The pgtable_ops provide
-operations for page table management, like set page table entries, check a
-page table entry is present or whether it is a leaf, or get entry size per
-page table level etc. Meanwhile the mm_ops provide page table related mm
-operations, like page allocation, PV translation, flush tlb etc. MMU and EPT
-can have different implementation for pgtable_ops & mm_ops, thus they can use
-same page table walker framework to manage their page tables.
+MMU, host VM EPT, and shadow EPT for guest VMs. To help supporting these
+different page tables, pKVM provides a general page table walker framework.
+Such framework provides interface for different operations like pgtable_ops
+and mm_ops. The pgtable_ops provide operations for page table management, like
+set page table entries, check a page table entry is present or whether it is a
+leaf, or get entry size per page table level etc. Meanwhile the mm_ops provide
+page table related mm operations, like page allocation, PV translation, flush
+tlb etc. MMU and EPT can have different implementation for pgtable_ops & mm_ops,
+thus they can use same page table walker framework to manage their page tables.
 
 5. Isolated pKVM hypervisor
 ---------------------------
@@ -455,6 +456,53 @@ emulation, and updated from vmcs12 when emulating VMPTRLD. And before
 the nested guest vmentry(vmlaunch/vmresume emulation), the vmcs02 is
 further sync dirty fields (caused by vmwrite) from cached_vmcs12 and
 update emulated fields through emulation.
+
+
+EPT Emulation (Shadow EPT)
+==========================
+
+Host VM launches its guest, and manage such guest's memory through a EPT page table
+maintained in host KVM. But this EPT page table is untrusted to pKVM, so pKVM shall
+not directly use this EPT as guest's active EPT. To ensure isolating of guest memory
+for protected VM, pKVM hypervisor shadows such guest's EPT in host KVM, to build out
+active EPT page table after necessary check (the check is based on page state
+management which will be introduced later). It's actually an emulation for guest EPT
+page table, the guest EPT page table in host KVM is called "virtual EPT", while the
+active EPT page table in pKVM is called "shadow EPT".
+
+How Shadow EPT be built?
+------------------------
+
+In native world, the guest EPT is majorly populated during guest EPT_VIOLATION VMExit
+handling:
+
+ 1. guest access memory page which doesn't have a map in guest EPT, trigger
+    EPT_VIOLATION;
+ 2. KVM MMU handle page fault for EPT_VIOLATION, allocate page then create corresponding
+    EPT mapping.
+
+For pKVM, the majority of guest EPT population is still same as native, but added more
+steps for the shadowing:
+
+ 1. guest access memory page which doesn't have a map in shadow EPT, trigger
+    EPT_VIOLATION;
+ 2. pKVM check if there is mapping in virtual EPT:
+     - if yes, goto 5;
+     - if no, goto 3;
+ 3. pKVM forward EPT_VIOLATION to host VM;
+ 4. KVM MMU in host handle page fault for EPT_VIOLATION, allocate page then create
+    corresponding virtual EPT mapping, then VMResume back to guest, back to 1;
+ 5. pKVM shadow the mapping from virtual EPT to shadow EPT after page state check.
+
+Emulate INVEPT
+--------------
+
+The simplest way to emulate INVEPT is to remove all mapping in shadow EPT, it leads to
+EPT_VIOLATION for all gpa, then all mapping in shadow EPT will be re-created based on
+updated virtual EPT. This will cause a lot of unnecessary shadow EPT_VIOLATION as most
+of entries in virtual EPT is not changed. Optimized way is adding PV method to do INVEPT
+with specific range, then shadow EPT only need removing mapping of necessary range every
+time.
 
 
 Misc
