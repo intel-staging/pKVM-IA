@@ -370,6 +370,26 @@ violation to the hypervisor, which guarantees the pKVM hypervisor is isolated
 from host VM.
 
 
+Misc
+====
+
+
+NMI handling in pKVM
+---------------------
+
+Normally pKVM shall not trigger any exception, but NMI is not able to mask in vmx
+root mode thus pKVM shall provide appropriate handler for it. Such NMI handler needs
+to ensure NMI happened in vmx root mode is captured then injected back to host VM, to
+avoid NMI lost.
+
+The NMI injection is done as the last step before VMEnter to host VM, but there is
+still case that a NMI happened just after the injection step. To avoid big delay, pKVM
+enables irq window whenever there is a NMI happened in vmx root mode, then NMI injection
+flow could be quickly done in next VMEnter. After it, host VM will VMExit once it open
+interrupt, no matter the NMI is already injected or not. This may cause a dummy VMExit
+but not cause any trouble.
+
+
 [1]: https://lwn.net/Articles/836693/
 [2]: https://lwn.net/Articles/837552/
 [3]: https://lwn.net/Articles/895790/
