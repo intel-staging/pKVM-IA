@@ -299,6 +299,77 @@ handlers. With these setups, after executing vmlaunch, the CPU enters vmx
 non-root mode and jump to the place pointed by GUEST_RIP. At this point, the
 Linux kernel runs at the vmx non-root mode.
 
+3) Finalize Phase
+-----------------
+Although the Linux kernel now runs in vmx non-root mode, pKVM hypervisor is
+not fully ready yet as MMU/EPT still need to be updated to guarantee the
+isolation between pKVM hypervisor and the Linux kernel. Currently, the host
+VM and the hypervisor are using the same CR3, without EPT enabled. So after
+vmlaunch, each CPU will use a vmcall to enter vmx root mode to trigger pKVM
+hypervisor to complete the last step of deprivilege, which is to finalize the
+deprivilege.
+
+The finalize vmcall takes the struct pkvm_section as input parameters, which
+contains the range of the reserved memory and hypervisor's code/data sections.
+The reserved memory is divided into several parts through early_alloc mechanism:
+#1 pkvm_hyp data structures; #2 vmemmap metadata of buddy allocator; #3
+hypervisor MMU pages; #4 host EPT pages (Note: part#1 is already allocated
+before deprivilege, and the reset parts should not overlap with part#1). Then
+hypervisor will set up the MMU/EPT with the divided memory pages.
+
+To enable the buddy allocator for a more flexible memory management, the vmemmap
+metadata should be mapped in hypervisor's MMU first. So creating hypervisor's
+MMU is the first thing to do after dividing the reserved memory. To simplify,
+the MMU is created by mapping all the memblocks with kernel direct mapping
+VA, and hypervisor's code/data sections with symbol VA. The vmemmap metadata is
+mapped with the VA started from 0. Once all the required mappings are ready,
+hypervisor can update its CR3 register with the new MMU page table. And after
+that, hypervisor runs with its own CR3. With buddy allocator enabled, hypervisor
+page-table manage framework can be used to dynamically manage the map/unmap for
+hypervisor MMU and host VM's EPT. The page-table management is introduced in the
+next section.
+
+To guarantee the isolation, hypervisor set up EPT for host VM. The EPT is
+identical mapped for all the memblocks. As the MMIO is usually out of the range
+of the memblocks, also identical maps all the possible holes between each
+memblock. However, some MMIO may live in the high-end address which is difficult
+to be covered by mapping these holes, so hypervisor still needs to handle such
+EPT violation at the runtime. With EPT, hypervisor can be isolated from the
+host VM. The memory which is not expected to be accessed by host VM will be
+unmapped from EPT in the finalize phase, like reserved memory and hypervisor's
+code/data sections.
+
+Although each CPU will execute the finalize vmcall, only the first finalize
+vmcall needs to divide reserved memory and set up the buddy allocator/MMU/EPT
+as these are onetime jobs. Once these are done, the other finalize vmcalls
+on the other CPUs only need to do per-CPU stuff: switching CR3 and enabling
+EPT.
+
+* Page-table management
+-----------------------
+
+As talked above, pKVM hypervisor finally needs to manage page tables for its
+MMU, host VM EPT. To help supporting these different page tables, pKVM provides
+a general page table walker framework. Such framework provides interface for
+different operations like pgtable_ops and mm_ops. The pgtable_ops provide
+operations for page table management, like set page table entries, check a
+page table entry is present or whether it is a leaf, or get entry size per
+page table level etc. Meanwhile the mm_ops provide page table related mm
+operations, like page allocation, PV translation, flush tlb etc. MMU and EPT
+can have different implementation for pgtable_ops & mm_ops, thus they can use
+same page table walker framework to manage their page tables.
+
+5. Isolated pKVM hypervisor
+---------------------------
+
+In the end of host deprivilege, pKVM hypervisor runs as an independent binary
+with its own MMU page table. Host VM runs with EPT enabled, which unmaps the
+pKVM hypervisor's code/data sections, as well as the reserved memory. With
+this, accessing any pKVM hypervisor's memory from host VM will cause EPT
+violation to the hypervisor, which guarantees the pKVM hypervisor is isolated
+from host VM.
+
+
 [1]: https://lwn.net/Articles/836693/
 [2]: https://lwn.net/Articles/837552/
 [3]: https://lwn.net/Articles/895790/
