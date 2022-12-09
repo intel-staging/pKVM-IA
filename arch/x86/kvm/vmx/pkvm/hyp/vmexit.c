@@ -117,6 +117,27 @@ static void handle_xsetbv(struct kvm_vcpu *vcpu)
 			: : "a" (eax), "d" (edx), "c" (ecx));
 }
 
+static void handle_irq_window(struct kvm_vcpu *vcpu)
+{
+	struct vcpu_vmx *vmx = to_vmx(vcpu);
+	u32 cpu_based_exec_ctrl = exec_controls_get(vmx);
+
+	exec_controls_set(vmx, cpu_based_exec_ctrl & ~CPU_BASED_INTR_WINDOW_EXITING);
+	pkvm_dbg("%s: CPU%d clear irq_window_exiting\n", __func__, vcpu->cpu);
+}
+
+static void handle_pending_events(struct kvm_vcpu *vcpu)
+{
+	struct pkvm_host_vcpu *pkvm_host_vcpu = to_pkvm_hvcpu(vcpu);
+
+	if (pkvm_host_vcpu->pending_nmi) {
+		/* Inject if NMI is not blocked */
+		vmcs_write32(VM_ENTRY_INTR_INFO_FIELD,
+			     INTR_TYPE_NMI_INTR | INTR_INFO_VALID_MASK | NMI_VECTOR);
+		pkvm_host_vcpu->pending_nmi = false;
+	}
+}
+
 /* we take use of kvm_vcpu structure, but not used all the fields */
 int pkvm_main(struct kvm_vcpu *vcpu)
 {
@@ -171,6 +192,9 @@ int pkvm_main(struct kvm_vcpu *vcpu)
 			if (handle_host_ept_violation(vmcs_read64(GUEST_PHYSICAL_ADDRESS)))
 				skip_instruction = true;
 			break;
+		case EXIT_REASON_INTERRUPT_WINDOW:
+			handle_irq_window(vcpu);
+			break;
 		default:
 			pkvm_dbg("CPU%d: Unsupported vmexit reason 0x%x.\n", vcpu->cpu, vmx->exit_reason.full);
 			skip_instruction = true;
@@ -182,6 +206,8 @@ int pkvm_main(struct kvm_vcpu *vcpu)
 
 		if (skip_instruction)
 			skip_emulated_instruction();
+
+		handle_pending_events(vcpu);
 
 		native_write_cr2(vcpu->arch.cr2);
 	} while (1);
