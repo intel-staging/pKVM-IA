@@ -276,8 +276,7 @@ static __init void _init_host_state_area(struct pkvm_pcpu *pcpu, int cpu)
 
 	native_store_gdt(&dt);
 	vmcs_writel(HOST_GDTR_BASE, dt.address);
-	store_idt(&dt);
-	vmcs_writel(HOST_IDTR_BASE, dt.address);
+	vmcs_writel(HOST_IDTR_BASE, (unsigned long)(&pcpu->idt_page));
 
 	rdmsr(MSR_IA32_SYSENTER_CS, low, high);
 	vmcs_write32(HOST_IA32_SYSENTER_CS, low);
@@ -403,6 +402,7 @@ static __init int pkvm_host_init_vmx(struct pkvm_host_vcpu *vcpu, int cpu)
 
 	vmx->loaded_vmcs = &vmx->vmcs01;
 	vmcs_load(vmx->loaded_vmcs->vmcs);
+	vcpu->current_vmcs = vmx->loaded_vmcs->vmcs;
 
 	init_guest_state_area(vcpu, cpu);
 	init_host_state_area(vcpu, cpu);
@@ -514,11 +514,6 @@ static __init void init_gdt(struct pkvm_pcpu *pcpu)
 	pcpu->gdt_page = pkvm_gdt_page;
 }
 
-void noop_handler(void)
-{
-	/* To be added */
-}
-
 static __init void init_idt(struct pkvm_pcpu *pcpu)
 {
 	gate_desc *idt = pcpu->idt_page.idt;
@@ -533,13 +528,37 @@ static __init void init_idt(struct pkvm_pcpu *pcpu)
 	gate_desc desc;
 	int i;
 
+#ifdef CONFIG_PKVM_INTEL_DEBUG
+	gate_desc *host_idt;
+	struct desc_ptr dt;
+
+	store_idt(&dt);
+	host_idt = (gate_desc *)dt.address;
+
+	/* reuse other exception handler but control nmi handler */
+	for (i = 0; i <= X86_TRAP_IRET; i++) {
+		if (i == X86_TRAP_NMI) {
+			d.vector = i;
+			d.bits.ist = 0;
+			d.addr = (const void *)pkvm_sym(nmi_handler);
+			idt_init_desc(&desc, &d);
+			write_idt_entry(idt, i, &desc);
+		} else {
+			memcpy(&idt[i], &host_idt[i], sizeof(gate_desc));
+		}
+	}
+#else
 	for (i = 0; i <= X86_TRAP_IRET; i++) {
 		d.vector = i;
 		d.bits.ist = 0;
-		d.addr = (const void *)noop_handler;
+		if (i == X86_TRAP_NMI)
+			d.addr = (const void *)pkvm_sym(nmi_handler);
+		else
+			d.addr = (const void *)pkvm_sym(noop_handler);
 		idt_init_desc(&desc, &d);
 		write_idt_entry(idt, i, &desc);
 	}
+#endif
 }
 
 static __init void init_tss(struct pkvm_pcpu *pcpu)
