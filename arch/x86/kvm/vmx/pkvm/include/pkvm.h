@@ -33,6 +33,9 @@ struct pkvm_host_vcpu {
 	struct vcpu_vmx vmx;
 	struct pkvm_pcpu *pcpu;
 	struct vmcs *vmxarea;
+	struct vmcs *current_vmcs;
+
+	bool pending_nmi;
 };
 
 struct pkvm_host_vm {
@@ -99,5 +102,8 @@ PKVM_DECLARE(int, pkvm_main(struct kvm_vcpu *vcpu));
 PKVM_DECLARE(void *, pkvm_early_alloc_contig(unsigned int nr_pages));
 PKVM_DECLARE(void *, pkvm_early_alloc_page(void));
 PKVM_DECLARE(void, pkvm_early_alloc_init(void *virt, unsigned long size));
+
+PKVM_DECLARE(void, noop_handler(void));
+PKVM_DECLARE(void, nmi_handler(void));
 
 #endif
