@@ -4100,12 +4100,16 @@ static int direct_page_fault(struct kvm_vcpu *vcpu, struct kvm_page_fault *fault
 	else
 		r = __direct_map(vcpu, fault);
 
-	if (ppage && r == RET_PF_FIXED) {
-		ppage->page = pfn_to_page(fault->pfn);
-		get_page(ppage->page);
-		spin_lock(&vcpu->kvm->pkvm.pinned_page_lock);
-		list_add(&ppage->list, &vcpu->kvm->pkvm.pinned_pages);
-		spin_unlock(&vcpu->kvm->pkvm.pinned_page_lock);
+	if (ppage) {
+		if (r == RET_PF_FIXED && !kvm_is_reserved_pfn(fault->pfn)) {
+			ppage->page = pfn_to_page(fault->pfn);
+			get_page(ppage->page);
+			spin_lock(&vcpu->kvm->pkvm.pinned_page_lock);
+			list_add(&ppage->list, &vcpu->kvm->pkvm.pinned_pages);
+			spin_unlock(&vcpu->kvm->pkvm.pinned_page_lock);
+		} else {
+			kfree(ppage);
+		}
 	}
 
 out_unlock:
