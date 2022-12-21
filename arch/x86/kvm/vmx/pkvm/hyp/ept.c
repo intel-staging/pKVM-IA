@@ -592,13 +592,13 @@ static int pkvm_pgstate_pgt_free_leaf(struct pkvm_pgtable *pgt, unsigned long va
 		flush_data->flushtlb |= true;
 		break;
 	case KVM_X86_PROTECTED_VM: {
-		void *virt = pgt->mm_ops->phys_to_virt(phys);
-
+		struct mem_range range;
 		/*
-		 * before returning to host, the page previously owned by
+		 * before returning to host, the memory page previously owned by
 		 * protected VM shall be memset to 0 to avoid secret leakage.
 		 */
-		memset(virt, 0, size);
+		if (find_mem_range(phys, &range))
+			memset(pgt->mm_ops->phys_to_virt(phys), 0, min(size, range.end - phys));
 		pgt->mm_ops->get_page(ptep);
 		ret = __pkvm_host_undonate_guest(phys, pgt, vaddr, size);
 		pgt->mm_ops->put_page(ptep);
