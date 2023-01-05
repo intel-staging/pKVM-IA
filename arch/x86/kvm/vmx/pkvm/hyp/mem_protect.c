@@ -747,8 +747,8 @@ int __pkvm_guest_share_host(struct pkvm_pgtable *guest_pgt,
 	if (!PAGE_ALIGNED(size))
 		return -EINVAL;
 
-	host_ept_lock();
 	guest_pgstate_pgt_lock(guest_pgt);
+	host_ept_lock();
 
 	while (size) {
 		pkvm_pgtable_lookup(guest_pgt, gpa, &hpa, &prot, NULL);
@@ -765,8 +765,9 @@ int __pkvm_guest_share_host(struct pkvm_pgtable *guest_pgt,
 		gpa += PAGE_SIZE;
 	}
 
-	guest_pgstate_pgt_unlock(guest_pgt);
 	host_ept_unlock();
+	guest_pgstate_pgt_unlock(guest_pgt);
+
 
 	return ret;
 }
@@ -992,8 +993,8 @@ int __pkvm_guest_unshare_host(struct pkvm_pgtable *guest_pgt,
 	u64 prot;
 	int ret = 0;
 
-	host_ept_lock();
 	guest_pgstate_pgt_lock(guest_pgt);
+	host_ept_lock();
 
 	while (size) {
 		pkvm_pgtable_lookup(guest_pgt, gpa, &hpa, &prot, NULL);
@@ -1010,8 +1011,8 @@ int __pkvm_guest_unshare_host(struct pkvm_pgtable *guest_pgt,
 		gpa += PAGE_SIZE;
 	}
 
-	guest_pgstate_pgt_unlock(guest_pgt);
 	host_ept_unlock();
+	guest_pgstate_pgt_unlock(guest_pgt);
 
 	return ret;
 }
