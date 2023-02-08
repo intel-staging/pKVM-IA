@@ -255,6 +255,12 @@ int pkvm_host_ept_unmap(unsigned long vaddr_start, unsigned long phys_start,
 	return pkvm_pgtable_unmap_safe(&host_ept, vaddr_start, phys_start, size, NULL);
 }
 
+void pkvm_host_ept_lookup(unsigned long vaddr, unsigned long *pphys,
+			  u64 *pprot, int *plevel)
+{
+	pkvm_pgtable_lookup(&host_ept, vaddr, pphys, pprot, plevel);
+}
+
 void pkvm_host_ept_destroy(void)
 {
 	pkvm_pgtable_destroy(&host_ept, NULL);
