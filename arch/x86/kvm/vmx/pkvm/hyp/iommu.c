@@ -26,38 +26,38 @@ static struct pkvm_iommu iommus[PKVM_MAX_IOMMU_NUM];
 static struct hyp_pool iommu_pool;
 
 /*
- * Guest page table walking parameter.
+ * Guest root/context/pasid table (hereinafter "id table") walking parameter.
  * pkvm IOMMU driver walks the guest page table when syncing
- * with the shadow page table.
+ * with the shadow id table.
  */
-struct pgt_sync_walk_data {
+struct id_sync_walk_data {
 	struct pkvm_iommu *iommu;
 	/*
-	 * Used to hold shadow page table physical address
+	 * Used to hold shadow id table physical address
 	 * which is used for sync shadow entries at each
-	 * page table level.
+	 * id table level.
 	 */
 	u64 shadow_pa[IOMMU_SM_LEVEL_NUM];
 	/*
 	 * Used when just syncing a part of shadow
-	 * page table entries which match with this did if
+	 * id table entries which match with this did if
 	 * it is set as a non-zero did value.
 	 */
 	u16 did;
 };
 
-#define DEFINE_PGT_SYNC_WALK_DATA(name, _iommu, domain_id)	\
-	struct pgt_sync_walk_data (name) = {			\
+#define DEFINE_ID_SYNC_WALK_DATA(name, _iommu, domain_id)	\
+	struct id_sync_walk_data (name) = {			\
 		.iommu = (_iommu),				\
 		.shadow_pa = {0},				\
 		.did = (domain_id),				\
 	}
 
 /*
- * Used to config a shadow page table entry in root/context/pasid
+ * Used to config a shadow id table entry in root/context/pasid
  * level.
  */
-struct pgt_sync_data {
+struct id_sync_data {
 	union {
 		u64 root_entry;
 		struct context_entry ct_entry;
@@ -69,7 +69,7 @@ struct pgt_sync_data {
 	int level;
 	u64 iommu_ecap;
 	u64 shadow_pa;
-	struct pkvm_pgtable *spgt;
+	struct pkvm_pgtable *shadow_id;
 	unsigned long vaddr;
 };
 
@@ -362,7 +362,7 @@ static int iommu_audit_did(struct pkvm_iommu *iommu, u16 did, int shadow_vm_hand
 }
 
 /* present root entry when shadow_pa valid, otherwise un-present it */
-static bool sync_root_entry(struct pgt_sync_data *sdata)
+static bool sync_root_entry(struct id_sync_data *sdata)
 {
 	u64 *sre = sdata->shadow_ptep;
 	u64 sre_val = sdata->shadow_pa ? (sdata->shadow_pa | 1) : 0;
@@ -376,11 +376,11 @@ static bool sync_root_entry(struct pgt_sync_data *sdata)
 }
 
 /* sync context entry when guest_ptep & shadow_pa valid, otherwise un-present it */
-static bool sync_shadow_context_entry(struct pgt_sync_data *sdata)
+static bool sync_shadow_context_entry(struct id_sync_data *sdata)
 {
 	struct context_entry *shadow_ce = sdata->shadow_ptep, tmp = {0};
 	struct context_entry *guest_ce = sdata->guest_ptep;
-	struct pkvm_iommu *iommu = pgt_to_pkvm_iommu(sdata->spgt);
+	struct pkvm_iommu *iommu = pgt_to_pkvm_iommu(sdata->shadow_id);
 	struct pkvm_ptdev *ptdev;
 	struct pkvm_pgtable_cap cap;
 	bool updated = false;
@@ -513,7 +513,7 @@ update_shadow_ce:
 }
 
 /* sync pasid dir entry when guest_ptep & shadow_pa valid, otherwise un-present it */
-static bool sync_shadow_pasid_dir_entry(struct pgt_sync_data *sdata)
+static bool sync_shadow_pasid_dir_entry(struct id_sync_data *sdata)
 {
 	struct pasid_dir_entry *shadow_pde = sdata->shadow_ptep;
 	u64 val = 0;
@@ -534,11 +534,11 @@ static bool sync_shadow_pasid_dir_entry(struct pgt_sync_data *sdata)
 }
 
 /* sync pasid table entry when guest_ptep valid, otherwise un-present it */
-static bool sync_shadow_pasid_table_entry(struct pgt_sync_data *sdata)
+static bool sync_shadow_pasid_table_entry(struct id_sync_data *sdata)
 {
 	u16 bdf = sdata->vaddr >> DEVFN_SHIFT;
 	u32 pasid = sdata->vaddr & ((1UL << MAX_NR_PASID_BITS) - 1);
-	struct pkvm_iommu *iommu = pgt_to_pkvm_iommu(sdata->spgt);
+	struct pkvm_iommu *iommu = pgt_to_pkvm_iommu(sdata->shadow_id);
 	struct pkvm_ptdev *ptdev = iommu_find_ptdev(iommu, bdf, pasid);
 	struct pasid_entry *shadow_pte = sdata->shadow_ptep, tmp_pte = {0};
 	struct pasid_entry *guest_pte;
@@ -678,10 +678,10 @@ static bool sync_shadow_pasid_table_entry(struct pgt_sync_data *sdata)
 	return pasid_copy_entry(shadow_pte, &tmp_pte);
 }
 
-static bool iommu_id_sync_entry(struct pgt_sync_data *sdata)
+static bool iommu_id_sync_entry(struct id_sync_data *sdata)
 {
 	bool ret = false;
-	struct pkvm_pgtable *spgt = sdata->spgt;
+	struct pkvm_pgtable *shadow_id = sdata->shadow_id;
 
 	if (ecap_smts(sdata->iommu_ecap)) {
 		switch (sdata->level) {
@@ -714,10 +714,10 @@ static bool iommu_id_sync_entry(struct pgt_sync_data *sdata)
 	}
 
 	if (ret) {
-		int entry_size = spgt->pgt_ops->pgt_level_entry_size(sdata->level);
+		int entry_size = shadow_id->pgt_ops->pgt_level_entry_size(sdata->level);
 
-		if (entry_size && spgt->mm_ops->flush_cache)
-			spgt->mm_ops->flush_cache(sdata->shadow_ptep, entry_size);
+		if (entry_size && shadow_id->mm_ops->flush_cache)
+			shadow_id->mm_ops->flush_cache(sdata->shadow_ptep, entry_size);
 	}
 
 	return ret;
@@ -825,7 +825,7 @@ static int free_shadow_id_cb(struct pkvm_pgtable *pgt, unsigned long vaddr,
 {
 	struct pkvm_pgtable_ops *pgt_ops = pgt->pgt_ops;
 	struct pkvm_mm_ops *mm_ops = pgt->mm_ops;
-	struct pgt_sync_data sync_data = {0};
+	struct id_sync_data sync_data = {0};
 	struct pkvm_iommu *iommu = pgt_to_pkvm_iommu(pgt);
 	void *child_ptep;
 
@@ -835,7 +835,7 @@ static int free_shadow_id_cb(struct pkvm_pgtable *pgt, unsigned long vaddr,
 
 	sync_data.shadow_ptep = ptep;
 	sync_data.level = level;
-	sync_data.spgt = pgt;
+	sync_data.shadow_id = pgt;
 	sync_data.iommu_ecap = iommu->iommu.ecap;
 	sync_data.vaddr = vaddr;
 
@@ -863,14 +863,14 @@ static int free_shadow_id_cb(struct pkvm_pgtable *pgt, unsigned long vaddr,
 }
 
 /* sync_data != NULL, data != NULL */
-static int init_sync_id_data(struct pgt_sync_data *sync_data,
-		struct pgt_sync_walk_data *data,
+static int init_sync_id_data(struct id_sync_data *sync_data,
+		struct id_sync_walk_data *data,
 		struct pkvm_iommu *iommu, void *guest_ptep,
 		unsigned long vaddr, int level)
 {
-	struct pkvm_pgtable *spgt = &iommu->pgt;
-	int idx = spgt->pgt_ops->pgt_entry_to_index(vaddr, level);
-	int entry_size = spgt->pgt_ops->pgt_level_entry_size(level);
+	struct pkvm_pgtable *shadow_id = &iommu->pgt;
+	int idx = shadow_id->pgt_ops->pgt_entry_to_index(vaddr, level);
+	int entry_size = shadow_id->pgt_ops->pgt_level_entry_size(level);
 
 	if (ecap_smts(iommu->iommu.ecap)) {
 		switch (level) {
@@ -913,11 +913,11 @@ static int init_sync_id_data(struct pgt_sync_data *sync_data,
 		return -EINVAL;
 
 	/* get current shadow_ptep */
-	sync_data->shadow_ptep = spgt->mm_ops->phys_to_virt(data->shadow_pa[level]);
+	sync_data->shadow_ptep = shadow_id->mm_ops->phys_to_virt(data->shadow_pa[level]);
 	sync_data->shadow_ptep += idx * entry_size;
 
 	sync_data->level = level;
-	sync_data->spgt = spgt;
+	sync_data->shadow_id = shadow_id;
 	sync_data->iommu_ecap = iommu->iommu.ecap;
 	sync_data->shadow_pa = 0;
 	sync_data->vaddr = vaddr;
@@ -933,10 +933,10 @@ static int sync_shadow_id_cb(struct pkvm_pgtable *vpgt, unsigned long vaddr,
 			  void *const arg)
 {
 	struct pkvm_pgtable_ops *vpgt_ops = vpgt->pgt_ops;
-	struct pgt_sync_walk_data *data = arg;
+	struct id_sync_walk_data *data = arg;
 	struct pkvm_iommu *iommu = data->iommu;
-	struct pkvm_pgtable *spgt = &iommu->pgt;
-	struct pgt_sync_data sync_data;
+	struct pkvm_pgtable *shadow_id = &iommu->pgt;
+	struct id_sync_data sync_data;
 	void *shadow_ptep, *guest_ptep;
 	bool shadow_p, guest_p;
 	int ret = init_sync_id_data(&sync_data, data, iommu, ptep, vaddr, level);
@@ -958,7 +958,7 @@ static int sync_shadow_id_cb(struct pkvm_pgtable *vpgt, unsigned long vaddr,
 		!vpgt_ops->pgt_entry_is_leaf(guest_ptep, level)))
 		return -EAGAIN;
 
-	shadow_p = spgt->pgt_ops->pgt_entry_present(shadow_ptep);
+	shadow_p = shadow_id->pgt_ops->pgt_entry_present(shadow_ptep);
 	guest_p = vpgt_ops->pgt_entry_present(guest_ptep);
 	if (!guest_p) {
 		if (shadow_p) {
@@ -966,16 +966,16 @@ static int sync_shadow_id_cb(struct pkvm_pgtable *vpgt, unsigned long vaddr,
 			 * For the case that guest not present but shadow present, just
 			 * simply free the shadow to make them consistent.
 			 */
-			unsigned long new_vaddr_end = spgt->pgt_ops->pgt_level_to_size(level) +
+			unsigned long new_vaddr_end = shadow_id->pgt_ops->pgt_level_to_size(level) +
 						      vaddr;
 			/*
 			 * Get a reference count before free to make sure the current page
 			 * of this level and the pages of its parent levels won't be freed.
 			 * As here we only want to free its specific sub-level.
 			 */
-			spgt->mm_ops->get_page(shadow_ptep);
+			shadow_id->mm_ops->get_page(shadow_ptep);
 			free_shadow_id(iommu, vaddr, new_vaddr_end);
-			spgt->mm_ops->put_page(shadow_ptep);
+			shadow_id->mm_ops->put_page(shadow_ptep);
 		}
 		/*
 		 * As now both guest and shadow are not
@@ -1018,32 +1018,32 @@ static int sync_shadow_id_cb(struct pkvm_pgtable *vpgt, unsigned long vaddr,
 		 * size. As we fixed the pasid only support 15bits, which makes
 		 * the pasid dir is also one page with 4K size.
 		 */
-		void *shadow = spgt->mm_ops->zalloc_page();
+		void *shadow = shadow_id->mm_ops->zalloc_page();
 
 		if (!shadow)
 			return -ENOMEM;
-		/* Get the shadow page physical address of the child level */
-		sync_data.shadow_pa = spgt->mm_ops->virt_to_phys(shadow);
+		/* Get the shadow id physical address of the child level */
+		sync_data.shadow_pa = shadow_id->mm_ops->virt_to_phys(shadow);
 	} else
 		/*
 		 * For a present non-leaf (which is probably root/context/pasid dir)
-		 * entry, get the shadow page physical address of its child level.
+		 * entry, get the shadow id physical address of its child level.
 		 */
-		sync_data.shadow_pa = spgt->pgt_ops->pgt_entry_to_phys(shadow_ptep);
+		sync_data.shadow_pa = shadow_id->pgt_ops->pgt_entry_to_phys(shadow_ptep);
 
 	if (iommu_id_sync_entry(&sync_data)) {
 		if (!shadow_p)
 			/*
 			 * A non-present to present changing require to get
-			 * a new reference count for the shadow page.
+			 * a new reference count for the shadow id page.
 			 */
-			spgt->mm_ops->get_page(shadow_ptep);
+			shadow_id->mm_ops->get_page(shadow_ptep);
 	}
 
 	if ((flags == PKVM_PGTABLE_WALK_TABLE_PRE) && (!LAST_LEVEL(level))) {
 		/*
 		 * As guest page table walking will go to the child level, pass
-		 * the shadow page physical address of the child level to sync.
+		 * the shadow id physical address of the child level to sync.
 		 */
 		data->shadow_pa[level - 1] = sync_data.shadow_pa;
 	}
@@ -1073,7 +1073,7 @@ static int free_shadow_id(struct pkvm_iommu *iommu, unsigned long vaddr,
 static int sync_shadow_id(struct pkvm_iommu *iommu, unsigned long vaddr,
 		       unsigned long vaddr_end, u16 did)
 {
-	DEFINE_PGT_SYNC_WALK_DATA(arg, iommu, did);
+	DEFINE_ID_SYNC_WALK_DATA(arg, iommu, did);
 	struct pkvm_pgtable_walker walker = {
 		.cb = sync_shadow_id_cb,
 		.flags = PKVM_PGTABLE_WALK_TABLE_PRE |
@@ -1740,7 +1740,7 @@ static void handle_gcmd_te(struct pkvm_iommu *iommu, bool en)
 	if (en) {
 		viommu->vreg.gsts |= DMA_GSTS_TES;
 		/*
-		 * Sync shadow page table to emulate Translation enable.
+		 * Sync shadow id table to emulate Translation enable.
 		 */
 		if (sync_shadow_id(iommu, vaddr, vaddr_end, 0))
 			return;
