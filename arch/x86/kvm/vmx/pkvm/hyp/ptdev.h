@@ -14,6 +14,7 @@ struct pkvm_ptdev {
 	u32 pasid;
 	unsigned long index;
 	struct list_head iommu_node;
+	bool iommu_coherency;
 
 	/* Represents the page table maintained by primary VM */
 	struct pkvm_pgtable vpgt;
@@ -24,6 +25,7 @@ struct pkvm_ptdev {
 	struct list_head vm_node;
 };
 
+struct pkvm_ptdev *pkvm_alloc_ptdev(u16 bdf, u32 pasid, bool coherency);
 struct pkvm_ptdev *pkvm_get_ptdev(u16 bdf, u32 pasid);
 void pkvm_put_ptdev(struct pkvm_ptdev *ptdev);
 void pkvm_setup_ptdev_vpgt(struct pkvm_ptdev *ptdev, unsigned long root_gpa,
