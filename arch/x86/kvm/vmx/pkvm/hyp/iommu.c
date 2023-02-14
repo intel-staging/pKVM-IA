@@ -315,12 +315,20 @@ static struct pkvm_ptdev *iommu_find_ptdev(struct pkvm_iommu *iommu, u16 bdf, u3
 	return NULL;
 }
 
+static inline bool iommu_coherency(u64 ecap)
+{
+	return ecap_smts(ecap) ? ecap_smpwc(ecap) : ecap_coherent(ecap);
+}
+
 static struct pkvm_ptdev *iommu_add_ptdev(struct pkvm_iommu *iommu, u16 bdf, u32 pasid)
 {
 	struct pkvm_ptdev *ptdev = pkvm_get_ptdev(bdf, pasid);
 
-	if (!ptdev)
-		return NULL;
+	if (!ptdev) {
+		ptdev = pkvm_alloc_ptdev(bdf, pasid, iommu_coherency(iommu->iommu.ecap));
+		if (!ptdev)
+			return NULL;
+	}
 
 	list_add_tail(&ptdev->iommu_node, &iommu->ptdev_head);
 	return ptdev;
@@ -2026,6 +2034,15 @@ bool is_mem_range_overlap_iommu(unsigned long start, unsigned long end)
 	return false;
 }
 
+/*
+ * TODO:
+ * Currently assume that the bdf/pasid has ever been synced
+ * so that the IOMMU can be found. If not synced, then cannot
+ * get a valid IOMMU by calling this function.
+ *
+ * To handle this case, pKVM IOMMU driver needs to check the
+ * DMAR to know which IOMMU should be used for this bdf/pasid.
+ */
 static struct pkvm_iommu *bdf_pasid_to_iommu(u16 bdf, u32 pasid)
 {
 	struct pkvm_iommu *iommu, *find = NULL;
@@ -2060,14 +2077,6 @@ int pkvm_iommu_sync(u16 bdf, u32 pasid)
 	u16 old_did;
 	int ret;
 
-	/*
-	 * TODO:
-	 * Currently assume that the bdf/pasid has ever been synced
-	 * before so that the IOMMU can be found. If has not, then
-	 * the iommu pointer will be NULL. To handle this case, pKVM
-	 * IOMMU driver needs to check the DMAR to know which IOMMU
-	 * should be used for this bdf/pasid.
-	 */
 	if (!iommu)
 		return -ENODEV;
 
@@ -2109,4 +2118,19 @@ int pkvm_iommu_sync(u16 bdf, u32 pasid)
 
 	pkvm_put_ptdev(ptdev);
 	return ret;
+}
+
+bool pkvm_iommu_coherency(u16 bdf, u32 pasid)
+{
+	struct pkvm_iommu *iommu = bdf_pasid_to_iommu(bdf, pasid);
+
+	/*
+	 * If cannot find a valid IOMMU by bdf/pasid, return
+	 * false to present noncoherent, so that can guarantee
+	 * the coherency through flushing cache by pkvm itself.
+	 */
+	if (!iommu)
+		return false;
+
+	return iommu_coherency(iommu->iommu.ecap);
 }
