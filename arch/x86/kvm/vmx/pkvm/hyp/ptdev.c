@@ -15,10 +15,36 @@ static DECLARE_BITMAP(ptdevs_bitmap, MAX_PTDEV_NUM);
 static struct pkvm_ptdev pkvm_ptdev[MAX_PTDEV_NUM];
 static pkvm_spinlock_t ptdev_lock = __PKVM_SPINLOCK_UNLOCKED;
 
+struct pkvm_ptdev *pkvm_alloc_ptdev(u16 bdf, u32 pasid, bool coherency)
+{
+	struct pkvm_ptdev *ptdev = NULL;
+	unsigned long index;
+
+	pkvm_spin_lock(&ptdev_lock);
+
+	index = find_next_zero_bit(ptdevs_bitmap, MAX_PTDEV_NUM, 0);
+	if (index < MAX_PTDEV_NUM) {
+		__set_bit(index, ptdevs_bitmap);
+		ptdev = &pkvm_ptdev[index];
+		ptdev->bdf = bdf;
+		ptdev->pasid = pasid;
+		ptdev->iommu_coherency = coherency;
+		ptdev->index = index;
+		ptdev->pgt = pkvm_hyp->host_vm.ept;
+		INIT_LIST_HEAD(&ptdev->iommu_node);
+		INIT_LIST_HEAD(&ptdev->vm_node);
+		atomic_set(&ptdev->refcount, 1);
+		hash_add(ptdev_hasht, &ptdev->hnode, bdf);
+	}
+
+	pkvm_spin_unlock(&ptdev_lock);
+
+	return ptdev;
+}
+
 struct pkvm_ptdev *pkvm_get_ptdev(u16 bdf, u32 pasid)
 {
 	struct pkvm_ptdev *ptdev = NULL, *tmp;
-	unsigned long index;
 
 	pkvm_spin_lock(&ptdev_lock);
 
@@ -30,25 +56,7 @@ struct pkvm_ptdev *pkvm_get_ptdev(u16 bdf, u32 pasid)
 		}
 	}
 
-	if (ptdev)
-		goto out;
-
-	index = find_next_zero_bit(ptdevs_bitmap, MAX_PTDEV_NUM, 0);
-	if (index < MAX_PTDEV_NUM) {
-		__set_bit(index, ptdevs_bitmap);
-		ptdev = &pkvm_ptdev[index];
-		ptdev->bdf = bdf;
-		ptdev->pasid = pasid;
-		ptdev->index = index;
-		ptdev->pgt = pkvm_hyp->host_vm.ept;
-		INIT_LIST_HEAD(&ptdev->iommu_node);
-		INIT_LIST_HEAD(&ptdev->vm_node);
-		atomic_set(&ptdev->refcount, 1);
-		hash_add(ptdev_hasht, &ptdev->hnode, bdf);
-	}
-out:
 	pkvm_spin_unlock(&ptdev_lock);
-
 	return ptdev;
 }
 
@@ -124,8 +132,12 @@ struct pkvm_ptdev *pkvm_attach_ptdev(u16 bdf, u32 pasid, struct pkvm_shadow_vm *
 {
 	struct pkvm_ptdev *ptdev = pkvm_get_ptdev(bdf, pasid);
 
-	if (!ptdev)
-		return NULL;
+	if (!ptdev) {
+		ptdev = pkvm_alloc_ptdev(bdf, pasid,
+					 pkvm_iommu_coherency(bdf, pasid));
+		if (!ptdev)
+			return NULL;
+	}
 
 	if (cmpxchg(&ptdev->shadow_vm_handle, 0, vm->shadow_vm_handle) != 0) {
 		pkvm_err("%s: ptdev with bdf 0x%x pasid 0x%x is already attached\n",
