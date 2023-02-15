@@ -10,7 +10,7 @@
 #include <asm/kvm_pkvm.h>
 
 #include <nvhe/gfp.h>
-#include <nvhe/spinlock.h>
+#include <asm/pkvm_spinlock.h>
 
 /*
  * Holds the relevant data for maintaining the vcpu state completely at hyp.
