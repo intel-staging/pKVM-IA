@@ -26,6 +26,9 @@ void pkvm_destroy_hyp_vm(struct kvm *kvm);
 extern struct memblock_region kvm_nvhe_sym(hyp_memory)[];
 extern unsigned int kvm_nvhe_sym(hyp_memblock_nr);
 
+int hyp_pre_reserve_check(void);
+u64 hyp_total_reserve_pages(void);
+
 static inline unsigned long
 hyp_vmemmap_memblock_size(struct memblock_region *reg, size_t vmemmap_entry_size)
 {
