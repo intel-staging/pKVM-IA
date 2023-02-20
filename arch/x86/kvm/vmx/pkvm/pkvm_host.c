@@ -446,10 +446,11 @@ static void init_host_state_area(struct pkvm_host_vcpu *vcpu, int cpu)
 	vmcs_writel(HOST_RIP, (unsigned long)pkvm_sym(__pkvm_vmx_vmexit));
 }
 
-static void init_execution_control(struct vcpu_vmx *vmx,
+static void init_execution_control(struct pkvm_host_vcpu *vcpu,
 			    struct vmcs_config *vmcs_config_ptr,
 			    struct vmx_capability *vmx_cap)
 {
+	struct vcpu_vmx *vmx = &vcpu->vmx;
 	/*
 	 * Fixed VPIDs for the host vCPUs, which implies that it could conflict
 	 * with VPIDs from nested guests.
@@ -471,6 +472,9 @@ static void init_execution_control(struct vcpu_vmx *vmx,
 	vmcs_write32(CR3_TARGET_COUNT, 0);
 
 	vmcs_write32(EXCEPTION_BITMAP, 0);
+
+	vmcs_write64(IO_BITMAP_A, __pa(vcpu->io_bitmap));
+	vmcs_write64(IO_BITMAP_B, __pa(vcpu->io_bitmap) + PAGE_SIZE);
 
 	pkvm_sym(init_msr_emulation(vmx));
 	vmcs_write64(MSR_BITMAP, __pa(vmx->vmcs01.msr_bitmap));
@@ -515,13 +519,15 @@ static int pkvm_host_init_vmx(struct pkvm_host_vcpu *vcpu, int cpu)
 		return -ENOMEM;
 	}
 
+	vcpu->io_bitmap = pkvm->host_vm.io_bitmap;
+
 	vmx->loaded_vmcs = &vmx->vmcs01;
 	vmcs_load(vmx->loaded_vmcs->vmcs);
 	vcpu->current_vmcs = vmx->loaded_vmcs->vmcs;
 
 	init_guest_state_area(vcpu, cpu);
 	init_host_state_area(vcpu, cpu);
-	init_execution_control(vmx, &pkvm->vmcs_config, &pkvm->vmx_cap);
+	init_execution_control(vcpu, &pkvm->vmcs_config, &pkvm->vmx_cap);
 	init_vmexit_control(vmx, &pkvm->vmcs_config);
 	init_vmentry_control(vmx, &pkvm->vmcs_config);
 
@@ -577,6 +583,7 @@ static int pkvm_host_check_and_setup_vmx_cap(struct pkvm_hyp *pkvm)
 	int ret = 0;
 	struct vmcs_config_setting setting = {
 		.cpu_based_exec_ctrl_min =
+			CPU_BASED_USE_IO_BITMAPS |
 			CPU_BASED_USE_MSR_BITMAPS |
 			CPU_BASED_ACTIVATE_SECONDARY_CONTROLS,
 		.cpu_based_exec_ctrl_opt = 0,
@@ -1185,6 +1192,20 @@ int pkvm_set_mmio_ve(struct kvm_vcpu *vcpu, unsigned long gfn)
 	return 0;
 }
 
+static int pkvm_init_io_emulation(struct pkvm_hyp *pkvm)
+{
+	pkvm->host_vm.io_bitmap = pkvm_sym(pkvm_early_alloc_contig)(2);
+
+	if (!pkvm->host_vm.io_bitmap) {
+		pr_err("pkvm: %s: No page for io_bitmap\n", __func__);
+		return -ENOMEM;
+	}
+
+	memset(pkvm->host_vm.io_bitmap, 0, 2 * PAGE_SIZE);
+
+	return 0;
+}
+
 int __init pkvm_init(void)
 {
 	int ret = 0, cpu;
@@ -1219,6 +1240,10 @@ int __init pkvm_init(void)
 		goto out;
 
 	ret = pkvm_init_mmu(pkvm);
+	if (ret)
+		goto out;
+
+	ret = pkvm_init_io_emulation(pkvm);
 	if (ret)
 		goto out;
 
