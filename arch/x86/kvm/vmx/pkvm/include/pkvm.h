@@ -44,12 +44,14 @@ struct pkvm_host_vcpu {
 	void *current_shadow_vcpu;
 
 	bool pending_nmi;
+	u8 *io_bitmap;
 };
 
 struct pkvm_host_vm {
 	struct pkvm_host_vcpu *host_vcpus[CONFIG_NR_CPUS];
 	struct pkvm_pgtable *ept;
 	struct pkvm_pgtable *ept_notlbflush;
+	u8 *io_bitmap;
 };
 
 struct pkvm_iommu_info {
@@ -111,7 +113,8 @@ struct pkvm_section {
 #define PKVM_PAGES (ALIGN(sizeof(struct pkvm_hyp), PAGE_SIZE) >> PAGE_SHIFT)
 #define PKVM_PCPU_PAGES (ALIGN(sizeof(struct pkvm_pcpu), PAGE_SIZE) >> PAGE_SHIFT)
 #define PKVM_HOST_VCPU_PAGES (ALIGN(sizeof(struct pkvm_host_vcpu), PAGE_SIZE) >> PAGE_SHIFT)
-#define PKVM_VMCS_PAGES 3 /*vmxarea+vmcs+msr_bitmap*/
+#define PKVM_HOST_VCPU_VMCS_PAGES 3 /*vmxarea+vmcs+msr_bitmap*/
+#define PKVM_EXTRA_PAGES 2 /*host vm io bitmap*/
 
 /*
  * pkvm relocate its own text/data sections to some page aligned
