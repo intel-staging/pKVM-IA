@@ -42,12 +42,14 @@ struct pkvm_host_vcpu {
 	void *current_shadow_vcpu;
 
 	bool pending_nmi;
+	u8 *io_bitmap;
 };
 
 struct pkvm_host_vm {
 	struct pkvm_host_vcpu *host_vcpus[CONFIG_NR_CPUS];
 	struct pkvm_pgtable *ept;
 	struct pkvm_pgtable *ept_notlbflush;
+	u8 *io_bitmap;
 };
 
 struct pkvm_iommu_info {
@@ -107,10 +109,12 @@ struct pkvm_section {
 };
 
 #define PKVM_PAGES (ALIGN(sizeof(struct pkvm_hyp), PAGE_SIZE) >> PAGE_SHIFT)
+#define PKVM_EXTRA_PAGES 2 /*host vm io bitmap*/
+#define PKVM_GLOBAL_PAGES (PKVM_PAGES + PKVM_EXTRA_PAGES)
 #define PKVM_PCPU_PAGES (ALIGN(sizeof(struct pkvm_pcpu), PAGE_SIZE) >> PAGE_SHIFT)
 #define PKVM_HOST_VCPU_PAGES (ALIGN(sizeof(struct pkvm_host_vcpu), PAGE_SIZE) >> PAGE_SHIFT)
-#define PKVM_VMCS_PAGES 3 /*vmxarea+vmcs+msr_bitmap*/
-#define PKVM_PERCPU_PAGES (PKVM_PCPU_PAGES + PKVM_HOST_VCPU_PAGES + PKVM_VMCS_PAGES)
+#define PKVM_HOST_VCPU_VMCS_PAGES 3 /*vmxarea+vmcs+msr_bitmap*/
+#define PKVM_PERCPU_PAGES (PKVM_PCPU_PAGES + PKVM_HOST_VCPU_PAGES + PKVM_HOST_VCPU_VMCS_PAGES)
 
 extern char __pkvm_text_start[], __pkvm_text_end[];
 extern char __pkvm_rodata_start[], __pkvm_rodata_end[];
