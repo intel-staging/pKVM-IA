@@ -2,7 +2,7 @@
 #ifndef __KVM_HYP_MEMORY_H
 #define __KVM_HYP_MEMORY_H
 
-#include <asm/kvm_mmu.h>
+#include <asm/kvm_pkvm.h>
 #include <asm/page.h>
 
 #include <linux/types.h>
@@ -14,8 +14,6 @@ struct hyp_page {
 
 extern u64 __hyp_vmemmap;
 #define hyp_vmemmap ((struct hyp_page *)__hyp_vmemmap)
-
-#define __hyp_va(phys)	((void *)((phys_addr_t)(phys) - hyp_physvirt_offset))
 
 static inline void *hyp_phys_to_virt(phys_addr_t phys)
 {

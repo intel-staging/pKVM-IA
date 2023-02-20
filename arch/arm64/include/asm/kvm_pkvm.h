@@ -8,11 +8,14 @@
 
 #include <linux/memblock.h>
 #include <asm/kvm_pgtable.h>
+#include <asm/kvm_mmu.h>
 
 /* Maximum number of VMs that can co-exist under pKVM. */
 #define KVM_MAX_PVMS 255
 
 #define HYP_MEMBLOCK_REGIONS 128
+
+#define __hyp_va(phys)	((void *)((phys_addr_t)(phys) - hyp_physvirt_offset))
 
 int pkvm_init_host_vm(struct kvm *kvm);
 int pkvm_create_hyp_vm(struct kvm *kvm);
