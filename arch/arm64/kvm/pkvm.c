@@ -13,8 +13,8 @@
 
 #include "hyp_constants.h"
 
-static struct memblock_region *hyp_memory = kvm_nvhe_sym(hyp_memory);
-static unsigned int *hyp_memblock_nr_ptr = &kvm_nvhe_sym(hyp_memblock_nr);
+static struct memblock_region *hyp_memory = pkvm_sym(hyp_memory);
+static unsigned int *hyp_memblock_nr_ptr = &pkvm_sym(hyp_memblock_nr);
 
 phys_addr_t hyp_mem_base;
 phys_addr_t hyp_mem_size;
