@@ -1247,6 +1247,10 @@ int __init pkvm_init(void)
 	if (ret)
 		goto out;
 
+	ret = pkvm_sym(init_pci)(pkvm);
+	if (ret)
+		goto out;
+
 	for_each_possible_cpu(cpu) {
 		ret = pkvm_setup_pcpu(pkvm, cpu);
 		if (ret)
