@@ -27,6 +27,7 @@ void *pkvm_iophys_to_virt(unsigned long phys);
 #include <linux/kvm_host.h>
 void *host_gpa2hva(unsigned long gpa);
 unsigned long host_gpa2hpa(unsigned long gpa);
+void *host_mmio2hva(unsigned long gpa);
 int gva2gpa(struct kvm_vcpu *vcpu, gva_t gva, gpa_t *gpa,
 		u32 access, struct x86_exception *exception);
 int read_gva(struct kvm_vcpu *vcpu, gva_t gva, void *addr,
