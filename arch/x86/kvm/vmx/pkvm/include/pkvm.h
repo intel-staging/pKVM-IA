@@ -45,10 +45,16 @@ struct pkvm_host_vcpu {
 	u8 *io_bitmap;
 };
 
+struct pkvm_pci_info {
+	struct pci_mmcfg_region *mmcfg_table;
+	int mmcfg_table_size;
+};
+
 struct pkvm_host_vm {
 	struct pkvm_host_vcpu *host_vcpus[CONFIG_NR_CPUS];
 	struct pkvm_pgtable *ept;
 	struct pkvm_pgtable *ept_notlbflush;
+	struct pkvm_pci_info pci_info;
 	u8 *io_bitmap;
 };
 
@@ -109,7 +115,7 @@ struct pkvm_section {
 };
 
 #define PKVM_PAGES (ALIGN(sizeof(struct pkvm_hyp), PAGE_SIZE) >> PAGE_SHIFT)
-#define PKVM_EXTRA_PAGES 2 /*host vm io bitmap*/
+#define PKVM_EXTRA_PAGES 3 /*io_bitmap + mmcfg_table for host vm*/
 #define PKVM_GLOBAL_PAGES (PKVM_PAGES + PKVM_EXTRA_PAGES)
 #define PKVM_PCPU_PAGES (ALIGN(sizeof(struct pkvm_pcpu), PAGE_SIZE) >> PAGE_SHIFT)
 #define PKVM_HOST_VCPU_PAGES (ALIGN(sizeof(struct pkvm_host_vcpu), PAGE_SIZE) >> PAGE_SHIFT)

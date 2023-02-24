@@ -8,6 +8,7 @@
 #include <linux/dmar.h>
 #include <../drivers/iommu/intel/iommu.h>
 #include <linux/pci.h>
+#include <asm/pci_x86.h>
 #include <asm/trapnr.h>
 #include <asm/kvm_pkvm.h>
 
@@ -1228,6 +1229,28 @@ static __init int pkvm_init_io_emulation(struct pkvm_hyp *pkvm)
 	return 0;
 }
 
+static __init int pkvm_init_pci(struct pkvm_hyp *pkvm)
+{
+	struct pci_mmcfg_region *data, *cfg;
+	int length = 0, max_region_num = PAGE_SIZE / sizeof(struct pci_mmcfg_region);
+
+	data = pkvm_sym(pkvm_early_alloc_page)();
+
+	list_for_each_entry_rcu(cfg, &pci_mmcfg_list, list, pci_mmcfg_lock_held()) {
+		if (length >= max_region_num)
+			return -ENOMEM;
+		memcpy(&data[length], cfg, sizeof(struct pci_mmcfg_region));
+		length += 1;
+	}
+
+	pkvm->host_vm.pci_info.mmcfg_table = data;
+	pkvm->host_vm.pci_info.mmcfg_table_size = length;
+
+	pkvm_sym(init_pci)(pkvm);
+
+	return 0;
+}
+
 int __init pkvm_init(void)
 {
 	int ret = 0, cpu;
@@ -1269,7 +1292,7 @@ int __init pkvm_init(void)
 	if (ret)
 		goto out;
 
-	ret = pkvm_sym(init_pci)(pkvm);
+	ret = pkvm_init_pci(pkvm);
 	if (ret)
 		goto out;
 
