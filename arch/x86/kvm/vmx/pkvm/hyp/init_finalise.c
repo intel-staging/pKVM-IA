@@ -7,6 +7,7 @@
 #include <mmu.h>
 #include <mmu/spte.h>
 #include <asm/kvm_pkvm.h>
+#include <asm/pci_x86.h>
 
 #include <pkvm.h>
 #include <capabilities.h>
@@ -24,6 +25,7 @@
 #include "iommu_internal.h"
 #include "mem_protect.h"
 #include "lapic.h"
+#include "pci.h"
 
 void *pkvm_mmu_pgt_base;
 void *pkvm_vmemmap_base;
@@ -326,6 +328,10 @@ int __pkvm_init_finalise(struct kvm_vcpu *vcpu, struct pkvm_section sections[],
 
 	ret = protect_pkvm_pages(tmp_sections, section_sz,
 			hyp_mem_base, hyp_mem_size);
+	if (ret)
+		goto out;
+
+	ret = init_finalize_pci(&pkvm_hyp->host_vm.pci_info);
 	if (ret)
 		goto out;
 
