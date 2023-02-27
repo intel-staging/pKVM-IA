@@ -52,6 +52,47 @@ static int pci_mmcfg_write(u64 address, int size, unsigned long value)
 	return 0;
 }
 
+unsigned long pkvm_pci_cfg_space_read(u32 bdf, u32 offset, int size)
+{
+	union pci_cfg_addr_reg reg;
+	unsigned long value = 0;
+
+	reg.enable = 1;
+	reg.bdf = bdf;
+	reg.reg = offset & (~0x3);
+
+	pci_cfg_space_read(&reg, offset & 0x3, size, &value);
+
+	return value;
+}
+
+void pkvm_pci_cfg_space_write(u32 bdf, u32 offset, int size, unsigned long value)
+{
+	union pci_cfg_addr_reg reg;
+
+	reg.enable = 1;
+	reg.bdf = bdf;
+	reg.reg = offset & (~0x3);
+
+	pci_cfg_space_write(&reg, offset & 0x3, size, value);
+}
+
+static bool host_vpci_cfg_data_allow_write(struct pkvm_ptdev *ptdev, u64 offset, int size, u32 value)
+{
+	int index;
+
+	if (!ptdev_attached_to_vm(ptdev))
+		return true;
+
+	if (offset >= 0x10 && offset < 0x28) {
+		index = (offset-0x10) >> 2;
+		/* Allow only aligned BAR write with the cached value*/
+		return (offset & 0x3) == 0 && size == 4 && value == ptdev->bars[index];
+	}
+
+	return true;
+}
+
 static int host_vpci_cfg_addr_read(struct kvm_vcpu *vcpu, struct pkvm_pio_req *req)
 {
 	u32 value = host_vpci_cfg_addr.value;
@@ -106,6 +147,35 @@ static int host_vpci_cfg_addr_write(struct kvm_vcpu *vcpu, struct pkvm_pio_req *
 	return ret;
 }
 
+static int host_vpci_cfg_data_audit_write(struct pkvm_pio_req *req)
+{
+	struct pkvm_ptdev *ptdev;
+	u64 offset = host_vpci_cfg_addr.reg;
+	u32 bdf = host_vpci_cfg_addr.bdf;
+	int ret;
+
+	ptdev = pkvm_get_ptdev(bdf, 0);
+
+	if (ptdev) {
+		pkvm_spin_lock(&ptdev->lock);
+		if (!host_vpci_cfg_data_allow_write(ptdev, offset + req->port - PCI_CFG_DATA,
+			req->size, *req->value)) {
+			ret = -EINVAL;
+			goto out;
+		}
+	}
+
+	ret = pci_cfg_space_write(&host_vpci_cfg_addr, req->port - PCI_CFG_DATA, req->size, *req->value);
+
+out:
+	if (ptdev) {
+		pkvm_spin_unlock(&ptdev->lock);
+		pkvm_put_ptdev(ptdev);
+	}
+
+	return ret;
+}
+
 static int host_vpci_cfg_data_read(struct kvm_vcpu *vcpu, struct pkvm_pio_req *req)
 {
 	int ret;
@@ -113,8 +183,7 @@ static int host_vpci_cfg_data_read(struct kvm_vcpu *vcpu, struct pkvm_pio_req *r
 	pkvm_spin_lock(&host_vpci_cfg_lock);
 
 	if (host_vpci_cfg_addr.enable)
-		ret = pci_cfg_space_read(&host_vpci_cfg_addr,
-			req->port - PCI_CFG_DATA, req->size, req->value);
+		ret = pci_cfg_space_read(&host_vpci_cfg_addr, req->port - PCI_CFG_DATA, req->size, req->value);
 	else
 		ret = -EINVAL;
 
@@ -130,14 +199,32 @@ static int host_vpci_cfg_data_write(struct kvm_vcpu *vcpu, struct pkvm_pio_req *
 	pkvm_spin_lock(&host_vpci_cfg_lock);
 
 	if (host_vpci_cfg_addr.enable)
-		ret = pci_cfg_space_write(&host_vpci_cfg_addr,
-			req->port - PCI_CFG_DATA, req->size, *req->value);
+		ret = host_vpci_cfg_data_audit_write(req);
 	else
 		ret = -EINVAL;
 
 	pkvm_spin_unlock(&host_vpci_cfg_lock);
 
 	return ret;
+}
+
+static int host_vpci_mmcfg_get_bdf_offset(u64 address, u32 *bdf, u64 *offset)
+{
+	int i;
+	struct pkvm_pci_info *pci_info;
+	struct pci_mmcfg_region *region;
+
+	pci_info = &pkvm_hyp->host_vm.pci_info;
+	for (i = 0; i < pci_info->mmcfg_table_size; i++) {
+		region = &pci_info->mmcfg_table[i];
+		if (address >= region->res.start && address <= region->res.end) {
+			*bdf = (address - region->address) >> 12;
+			*offset = address & 0xfff;
+			return 0;
+		}
+	}
+
+	return -EINVAL;
 }
 
 int host_vpci_mmcfg_read(struct kvm_vcpu *vcpu, struct pkvm_mmio_req *req)
@@ -149,9 +236,33 @@ int host_vpci_mmcfg_read(struct kvm_vcpu *vcpu, struct pkvm_mmio_req *req)
 
 int host_vpci_mmcfg_write(struct kvm_vcpu *vcpu, struct pkvm_mmio_req *req)
 {
-	u64 address = (u64)host_mmio2hva(req->address);
+	struct pkvm_ptdev *ptdev;
+	u64 offset, address = (u64)host_mmio2hva(req->address);
+	u32 bdf;
+	int ret;
 
-	return pci_mmcfg_write(address, req->size, *req->value);
+	if (host_vpci_mmcfg_get_bdf_offset(req->address, &bdf, &offset))
+		return -EINVAL;
+
+	ptdev = pkvm_get_ptdev(bdf, 0);
+
+	if (ptdev) {
+		pkvm_spin_lock(&ptdev->lock);
+		if (!host_vpci_cfg_data_allow_write(ptdev, offset, req->size, *req->value)) {
+			ret = -EINVAL;
+			goto out;
+		}
+	}
+
+	ret = pci_mmcfg_write(address, req->size, *req->value);
+
+out:
+	if (ptdev) {
+		pkvm_spin_unlock(&ptdev->lock);
+		pkvm_put_ptdev(ptdev);
+	}
+
+	return ret;
 }
 
 int init_pci(struct pkvm_hyp *pkvm)

@@ -9,6 +9,7 @@
 #include "ptdev.h"
 #include "iommu_spgt.h"
 #include "bug.h"
+#include "pci.h"
 
 #define MAX_PTDEV_NUM	(PKVM_MAX_PDEV_NUM + PKVM_MAX_PASID_PDEV_NUM)
 static DEFINE_HASHTABLE(ptdev_hasht, 8);
@@ -115,6 +116,17 @@ void pkvm_setup_ptdev_did(struct pkvm_ptdev *ptdev, u16 did)
 	ptdev->did = did;
 }
 
+static void pkvm_ptdev_cache_bar(struct pkvm_ptdev *ptdev)
+{
+	u32 offset;
+	int i;
+
+	for (i = 0; i < 6; i++) {
+		offset = 0x10 + 4 * i;
+		ptdev->bars[i] = pkvm_pci_cfg_space_read(ptdev->bdf, offset, 4);
+	}
+}
+
 /*
  * pkvm_detach_ptdev()	- detach a ptdev from the shadow VM it is attached.
  * Basically it reverts what pkvm_attach_ptdev() does.
@@ -175,6 +187,8 @@ int pkvm_attach_ptdev(u16 bdf, u32 pasid, struct pkvm_shadow_vm *vm)
 		pkvm_put_ptdev(ptdev);
 		return -ENODEV;
 	}
+
+	pkvm_ptdev_cache_bar(ptdev);
 
 	PKVM_ASSERT(ptdev->pgt != &vm->pgstate_pgt);
 	if (ptdev->pgt != pkvm_hyp->host_vm.ept)
