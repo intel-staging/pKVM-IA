@@ -17,5 +17,8 @@ union pci_cfg_addr_reg {
 	};
 };
 
+unsigned long pkvm_pci_cfg_space_read(u32 bdf, u32 offset, int size);
+void pkvm_pci_cfg_space_write(u32 bdf, u32 offset, int size, unsigned long value);
+
 int init_finalize_pci(struct pkvm_pci_info *pci);
 #endif
