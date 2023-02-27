@@ -4,6 +4,7 @@
 #ifndef _PKVM_PTDEV_H_
 #define _PKVM_PTDEV_H_
 
+#include "pkvm_hyp.h"
 #include "pgtable.h"
 
 struct pkvm_ptdev {

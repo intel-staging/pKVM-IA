@@ -6,6 +6,8 @@
 #include "pkvm_spinlock.h"
 #include "io.h"
 #include "io_emulate.h"
+#include "mmu.h"
+#include "ptdev.h"
 #include "pci.h"
 
 static union pci_cfg_addr_reg host_vpci_cfg_addr;
@@ -35,6 +37,18 @@ static int pci_cfg_space_write(union pci_cfg_addr_reg *cfg_addr,
 
 	pkvm_spin_unlock(&pci_cfg_lock);
 
+	return 0;
+}
+
+static int pci_mmcfg_read(u64 address, int size, unsigned long *value)
+{
+	pkvm_mmio_read(address, size, value);
+	return 0;
+}
+
+static int pci_mmcfg_write(u64 address, int size, unsigned long value)
+{
+	pkvm_mmio_write(address, size, value);
 	return 0;
 }
 
@@ -126,6 +140,20 @@ static int host_vpci_cfg_data_write(struct kvm_vcpu *vcpu, struct pkvm_pio_req *
 	return ret;
 }
 
+int host_vpci_mmcfg_read(struct kvm_vcpu *vcpu, struct pkvm_mmio_req *req)
+{
+	u64 address = (u64)host_mmio2hva(req->address);
+
+	return pci_mmcfg_read(address, req->size, req->value);
+}
+
+int host_vpci_mmcfg_write(struct kvm_vcpu *vcpu, struct pkvm_mmio_req *req)
+{
+	u64 address = (u64)host_mmio2hva(req->address);
+
+	return pci_mmcfg_write(address, req->size, *req->value);
+}
+
 int init_pci(struct pkvm_hyp *pkvm)
 {
 	int ret;
@@ -165,4 +193,47 @@ int init_pci(struct pkvm_hyp *pkvm)
 out:
 	pkvm_err("pkvm: init pci failed");
 	return ret;
+}
+
+static int pkvm_mmu_map_mmcfg_region(struct pkvm_pci_info *pci_info)
+{
+	struct pci_mmcfg_region *region;
+	int i, ret;
+	u64 start, end;
+
+	for (i = 0; i < pci_info->mmcfg_table_size; i++) {
+		region = &pci_info->mmcfg_table[i];
+		start = region->res.start;
+		end = region->res.end;
+		ret = pkvm_mmu_map((u64)host_mmio2hva(start), start,
+			end - start + 1, 0, (u64)pgprot_val(PAGE_KERNEL_IO));
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+
+int init_finalize_pci(struct pkvm_pci_info *pci_info)
+{
+	struct pci_mmcfg_region *region;
+	unsigned long start, end;
+	int ret, i;
+
+	ret = pkvm_mmu_map_mmcfg_region(pci_info);
+	if (ret)
+		return ret;
+
+	for (i = 0; i < pci_info->mmcfg_table_size; i++) {
+		region = &pci_info->mmcfg_table[i];
+		start = region->res.start;
+		end = region->res.end;
+
+		ret = register_host_mmio_handler(start, end,
+			host_vpci_mmcfg_read, host_vpci_mmcfg_write);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
 }
