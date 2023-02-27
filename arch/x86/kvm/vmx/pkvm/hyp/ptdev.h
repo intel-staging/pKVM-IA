@@ -16,13 +16,14 @@ struct pkvm_ptdev {
 	unsigned long index;
 	struct list_head iommu_node;
 	bool iommu_coherency;
+	/* cached value of BARs when attach to shadow vm */
+	u32 bars[6];
 
 	/* Represents the page table maintained by primary VM */
 	struct pkvm_pgtable vpgt;
 	/* Represents the page table maintained by pKVM */
 	struct pkvm_pgtable *pgt;
 
-	/* Protects updates of pgt pointer */
 	pkvm_spinlock_t lock;
 
 	int shadow_vm_handle;
