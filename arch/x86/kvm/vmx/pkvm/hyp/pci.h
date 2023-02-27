@@ -17,4 +17,5 @@ union pci_cfg_addr_reg {
 	};
 };
 
+int init_finalize_pci(struct pkvm_pci_info *pci);
 #endif
