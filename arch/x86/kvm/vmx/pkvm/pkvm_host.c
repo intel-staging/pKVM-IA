@@ -236,6 +236,7 @@ u64 pkvm_total_reserve_pages(void)
 				  PKVM_IOMMU_QI_DESC_STATUS_SIZE,
 				  num_possible_cpus());
 	total += pkvm_shadow_ept_pgtable_pages(PKVM_MAX_VM_NUM);
+	total += pkvm_host_shadow_iommu_pgtable_pages(PKVM_PDEV_NUM);
 
 	return total;
 }
