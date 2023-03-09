@@ -14,6 +14,7 @@
 #include "nested.h"
 #include "iommu.h"
 #include "lapic.h"
+#include "io_emulate.h"
 #include "debug.h"
 
 #define CR4	4
@@ -299,6 +300,11 @@ int pkvm_main(struct kvm_vcpu *vcpu)
 				break;
 			case EXIT_REASON_INVVPID:
 				handle_invvpid(vcpu);
+				skip_instruction = true;
+				break;
+			case EXIT_REASON_IO_INSTRUCTION:
+				if (handle_host_pio(vcpu))
+					pkvm_err("pkvm: handle host port I/O access failed.");
 				skip_instruction = true;
 				break;
 			default:
