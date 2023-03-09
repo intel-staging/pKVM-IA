@@ -34,5 +34,6 @@ struct pkvm_pio_emul_table {
 
 int register_host_pio_handler(struct pkvm_host_vm *host_vm, unsigned int port,
 	unsigned int size_mask, pio_handler_t read, pio_handler_t write);
+int handle_host_pio(struct kvm_vcpu *vcpu);
 
 #endif
