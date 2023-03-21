@@ -19,7 +19,7 @@ pkvm-hyp-obj	:= $(obj)/vmx_asm.o $(obj)/vmexit.o \
 		   $(obj)/iommu.o $(obj)/iommu_debug.o \
 		   $(obj)/mem_protect.o $(obj)/lapic.o \
 		   $(obj)/ptdev.o $(obj)/iommu_spgt.o \
-		   $(obj)/trace.o
+		   $(obj)/io_emulate.o $(obj)/trace.o
 
 virt-dir	:= $(objtree)/$(KVM_PKVM)
 pkvm-hyp-obj	+= $(virt-dir)/page_alloc.o
