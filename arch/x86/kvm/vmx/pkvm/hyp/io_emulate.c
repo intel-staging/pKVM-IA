@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0
 /* Copyright(c) 2023 Intel Corporation. */
 #include <pkvm.h>
+#include "ept.h"
 #include "io.h"
 #include "io_emulate.h"
 
 struct pkvm_pio_emul_table host_pio_emul_table;
+struct pkvm_mmio_emul_table host_mmio_emul_table;
 
 static int pkvm_pio_default_in(struct kvm_vcpu *vcpu, struct pkvm_pio_req *req)
 {
@@ -135,4 +137,57 @@ int handle_host_pio(struct kvm_vcpu *vcpu)
 		"write" : "read", req.port, req.size, *req.value);
 
 	return emulate_host_pio(vcpu, &req);
+}
+
+static struct pkvm_mmio_handler *emul_mmio_lookup(struct pkvm_mmio_emul_table *table,
+	unsigned long start, unsigned long end)
+{
+	struct pkvm_mmio_handler *handler;
+	unsigned long index;
+
+	for_each_set_bit(index, table->bitmap, PKVM_MAX_MMIO_EMUL_NUM) {
+		handler = &table->table[index];
+		if (start <= handler->end && handler->start <= end)
+			return handler;
+	}
+
+	return NULL;
+}
+
+/*
+ * Not thread safe and should hold a lock if called concurrently.
+ */
+int register_host_mmio_handler(unsigned long start, unsigned long end,
+	mmio_handler_t read, mmio_handler_t write)
+{
+	struct pkvm_mmio_emul_table *table;
+	struct pkvm_mmio_handler *handler;
+	unsigned long index;
+	int ret = 0;
+
+	if (start > end)
+		return -EINVAL;
+
+	table = &host_mmio_emul_table;
+
+	if (emul_mmio_lookup(table, start, end))
+		return -EINVAL;
+
+	index = find_first_zero_bit(table->bitmap, PKVM_MAX_MMIO_EMUL_NUM);
+	if (index >= PKVM_MAX_MMIO_EMUL_NUM)
+		return -ENOSPC;
+
+	__set_bit(index, table->bitmap);
+
+	handler = &table->table[index];
+	handler->start = start;
+	handler->end = end;
+	handler->read = read;
+	handler->write = write;
+
+	host_ept_lock();
+	ret = pkvm_host_ept_unmap(start, start, end - start + 1);
+	host_ept_unlock();
+
+	return ret;
 }
