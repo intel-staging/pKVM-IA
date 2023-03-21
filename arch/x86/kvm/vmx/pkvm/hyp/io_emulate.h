@@ -32,8 +32,35 @@ struct pkvm_pio_emul_table {
 	DECLARE_BITMAP(bitmap, PKVM_MAX_PIO_EMUL_NUM);
 };
 
+/* Max num of memory mapped I/O emulation handlers */
+#define PKVM_MAX_MMIO_EMUL_NUM 256
+
+struct pkvm_mmio_req {
+	unsigned long address;
+	int size;
+	bool direction;
+	unsigned long *value;
+};
+
+typedef int (*mmio_handler_t)(struct kvm_vcpu *, struct pkvm_mmio_req *);
+
+struct pkvm_mmio_handler {
+	unsigned long start;
+	unsigned long end;
+	mmio_handler_t read;
+	mmio_handler_t write;
+};
+
+struct pkvm_mmio_emul_table {
+	struct pkvm_mmio_handler table[PKVM_MAX_MMIO_EMUL_NUM];
+	DECLARE_BITMAP(bitmap, PKVM_MAX_MMIO_EMUL_NUM);
+};
+
 int register_host_pio_handler(struct pkvm_host_vm *host_vm, unsigned int port,
 	unsigned int size_mask, pio_handler_t read, pio_handler_t write);
 int handle_host_pio(struct kvm_vcpu *vcpu);
+
+int register_host_mmio_handler(unsigned long start, unsigned long end,
+	mmio_handler_t read, mmio_handler_t write);
 
 #endif
