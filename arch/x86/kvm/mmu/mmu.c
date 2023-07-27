@@ -5248,6 +5248,61 @@ void kvm_init_shadow_ept_mmu(struct kvm_vcpu *vcpu, bool execonly,
 }
 EXPORT_SYMBOL_GPL(kvm_init_shadow_ept_mmu);
 
+static unsigned long get_kpop_pgd(struct kvm_vcpu *vcpu)
+{
+	/*
+	 * TODO: we assume under KPOP L0 hypervisor shall no need to fetch L2 memory
+	 *       which need get ngpa-to-gpa translation pgd (like vEPT in shadow EPT
+	 *       nested solution) and perform ngpa-to-gpa translation based on below
+	 *       kpop_gva_to_gpa function.
+	 *       While UMIP emulation is an exception, which need L0 do above.
+	 */
+
+	WARN_ON(1);
+
+	return 0;
+}
+
+static gpa_t kpop_gva_to_gpa(struct kvm_vcpu *vcpu, struct kvm_mmu *mmu,
+				  gpa_t vaddr, u64 access,
+				  struct x86_exception *exception)
+{
+	/*
+	 * TODO: we assume under KPOP L0 hypervisor shall no need to fetch L2 memory
+	 *       which need get ngpa-to-gpa translation pgd (like vEPT in shadow EPT
+	 *       nested solution) and perform ngpa-to-gpa translation based on below
+	 *       kpop_gva_to_gpa function.
+	 *       While UMIP emulation is an exception, which need L0 do above.
+	 */
+
+	WARN_ON(1);
+
+	return vaddr;
+}
+
+static void init_kvm_kpop_mmu(struct kvm_vcpu *vcpu)
+{
+	struct kvm_mmu *context = &vcpu->arch.guest_kpop_mmu;
+	struct kvm_mmu *root_context = &vcpu->arch.root_mmu;
+
+	if (root_context->cpu_role.as_u64 == context->cpu_role.as_u64 &&
+	    root_context->root_role.word == context->root_role.word)
+		return;
+
+	context->cpu_role = root_context->cpu_role;
+	context->root_role = root_context->root_role;
+	context->sync_page = nonpaging_sync_page;
+	context->invlpg = NULL;
+
+	/*TODO: enable below for UMIP emulation */
+	context->get_guest_pgd = get_kpop_pgd;
+	context->get_pdptr = kvm_pdptr_read;
+	context->gva_to_gpa = kpop_gva_to_gpa;
+
+	reset_guest_paging_metadata(vcpu, context);
+	reset_tdp_shadow_zero_bits_mask(context);
+}
+
 static void init_kvm_softmmu(struct kvm_vcpu *vcpu,
 			     union kvm_cpu_role cpu_role)
 {
@@ -5306,9 +5361,12 @@ void kvm_init_mmu(struct kvm_vcpu *vcpu)
 
 	if (mmu_is_nested(vcpu))
 		init_kvm_nested_mmu(vcpu, cpu_role);
-	else if (tdp_enabled)
+	else if (tdp_enabled) {
 		init_kvm_tdp_mmu(vcpu, cpu_role);
-	else
+
+		if (nested_kpop_on())
+			init_kvm_kpop_mmu(vcpu);
+	} else
 		init_kvm_softmmu(vcpu, cpu_role);
 }
 EXPORT_SYMBOL_GPL(kvm_init_mmu);
@@ -5894,17 +5952,27 @@ int kvm_mmu_create(struct kvm_vcpu *vcpu)
 	vcpu->arch.mmu = &vcpu->arch.root_mmu;
 	vcpu->arch.walk_mmu = &vcpu->arch.root_mmu;
 
+	if (nested_kpop_on()) {
+		ret = __kvm_mmu_create(vcpu, &vcpu->arch.guest_kpop_mmu);
+		if (ret)
+			return ret;
+	}
+
 	ret = __kvm_mmu_create(vcpu, &vcpu->arch.guest_mmu);
 	if (ret)
-		return ret;
+		goto fail_allocate_guest;
 
 	ret = __kvm_mmu_create(vcpu, &vcpu->arch.root_mmu);
 	if (ret)
 		goto fail_allocate_root;
 
 	return ret;
- fail_allocate_root:
+
+fail_allocate_root:
 	free_mmu_pages(&vcpu->arch.guest_mmu);
+fail_allocate_guest:
+	if (nested_kpop_on())
+		free_mmu_pages(&vcpu->arch.guest_kpop_mmu);
 	return ret;
 }
 
@@ -6834,6 +6902,8 @@ void kvm_mmu_destroy(struct kvm_vcpu *vcpu)
 	kvm_mmu_unload(vcpu);
 	free_mmu_pages(&vcpu->arch.root_mmu);
 	free_mmu_pages(&vcpu->arch.guest_mmu);
+	if (nested_kpop_on())
+		free_mmu_pages(&vcpu->arch.guest_kpop_mmu);
 	mmu_free_memory_caches(vcpu);
 }
 
