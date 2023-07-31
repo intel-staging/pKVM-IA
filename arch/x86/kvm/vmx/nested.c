@@ -348,6 +348,12 @@ void nested_vmx_free_vcpu(struct kvm_vcpu *vcpu)
 
 #define EPTP_PA_MASK   GENMASK_ULL(51, 12)
 
+static inline bool vcpu_kpop_on(struct kvm_vcpu *vcpu)
+{
+	/* vcpu kpop on once L1 do mmu load through kpop */
+	return nested_kpop_on() && !list_empty(&vcpu->kvm->arch.kpop_mmu_roots);
+}
+
 static bool nested_ept_root_matches(hpa_t root_hpa, u64 root_eptp, u64 eptp)
 {
 	return VALID_PAGE(root_hpa) &&
@@ -415,17 +421,59 @@ static void nested_ept_new_eptp(struct kvm_vcpu *vcpu)
 				nested_ept_get_eptp(vcpu));
 }
 
+static void nested_kpop_inject_page_fault(struct kvm_vcpu *vcpu,
+		struct x86_exception *fault)
+{
+	struct vmcs12 *vmcs12 = get_vmcs12(vcpu);
+	u32 vm_exit_reason;
+	unsigned long exit_qualification = vcpu->arch.exit_qualification;
+
+	/*TODO: PML support, MMIO fault on MISCONFIG*/
+	if (fault->error_code & PFERR_RSVD_MASK)
+		vm_exit_reason = EXIT_REASON_EPT_MISCONFIG;
+	else
+		vm_exit_reason = EXIT_REASON_EPT_VIOLATION;
+
+	nested_vmx_vmexit(vcpu, vm_exit_reason, 0, exit_qualification);
+	vmcs12->guest_physical_address = fault->address;
+}
+
 static void nested_ept_init_mmu_context(struct kvm_vcpu *vcpu)
 {
 	WARN_ON(mmu_is_nested(vcpu));
 
-	vcpu->arch.mmu = &vcpu->arch.guest_mmu;
-	nested_ept_new_eptp(vcpu);
-	vcpu->arch.mmu->get_guest_pgd     = nested_ept_get_eptp;
-	vcpu->arch.mmu->inject_page_fault = nested_ept_inject_page_fault;
-	vcpu->arch.mmu->get_pdptr         = kvm_pdptr_read;
+	if (vcpu_kpop_on(vcpu)) {
+		gpa_t current_vmptr = to_vmx(vcpu)->nested.current_vmptr;
+		u16 current_as_id = KPOP_FAKEROOT2ASID(nested_ept_get_eptp(vcpu));
 
-	vcpu->arch.walk_mmu              = &vcpu->arch.nested_mmu;
+		WARN_ON(current_as_id >= KVM_ADDRESS_SPACE_NUM);
+
+		vcpu->arch.mmu = &vcpu->arch.guest_kpop_mmu;
+		vcpu->arch.mmu->inject_page_fault = nested_kpop_inject_page_fault;
+
+		vcpu->arch.walk_mmu              = &vcpu->arch.nested_mmu;
+		/*
+		 * L1 may switch vmcs on its VCPUs, even use previous destroyed vmcs ptr
+		 * for a new VM's VCPU
+		 */
+		if (vcpu->arch.kpop_cur_vcpu_holder != current_vmptr ||
+				vcpu->arch.kpop_cur_as_id != current_as_id) {
+			vcpu->arch.kpop_cur_vcpu_holder = current_vmptr;
+			vcpu->arch.kpop_cur_as_id = current_as_id;
+			vcpu->arch.guest_kpop_mmu.root.hpa = INVALID_PAGE;
+		} else if (kpop_is_root_hpa_obsolete_in_guest_mmu(vcpu->kvm,
+					current_vmptr, current_as_id,
+					vcpu->arch.guest_kpop_mmu.root.hpa))
+			vcpu->arch.guest_kpop_mmu.root.hpa = INVALID_PAGE;
+	} else {
+		vcpu->arch.mmu = &vcpu->arch.guest_mmu;
+		nested_ept_new_eptp(vcpu);
+		vcpu->arch.mmu->get_guest_pgd     = nested_ept_get_eptp;
+		vcpu->arch.mmu->inject_page_fault = nested_ept_inject_page_fault;
+		vcpu->arch.mmu->get_pdptr         = kvm_pdptr_read;
+
+		vcpu->arch.walk_mmu              = &vcpu->arch.nested_mmu;
+	}
 }
 
 static void nested_ept_uninit_mmu_context(struct kvm_vcpu *vcpu)

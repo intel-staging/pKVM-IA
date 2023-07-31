@@ -767,6 +767,8 @@ struct kvm_vcpu_arch {
 
 	/* KPOP MMU when running nested */
 	struct kvm_mmu guest_kpop_mmu;
+	u64 kpop_cur_vcpu_holder;
+	u16 kpop_cur_as_id;
 
 	/*
 	 * Paging state of an L2 guest (used for nested npt)

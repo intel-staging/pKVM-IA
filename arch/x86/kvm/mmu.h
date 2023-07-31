@@ -124,6 +124,8 @@ void kvm_mmu_sync_prev_roots(struct kvm_vcpu *vcpu);
 #define KPOP_FAKEROOT2ASID(root) (root >> PAGE_SHIFT)
 unsigned long kpop_mmu_load_unload(struct kvm_vcpu *vcpu,
 		u64 vcpu_holder, u64 kvm_id, u64 as_id, bool load);
+bool kpop_is_root_hpa_obsolete_in_guest_mmu(struct kvm *kvm,
+		u64 vcpu_holder, u64 as_id, hpa_t root_hpa);
 
 static inline int kvm_mmu_reload(struct kvm_vcpu *vcpu)
 {

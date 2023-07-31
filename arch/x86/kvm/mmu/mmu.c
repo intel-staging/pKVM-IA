@@ -3665,7 +3665,60 @@ static void kvm_mmu_put_kpop_root_hpa(struct kvm *kvm, hpa_t root_hpa)
 
 	if (root)
 		kvm_tdp_mmu_put_root(kvm, root, false);
+}
 
+static struct kpop_guest_mmu *kpop_find_guest_mmu(struct kvm *kvm,
+		u64 vcpu_holder, u64 as_id)
+{
+	bool found = false;
+	struct kpop_guest_mmu *gmmu;
+
+	spin_lock(&kvm->arch.kpop_guest_mmu_lock);
+	hash_for_each_possible(kvm->arch.kpop_guest_mmu_htable,
+			gmmu, hnode, vcpu_holder) {
+		if (gmmu->vcpu_holder == vcpu_holder
+				&& gmmu->as_id == as_id) {
+			found = true;
+			break;
+		}
+	}
+	spin_unlock(&kvm->arch.kpop_guest_mmu_lock);
+
+	if (!found)
+		gmmu = NULL;
+
+	return gmmu;
+}
+
+static int kpop_reload_guest_mmu(struct kvm_vcpu *vcpu)
+{
+	struct kpop_guest_mmu *gmmu;
+	u64 vcpu_holder = vcpu->arch.kpop_cur_vcpu_holder;
+	u16 as_id = vcpu->arch.kpop_cur_as_id;
+
+	gmmu = kpop_find_guest_mmu(vcpu->kvm, vcpu_holder, as_id);
+	if (!gmmu) {
+		pr_err("%s cannot find kpop guest mmu for \
+				vcpu_holder 0x%llx, as_id 0x%x",
+				__func__, vcpu_holder, as_id);
+		return -EINVAL;
+	}
+
+	vcpu->arch.guest_kpop_mmu.root.hpa = gmmu->root_hpa;
+
+	return 0;
+}
+
+bool kpop_is_root_hpa_obsolete_in_guest_mmu(struct kvm *kvm,
+		u64 vcpu_holder, u64 as_id, hpa_t root_hpa)
+{
+	struct kpop_guest_mmu *gmmu;
+
+	gmmu = kpop_find_guest_mmu(kvm, vcpu_holder, as_id);
+	if (gmmu && gmmu->root_hpa == root_hpa)
+		return false;
+	else
+		return true;
 }
 
 static int kpop_alloc_guest_mmu(struct kvm_vcpu *vcpu,
@@ -5371,6 +5424,20 @@ void kvm_init_shadow_ept_mmu(struct kvm_vcpu *vcpu, bool execonly,
 }
 EXPORT_SYMBOL_GPL(kvm_init_shadow_ept_mmu);
 
+static int kpop_page_fault(struct kvm_vcpu *vcpu, struct kvm_page_fault *fault)
+{
+	struct x86_exception ex_fault;
+
+	ex_fault.vector = PF_VECTOR;
+	ex_fault.nested_page_fault = true;
+	ex_fault.error_code = fault->error_code;
+	ex_fault.address = fault->addr;
+
+	kvm_inject_emulated_page_fault(vcpu, &ex_fault);
+
+	return RET_PF_RETRY;
+}
+
 static unsigned long get_kpop_pgd(struct kvm_vcpu *vcpu)
 {
 	/*
@@ -5414,6 +5481,7 @@ static void init_kvm_kpop_mmu(struct kvm_vcpu *vcpu)
 
 	context->cpu_role = root_context->cpu_role;
 	context->root_role = root_context->root_role;
+	context->page_fault = kpop_page_fault;
 	context->sync_page = nonpaging_sync_page;
 	context->invlpg = NULL;
 
@@ -5532,22 +5600,28 @@ EXPORT_SYMBOL_GPL(kvm_mmu_reset_context);
 
 static int __kvm_mmu_load(struct kvm_vcpu *vcpu)
 {
-	int r;
+	int r = 0;
 
-	r = mmu_topup_memory_caches(vcpu, !vcpu->arch.mmu->root_role.direct);
-	if (r)
-		goto out;
-	r = mmu_alloc_special_roots(vcpu);
-	if (r)
-		goto out;
-	if (vcpu->arch.mmu->root_role.direct)
-		r = mmu_alloc_direct_roots(vcpu);
-	else
-		r = mmu_alloc_shadow_roots(vcpu);
-	if (r)
-		goto out;
+	if (vcpu->arch.mmu != &vcpu->arch.guest_kpop_mmu) {
+		r = mmu_topup_memory_caches(vcpu, !vcpu->arch.mmu->root_role.direct);
+		if (r)
+			goto out;
+		r = mmu_alloc_special_roots(vcpu);
+		if (r)
+			goto out;
+		if (vcpu->arch.mmu->root_role.direct)
+			r = mmu_alloc_direct_roots(vcpu);
+		else
+			r = mmu_alloc_shadow_roots(vcpu);
+		if (r)
+			goto out;
 
-	kvm_mmu_sync_roots(vcpu);
+		kvm_mmu_sync_roots(vcpu);
+	} else {
+		r = kpop_reload_guest_mmu(vcpu);
+		if (r)
+			goto out;
+	}
 
 	kvm_mmu_load_pgd(vcpu);
 
