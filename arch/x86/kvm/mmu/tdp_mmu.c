@@ -28,6 +28,7 @@ int kvm_mmu_init_tdp_mmu(struct kvm *kvm)
 	/* This should not be changed for the lifetime of the VM. */
 	kvm->arch.tdp_mmu_enabled = true;
 	INIT_LIST_HEAD(&kvm->arch.tdp_mmu_roots);
+	INIT_LIST_HEAD(&kvm->arch.kpop_mmu_roots);
 	spin_lock_init(&kvm->arch.tdp_mmu_pages_lock);
 	kvm->arch.tdp_mmu_zap_wq = wq;
 	return 1;
@@ -55,6 +56,7 @@ void kvm_mmu_uninit_tdp_mmu(struct kvm *kvm)
 
 	WARN_ON(atomic64_read(&kvm->arch.tdp_mmu_pages));
 	WARN_ON(!list_empty(&kvm->arch.tdp_mmu_roots));
+	WARN_ON(!list_empty(&kvm->arch.kpop_mmu_roots));
 
 	/*
 	 * Ensure that all the outstanding RCU callbacks to free shadow pages
@@ -310,9 +312,14 @@ static void tdp_mmu_init_child_sp(struct kvm_mmu_page *child_sp,
 	tdp_mmu_init_sp(child_sp, iter->sptep, iter->gfn, role);
 }
 
-hpa_t kvm_tdp_mmu_get_vcpu_root_hpa(struct kvm_vcpu *vcpu)
+static inline bool match_kpop_kvm_id(struct kvm_mmu_page *root, u64 kvm_id)
 {
-	union kvm_mmu_page_role role = vcpu->arch.mmu->root_role;
+	return kvm_id == ANY_KPOP_KVMID || root->kpop_kvm_id == kvm_id;
+}
+
+static hpa_t __kvm_tdp_mmu_get_vcpu_root_hpa(struct kvm_vcpu *vcpu, u64 kvm_id,
+		union kvm_mmu_page_role role, struct list_head *root_head)
+{
 	struct kvm *kvm = vcpu->kvm;
 	struct kvm_mmu_page *root;
 
@@ -322,23 +329,44 @@ hpa_t kvm_tdp_mmu_get_vcpu_root_hpa(struct kvm_vcpu *vcpu)
 	 * Check for an existing root before allocating a new one.  Note, the
 	 * role check prevents consuming an invalid root.
 	 */
-	for_each_tdp_mmu_root(kvm, &kvm->arch.tdp_mmu_roots, root, kvm_mmu_role_as_id(role)) {
+	for_each_tdp_mmu_root(kvm, root_head, root, kvm_mmu_role_as_id(role)) {
 		if (root->role.word == role.word &&
+		    match_kpop_kvm_id(root, kvm_id) &&
 		    kvm_tdp_mmu_get_root(root))
 			goto out;
 	}
 
 	root = tdp_mmu_alloc_sp(vcpu);
 	tdp_mmu_init_sp(root, NULL, 0, role);
+	root->kpop_kvm_id = kvm_id;
 
 	refcount_set(&root->tdp_mmu_root_count, 1);
 
 	spin_lock(&kvm->arch.tdp_mmu_pages_lock);
-	list_add_rcu(&root->link, &kvm->arch.tdp_mmu_roots);
+	list_add_rcu(&root->link, root_head);
 	spin_unlock(&kvm->arch.tdp_mmu_pages_lock);
 
 out:
 	return __pa(root->spt);
+}
+
+hpa_t kvm_tdp_mmu_get_vcpu_root_hpa(struct kvm_vcpu *vcpu)
+{
+	union kvm_mmu_page_role role = vcpu->arch.mmu->root_role;
+
+	return __kvm_tdp_mmu_get_vcpu_root_hpa(vcpu, ANY_KPOP_KVMID,
+			role, &vcpu->kvm->arch.tdp_mmu_roots);
+}
+
+hpa_t kvm_tdp_mmu_get_kpop_root_hpa(struct kvm_vcpu *vcpu, u64 kvm_id, u64 as_id)
+{
+	union kvm_mmu_page_role role = vcpu->arch.guest_kpop_mmu.root_role;
+
+	/* kpop sp's as_id is decided by guest */
+	kvm_mmu_set_role_as_id(&role, (int)as_id);
+
+	return __kvm_tdp_mmu_get_vcpu_root_hpa(vcpu,
+			kvm_id, role, &vcpu->kvm->arch.kpop_mmu_roots);
 }
 
 static void handle_changed_spte(struct kvm *kvm, int as_id, gfn_t gfn,

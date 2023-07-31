@@ -1376,6 +1376,11 @@ struct kvm_arch {
 	 * it up, freeing the root after an RCU grace period.
 	 */
 	struct list_head tdp_mmu_roots;
+	struct list_head kpop_mmu_roots;
+
+#define KPOP_GUEST_MMU_HASH_BITS  10
+	DECLARE_HASHTABLE(kpop_guest_mmu_htable, KPOP_GUEST_MMU_HASH_BITS);
+	spinlock_t kpop_guest_mmu_lock;
 
 	/*
 	 * Protects accesses to the following fields when the MMU lock

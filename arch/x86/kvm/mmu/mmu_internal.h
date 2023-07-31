@@ -88,6 +88,9 @@ struct kvm_mmu_page {
 	 */
 	u64 *shadowed_translation;
 
+	/* Stores guest kvm_id for KPOP nested case. */
+	u64 kpop_kvm_id;
+
 	/* Currently serving as active root */
 	union {
 		int root_count;
@@ -141,6 +144,11 @@ static inline int kvm_mmu_role_as_id(union kvm_mmu_page_role role)
 static inline int kvm_mmu_page_as_id(struct kvm_mmu_page *sp)
 {
 	return kvm_mmu_role_as_id(sp->role);
+}
+
+static inline void kvm_mmu_set_role_as_id(union kvm_mmu_page_role *role, int as_id)
+{
+	role->smm = as_id ? 1 : 0;
 }
 
 static inline bool kvm_mmu_page_ad_need_write_protect(struct kvm_mmu_page *sp)

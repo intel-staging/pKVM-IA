@@ -212,6 +212,15 @@ BUILD_MMU_ROLE_ACCESSOR(ext,  cr4, la57);
 BUILD_MMU_ROLE_ACCESSOR(base, efer, nx);
 BUILD_MMU_ROLE_ACCESSOR(ext,  efer, lma);
 
+struct kpop_guest_mmu {
+	struct hlist_node hnode;
+	u64 vcpu_holder;
+	u64 kvm_id;
+	u64 as_id;
+	hpa_t root_hpa;
+	refcount_t count;
+};
+
 static inline bool is_cr0_pg(struct kvm_mmu *mmu)
 {
         return mmu->cpu_role.base.level > 0;
@@ -3650,17 +3659,100 @@ out_unlock:
 	return r;
 }
 
+static void kvm_mmu_put_kpop_root_hpa(struct kvm *kvm, hpa_t root_hpa)
+{
+	struct kvm_mmu_page *root = to_shadow_page(root_hpa);
+
+	if (root)
+		kvm_tdp_mmu_put_root(kvm, root, false);
+
+}
+
 static int kpop_alloc_guest_mmu(struct kvm_vcpu *vcpu,
 		u64 vcpu_holder, u64 kvm_id, u64 as_id)
 {
-	/* To be added, allocate guest mmu */
-	return -ENOTSUPP;
+	int ret = 0;
+	struct kpop_guest_mmu *gmmu, *new, *found = NULL;
+
+	ret = mmu_topup_memory_caches(vcpu, false);
+	if (ret)
+		return ret;
+
+	new = kmalloc(sizeof(*new), GFP_KERNEL);
+	if (!new)
+		return -ENOMEM;
+
+	spin_lock(&vcpu->kvm->arch.kpop_guest_mmu_lock);
+	hash_for_each_possible(vcpu->kvm->arch.kpop_guest_mmu_htable,
+			gmmu, hnode, vcpu_holder) {
+		if (gmmu->vcpu_holder != vcpu_holder)
+			continue;
+
+		if (gmmu->kvm_id != kvm_id)
+			continue;
+
+		if (gmmu->as_id != as_id)
+			continue;
+
+		if (found) {
+			pr_err("%s double use of guest mmu", __func__);
+			ret = -EEXIST;
+			goto out;
+
+		} else
+			found = gmmu;
+	}
+	if (found) {
+		WARN_ON(refcount_inc_not_zero(&found->count));
+		goto out;
+	}
+
+	new->kvm_id = kvm_id;
+	new->vcpu_holder = vcpu_holder;
+	new->as_id = as_id;
+
+	write_lock(&vcpu->kvm->mmu_lock);
+	new->root_hpa = kvm_tdp_mmu_get_kpop_root_hpa(vcpu, kvm_id, as_id);
+	write_unlock(&vcpu->kvm->mmu_lock);
+
+	refcount_set(&new->count, 1);
+	hash_add(vcpu->kvm->arch.kpop_guest_mmu_htable, &new->hnode, vcpu_holder);
+out:
+	spin_unlock(&vcpu->kvm->arch.kpop_guest_mmu_lock);
+
+	if (found)
+		kfree(new);
+
+	return ret;
 }
 
 static void kpop_put_guest_mmu(struct kvm_vcpu *vcpu,
 		u64 vcpu_holder, u64 kvm_id, u64 as_id)
 {
-	/* To be added, put guest mmu */
+	struct kpop_guest_mmu *gmmu;
+
+	spin_lock(&vcpu->kvm->arch.kpop_guest_mmu_lock);
+	hash_for_each_possible(vcpu->kvm->arch.kpop_guest_mmu_htable,
+			gmmu, hnode, vcpu_holder) {
+		if (gmmu->vcpu_holder != vcpu_holder)
+			continue;
+
+		if (gmmu->kvm_id != kvm_id)
+			continue;
+
+		if (gmmu->as_id != as_id)
+			continue;
+
+		if (refcount_dec_and_test(&gmmu->count)) {
+			write_lock(&vcpu->kvm->mmu_lock);
+			kvm_mmu_put_kpop_root_hpa(vcpu->kvm,
+					gmmu->root_hpa);
+			write_unlock(&vcpu->kvm->mmu_lock);
+			hash_del(&gmmu->hnode);
+			kfree(gmmu);
+		}
+	}
+	spin_unlock(&vcpu->kvm->arch.kpop_guest_mmu_lock);
 }
 
 unsigned long kpop_mmu_load_unload(struct kvm_vcpu *vcpu,
@@ -6303,6 +6395,11 @@ int kvm_mmu_init_vm(struct kvm *kvm)
 	kvm->arch.split_desc_cache.kmem_cache = pte_list_desc_cache;
 	kvm->arch.split_desc_cache.gfp_zero = __GFP_ZERO;
 
+	if (nested_kpop_on()) {
+		hash_init(kvm->arch.kpop_guest_mmu_htable);
+		spin_lock_init(&kvm->arch.kpop_guest_mmu_lock);
+	}
+
 	return 0;
 }
 
@@ -6318,6 +6415,8 @@ void kvm_mmu_uninit_vm(struct kvm *kvm)
 	struct kvm_page_track_notifier_node *node = &kvm->arch.mmu_sp_tracker;
 
 	kvm_page_track_unregister_notifier(kvm, node);
+
+	WARN_ON(!hash_empty(kvm->arch.kpop_guest_mmu_htable));
 
 	kvm_mmu_uninit_tdp_mmu(kvm);
 

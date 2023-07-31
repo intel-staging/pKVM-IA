@@ -7,7 +7,10 @@
 
 #include "spte.h"
 
+#define ANY_KPOP_KVMID (~(u64)0)
+
 hpa_t kvm_tdp_mmu_get_vcpu_root_hpa(struct kvm_vcpu *vcpu);
+hpa_t kvm_tdp_mmu_get_kpop_root_hpa(struct kvm_vcpu *vcpu, u64 kvm_id, u64 as_id);
 
 __must_check static inline bool kvm_tdp_mmu_get_root(struct kvm_mmu_page *root)
 {
