@@ -2370,7 +2370,7 @@ static void prepare_vmcs02_early(struct vcpu_vmx *vmx, struct loaded_vmcs *vmcs0
 		 * will not have to rewrite the controls just for this bit.
 		 */
 		if (!boot_cpu_has(X86_FEATURE_UMIP) && vmx_umip_emulated() &&
-		    (vmcs12->guest_cr4 & X86_CR4_UMIP))
+		    !nested_kpop_on() && (vmcs12->guest_cr4 & X86_CR4_UMIP))
 			exec_control |= SECONDARY_EXEC_DESC;
 
 		if (exec_control & SECONDARY_EXEC_VIRTUAL_INTR_DELIVERY)
@@ -7036,7 +7036,8 @@ void nested_vmx_setup_ctls_msrs(struct vmcs_config *vmcs_conf, u32 ept_caps)
 	rdmsrl(MSR_IA32_VMX_CR0_FIXED1, msrs->cr0_fixed1);
 	rdmsrl(MSR_IA32_VMX_CR4_FIXED1, msrs->cr4_fixed1);
 
-	if (vmx_umip_emulated())
+	/* Not support UMIP emulation for nested guest under KPOP enabled case */
+	if (vmx_umip_emulated() && !IS_ENABLED(CONFIG_HAVE_KVM_KPOP))
 		msrs->cr4_fixed1 |= X86_CR4_UMIP;
 
 	msrs->vmcs_enum = nested_vmx_calc_vmcs_enum_msr();

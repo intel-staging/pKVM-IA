@@ -1114,8 +1114,12 @@ static inline int __do_cpuid_func(struct kvm_cpuid_array *array, u32 function)
 		if (sched_info_on())
 			entry->eax |= (1 << KVM_FEATURE_STEAL_TIME);
 
-		if (nested_kpop_on())
+		if (nested_kpop_on()) {
 			entry->eax |= (1 << KVM_FEATURE_KPOP);
+			/* Do not support UMIP emulation for L2 if L0 not support HW UMIP */
+			if (!boot_cpu_has(X86_FEATURE_UMIP))
+				entry->eax |= (1 << KVM_FEATURE_NO_UMIP_EMU);
+		}
 
 		entry->ebx = 0;
 		entry->ecx = 0;

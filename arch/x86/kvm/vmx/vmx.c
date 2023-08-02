@@ -3339,8 +3339,10 @@ void vmx_set_cr4(struct kvm_vcpu *vcpu, unsigned long cr4)
 
 	if (!boot_cpu_has(X86_FEATURE_UMIP) && vmx_umip_emulated()) {
 		if (cr4 & X86_CR4_UMIP) {
-			secondary_exec_controls_setbit(vmx, SECONDARY_EXEC_DESC);
-			hw_cr4 &= ~X86_CR4_UMIP;
+			if (!is_guest_mode(vcpu) || !nested_kpop_on()) {
+				secondary_exec_controls_setbit(vmx, SECONDARY_EXEC_DESC);
+				hw_cr4 &= ~X86_CR4_UMIP;
+			}
 		} else if (!is_guest_mode(vcpu) ||
 			!nested_cpu_has2(get_vmcs12(vcpu), SECONDARY_EXEC_DESC)) {
 			secondary_exec_controls_clearbit(vmx, SECONDARY_EXEC_DESC);
@@ -7766,6 +7768,10 @@ static __init void vmx_set_cpu_caps(void)
 
 	if (vmx_umip_emulated())
 		kvm_cpu_cap_set(X86_FEATURE_UMIP);
+
+	/* Do not expose UMIP feature to L2 when L1 w/ KVM_FEATURE_NO_UMIP_EMU */
+	if (kvm_para_has_feature(KVM_FEATURE_NO_UMIP_EMU))
+		kvm_cpu_cap_clear(X86_FEATURE_UMIP);
 
 	/* CPUID 0xD.1 */
 	kvm_caps.supported_xss = 0;
