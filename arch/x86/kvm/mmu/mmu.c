@@ -7832,6 +7832,10 @@ int kvm_mmu_post_init_vm(struct kvm *kvm)
 {
 	int err;
 
+	/* KPOP shall let L0 hypervisor handle ITLB MULTIHIT issue */
+	if (kvm_mmu_ops_kpop_on(kvm))
+		return 0;
+
 	err = kvm_vm_create_worker_thread(kvm, kvm_nx_huge_page_recovery_worker, 0,
 					  "kvm-nx-lpage-recovery",
 					  &kvm->arch.nx_huge_page_recovery_thread);
