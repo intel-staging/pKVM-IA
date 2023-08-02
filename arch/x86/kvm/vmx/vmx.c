@@ -8452,6 +8452,9 @@ static __init int hardware_setup(void)
 
 	setup_default_sgx_lepubkeyhash();
 
+	if (kvm_para_has_feature(KVM_FEATURE_KPOP))
+		nested = 0;
+
 	if (nested) {
 		nested_vmx_setup_ctls_msrs(&vmcs_config, vmx_capability.ept);
 
