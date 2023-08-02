@@ -287,6 +287,13 @@ static void __kvm_update_cpuid_runtime(struct kvm_vcpu *vcpu, struct kvm_cpuid_e
 		(best->eax & (1 << KVM_FEATURE_PV_UNHALT)))
 		best->eax &= ~(1 << KVM_FEATURE_PV_UNHALT);
 
+	/*TODO: qemu does not support KPOP yet, make it always true by KVM */
+	if (nested_kpop_on() && best && !(best->eax & (1 << KVM_FEATURE_KPOP)))
+		best->eax |= 1 << KVM_FEATURE_KPOP;
+	if (nested_kpop_on() && !boot_cpu_has(X86_FEATURE_UMIP) &&
+			best && !(best->eax & (1 << KVM_FEATURE_NO_UMIP_EMU)))
+		best->eax |= 1 << KVM_FEATURE_NO_UMIP_EMU;
+
 	if (!kvm_check_has_quirk(vcpu->kvm, KVM_X86_QUIRK_MISC_ENABLE_NO_MWAIT)) {
 		best = cpuid_entry2_find(entries, nent, 0x1, KVM_CPUID_INDEX_NOT_SIGNIFICANT);
 		if (best)
