@@ -3826,6 +3826,15 @@ out:
 	return ret;
 }
 
+static inline void free_guest_mmu(struct kvm *kvm, struct kpop_guest_mmu *gmmu)
+{
+	write_lock(&kvm->mmu_lock);
+	kvm_mmu_put_kpop_root_hpa(kvm, gmmu->root_hpa);
+	write_unlock(&kvm->mmu_lock);
+	hash_del(&gmmu->hnode);
+	kfree(gmmu);
+}
+
 static void kpop_put_guest_mmu(struct kvm_vcpu *vcpu,
 		u64 vcpu_holder, u64 kvm_id, u64 as_id)
 {
@@ -3843,16 +3852,23 @@ static void kpop_put_guest_mmu(struct kvm_vcpu *vcpu,
 		if (gmmu->as_id != as_id)
 			continue;
 
-		if (refcount_dec_and_test(&gmmu->count)) {
-			write_lock(&vcpu->kvm->mmu_lock);
-			kvm_mmu_put_kpop_root_hpa(vcpu->kvm,
-					gmmu->root_hpa);
-			write_unlock(&vcpu->kvm->mmu_lock);
-			hash_del(&gmmu->hnode);
-			kfree(gmmu);
-		}
+		if (refcount_dec_and_test(&gmmu->count))
+			free_guest_mmu(vcpu->kvm, gmmu);
 	}
 	spin_unlock(&vcpu->kvm->arch.kpop_guest_mmu_lock);
+}
+
+static void kpop_put_all_guest_mmu(struct kvm *kvm)
+{
+	struct kpop_guest_mmu *gmmu;
+	struct hlist_node *tmp;
+	int i;
+
+	spin_lock(&kvm->arch.kpop_guest_mmu_lock);
+	hash_for_each_safe(kvm->arch.kpop_guest_mmu_htable,
+			i, tmp, gmmu, hnode)
+		free_guest_mmu(kvm, gmmu);
+	spin_unlock(&kvm->arch.kpop_guest_mmu_lock);
 }
 
 unsigned long kpop_mmu_load_unload(struct kvm_vcpu *vcpu,
@@ -6853,6 +6869,9 @@ void kvm_mmu_uninit_vm(struct kvm *kvm)
 
 	kvm_page_track_unregister_notifier(kvm, node);
 
+	/* L1 VM is unexpected killed? */
+	if (!hash_empty(kvm->arch.kpop_guest_mmu_htable))
+		kpop_put_all_guest_mmu(kvm);
 	WARN_ON(!hash_empty(kvm->arch.kpop_guest_mmu_htable));
 
 	kvm_mmu_uninit_tdp_mmu(kvm);
