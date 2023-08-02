@@ -4542,6 +4542,10 @@ static int kvm_vm_ioctl_enable_dirty_log_ring(struct kvm *kvm, u32 size)
 {
 	int r;
 
+	/* KPOP does not support dirty logging yet */
+	if (kvm->mmu_ops.kpop_on)
+		return -EINVAL;
+
 	if (!KVM_DIRTY_LOG_PAGE_OFFSET)
 		return -EINVAL;
 

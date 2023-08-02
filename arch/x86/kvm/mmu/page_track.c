@@ -21,6 +21,10 @@
 
 bool kvm_page_track_write_tracking_enabled(struct kvm *kvm)
 {
+	/* KPOP does not support page track yet */
+	if (kvm_mmu_ops_kpop_on(kvm))
+		return false;
+
 	return IS_ENABLED(CONFIG_KVM_EXTERNAL_WRITE_TRACKING) ||
 	       !tdp_enabled || kvm_shadow_root_allocated(kvm);
 }
