@@ -6636,8 +6636,10 @@ static void __kvm_mmu_zap_all(struct kvm *kvm, bool fast)
 		 * write and in the same critical section as making the reload request,
 		 * e.g. before kvm_zap_obsolete_pages() could drop mmu_lock and yield.
 		 */
-		if (is_tdp_mmu_enabled(kvm))
+		if (is_tdp_mmu_enabled(kvm)) {
 			kvm_tdp_mmu_invalidate_all_roots(kvm);
+			kpop_mmu_do_zap_all(kvm, ANY_KPOP_KVMID, true);
+		}
 
 		/*
 		 * Notify all vcpus to reload its shadow page table and flush TLB.
@@ -6681,8 +6683,10 @@ restart:
 
 		kvm_mmu_commit_zap_page(kvm, &invalid_list);
 
-		if (is_tdp_mmu_enabled(kvm))
+		if (is_tdp_mmu_enabled(kvm)) {
 			kvm_tdp_mmu_zap_all(kvm);
+			kpop_mmu_do_zap_all(kvm, ANY_KPOP_KVMID, false);
+		}
 
 		write_unlock(&kvm->mmu_lock);
 	}
