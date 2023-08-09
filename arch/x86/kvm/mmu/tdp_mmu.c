@@ -273,12 +273,15 @@ static struct kvm_mmu_page *tdp_mmu_next_root(struct kvm *kvm,
 		    kvm_mmu_page_as_id(_root) != _as_id) {		\
 		} else
 
-static struct kvm_mmu_page *tdp_mmu_alloc_sp(struct kvm_vcpu *vcpu)
+static struct kvm_mmu_page *tdp_mmu_alloc_sp(struct kvm_vcpu *vcpu, bool kpop)
 {
 	struct kvm_mmu_page *sp;
 
 	sp = kvm_mmu_memory_cache_alloc(&vcpu->arch.mmu_page_header_cache);
 	sp->spt = kvm_mmu_memory_cache_alloc(&vcpu->arch.mmu_shadow_page_cache);
+	if (kpop)
+		sp->shadowed_translation =
+			kvm_mmu_memory_cache_alloc(&vcpu->arch.mmu_shadowed_info_cache);
 
 	return sp;
 }
@@ -336,7 +339,7 @@ static hpa_t __kvm_tdp_mmu_get_vcpu_root_hpa(struct kvm_vcpu *vcpu, u64 kvm_id,
 			goto out;
 	}
 
-	root = tdp_mmu_alloc_sp(vcpu);
+	root = tdp_mmu_alloc_sp(vcpu, role.kpop);
 	tdp_mmu_init_sp(root, NULL, 0, role);
 	root->kpop_kvm_id = kvm_id;
 
@@ -371,7 +374,9 @@ hpa_t kvm_tdp_mmu_get_kpop_root_hpa(struct kvm_vcpu *vcpu, u64 kvm_id, u64 as_id
 
 static void handle_changed_spte(struct kvm *kvm, int as_id, gfn_t gfn,
 				u64 old_spte, u64 new_spte, int level,
-				bool shared);
+				bool shared, u64 *sptep, gfn_t l1_gfn,
+				struct kvm_mmu_memory_cache *cache,
+				const struct kvm_memory_slot *slot);
 
 static void handle_changed_spte_acc_track(u64 old_spte, u64 new_spte, int level)
 {
@@ -536,8 +541,10 @@ static void handle_removed_pt(struct kvm *kvm, tdp_ptep_t pt, bool shared)
 			old_spte = kvm_tdp_mmu_write_spte(sptep, old_spte,
 							  REMOVED_SPTE, level);
 		}
+
 		handle_changed_spte(kvm, kvm_mmu_page_as_id(sp), gfn,
-				    old_spte, REMOVED_SPTE, level, shared);
+				    old_spte, REMOVED_SPTE, level, shared,
+				    sptep, INVALID_GPA, NULL, NULL);
 	}
 
 	call_rcu(&sp->rcu_head, tdp_mmu_free_sp_rcu_callback);
@@ -560,13 +567,16 @@ static void handle_removed_pt(struct kvm *kvm, tdp_ptep_t pt, bool shared)
  */
 static void __handle_changed_spte(struct kvm *kvm, int as_id, gfn_t gfn,
 				  u64 old_spte, u64 new_spte, int level,
-				  bool shared)
+				  bool shared, u64 *sptep, gfn_t l1_gfn,
+				  struct kvm_mmu_memory_cache *cache,
+				  const struct kvm_memory_slot *slot)
 {
 	bool was_present = is_shadow_present_pte(old_spte);
 	bool is_present = is_shadow_present_pte(new_spte);
 	bool was_leaf = was_present && is_last_spte(old_spte, level);
 	bool is_leaf = is_present && is_last_spte(new_spte, level);
 	bool pfn_changed = spte_to_pfn(old_spte) != spte_to_pfn(new_spte);
+	struct kvm_mmu_page *sp = sptep_to_sp(sptep);
 
 	WARN_ON(level > PT64_ROOT_MAX_LEVEL);
 	WARN_ON(level < PG_LEVEL_4K);
@@ -635,6 +645,18 @@ static void __handle_changed_spte(struct kvm *kvm, int as_id, gfn_t gfn,
 	    (!is_present || !is_dirty_spte(new_spte) || pfn_changed))
 		kvm_set_pfn_dirty(spte_to_pfn(old_spte));
 
+	if (sp->role.kpop) {
+		/* add rmap for kpop, when new leaf mapping created */
+		if (!was_leaf && is_leaf) {
+			WARN_ON(l1_gfn == INVALID_GPA || !cache || !slot);
+			kpop_rmap_add(kvm, cache, slot, sptep, l1_gfn, sp->role.access);
+		}
+
+		/* remove rmap for kpop, when old leaf mapping removed */
+		if (was_leaf && !is_leaf)
+			kpop_rmap_remove(kvm, sptep);
+	}
+
 	/*
 	 * Recursively handle child PTs if the change removed a subtree from
 	 * the paging structure.  Note the WARN on the PFN changing without the
@@ -648,10 +670,12 @@ static void __handle_changed_spte(struct kvm *kvm, int as_id, gfn_t gfn,
 
 static void handle_changed_spte(struct kvm *kvm, int as_id, gfn_t gfn,
 				u64 old_spte, u64 new_spte, int level,
-				bool shared)
+				bool shared, u64 *sptep, gfn_t l1_gfn,
+				struct kvm_mmu_memory_cache *cache,
+				const struct kvm_memory_slot *slot)
 {
 	__handle_changed_spte(kvm, as_id, gfn, old_spte, new_spte, level,
-			      shared);
+			      shared, sptep, l1_gfn, cache, slot);
 	handle_changed_spte_acc_track(old_spte, new_spte, level);
 	handle_changed_spte_dirty_log(kvm, as_id, gfn, old_spte,
 				      new_spte, level);
@@ -698,7 +722,9 @@ static inline int tdp_mmu_set_spte_atomic(struct kvm *kvm,
 		return -EBUSY;
 
 	__handle_changed_spte(kvm, iter->as_id, iter->gfn, iter->old_spte,
-			      new_spte, iter->level, true);
+			      new_spte, iter->level, true, sptep,
+			      iter->kpop_rmap.gfn, iter->kpop_rmap.cache,
+			      iter->kpop_rmap.slot);
 	handle_changed_spte_acc_track(iter->old_spte, new_spte, iter->level);
 
 	return 0;
@@ -760,7 +786,9 @@ static inline int tdp_mmu_zap_spte_atomic(struct kvm *kvm,
  */
 static u64 __tdp_mmu_set_spte(struct kvm *kvm, int as_id, tdp_ptep_t sptep,
 			      u64 old_spte, u64 new_spte, gfn_t gfn, int level,
-			      bool record_acc_track, bool record_dirty_log)
+			      bool record_acc_track, bool record_dirty_log,
+			      gfn_t l1_gfn, struct kvm_mmu_memory_cache *cache,
+			      const struct kvm_memory_slot *slot)
 {
 	lockdep_assert_held_write(&kvm->mmu_lock);
 
@@ -775,7 +803,8 @@ static u64 __tdp_mmu_set_spte(struct kvm *kvm, int as_id, tdp_ptep_t sptep,
 
 	old_spte = kvm_tdp_mmu_write_spte(sptep, old_spte, new_spte, level);
 
-	__handle_changed_spte(kvm, as_id, gfn, old_spte, new_spte, level, false);
+	__handle_changed_spte(kvm, as_id, gfn, old_spte, new_spte,
+			level, false, sptep, l1_gfn, cache, slot);
 
 	if (record_acc_track)
 		handle_changed_spte_acc_track(old_spte, new_spte, level);
@@ -794,7 +823,10 @@ static inline void _tdp_mmu_set_spte(struct kvm *kvm, struct tdp_iter *iter,
 	iter->old_spte = __tdp_mmu_set_spte(kvm, iter->as_id, iter->sptep,
 					    iter->old_spte, new_spte,
 					    iter->gfn, iter->level,
-					    record_acc_track, record_dirty_log);
+					    record_acc_track, record_dirty_log,
+					    iter->kpop_rmap.gfn,
+					    iter->kpop_rmap.cache,
+					    iter->kpop_rmap.slot);
 }
 
 static inline void tdp_mmu_set_spte(struct kvm *kvm, struct tdp_iter *iter,
@@ -964,7 +996,8 @@ bool kvm_tdp_mmu_zap_sp(struct kvm *kvm, struct kvm_mmu_page *sp)
 		return false;
 
 	__tdp_mmu_set_spte(kvm, kvm_mmu_page_as_id(sp), sp->ptep, old_spte, 0,
-			   sp->gfn, sp->role.level + 1, true, true);
+			   sp->gfn, sp->role.level + 1, true, true, INVALID_GPA,
+			   NULL, NULL);
 
 	return true;
 }
@@ -1154,6 +1187,15 @@ static int tdp_mmu_map_handle_target_level(struct kvm_vcpu *vcpu,
 					 fault->pfn, iter->old_spte, fault->prefetch, true,
 					 fault->map_writable, &new_spte, fault->kpop);
 
+	if (sp->role.kpop) {
+		kvm_pfn_t mask = KVM_PAGES_PER_HPAGE(fault->goal_level) - 1;
+		gfn_t guest_pfn = fault->addr >> PAGE_SHIFT;
+
+		iter->kpop_rmap.gfn = guest_pfn & ~mask;
+		iter->kpop_rmap.cache = &vcpu->arch.mmu_pte_list_desc_cache;
+		iter->kpop_rmap.slot = fault->slot;
+	}
+
 	if (new_spte == iter->old_spte)
 		ret = RET_PF_SPURIOUS;
 	else if (tdp_mmu_set_spte_atomic(vcpu->kvm, iter, new_spte))
@@ -1219,7 +1261,9 @@ static int tdp_mmu_link_sp(struct kvm *kvm, struct tdp_iter *iter,
 }
 
 static int tdp_mmu_split_huge_page(struct kvm *kvm, struct tdp_iter *iter,
-				   struct kvm_mmu_page *sp, bool shared);
+				   struct kvm_mmu_page *sp, bool shared,
+				   struct kvm_mmu_memory_cache *cache,
+				   const struct kvm_memory_slot *slot);
 
 /*
  * Handle a TDP page fault (NPT/EPT violation/misconfiguration) by installing
@@ -1269,13 +1313,15 @@ int kvm_tdp_mmu_map(struct kvm_vcpu *vcpu, struct kvm_page_fault *fault)
 		 * The SPTE is either non-present or points to a huge page that
 		 * needs to be split.
 		 */
-		sp = tdp_mmu_alloc_sp(vcpu);
+		sp = tdp_mmu_alloc_sp(vcpu, fault->kpop);
 		tdp_mmu_init_child_sp(sp, &iter);
 
 		sp->nx_huge_page_disallowed = fault->huge_page_disallowed;
 
 		if (is_shadow_present_pte(iter.old_spte))
-			r = tdp_mmu_split_huge_page(kvm, &iter, sp, true);
+			r = tdp_mmu_split_huge_page(kvm, &iter, sp, true,
+					&vcpu->arch.mmu_pte_list_desc_cache,
+					fault->slot);
 		else
 			r = tdp_mmu_link_sp(kvm, &iter, sp, true);
 
@@ -1412,6 +1458,7 @@ static bool set_spte_gfn(struct kvm *kvm, struct tdp_iter *iter,
 			 struct kvm_gfn_range *range)
 {
 	u64 new_spte;
+	struct kvm_mmu_page *sp = sptep_to_sp(rcu_dereference(iter->sptep));
 
 	/* Huge pages aren't expected to be modified without first being zapped. */
 	WARN_ON(pte_huge(range->pte) || range->start + 1 != range->end);
@@ -1428,7 +1475,8 @@ static bool set_spte_gfn(struct kvm *kvm, struct tdp_iter *iter,
 	 */
 	tdp_mmu_set_spte(kvm, iter, 0);
 
-	if (!pte_write(range->pte)) {
+	/* for kpop, just simply skip change_pte to easy rmap handling */
+	if (!pte_write(range->pte) && !sp->role.kpop) {
 		new_spte = kvm_mmu_changed_pte_notifier_make_spte(iter->old_spte,
 								  pte_pfn(range->pte));
 
@@ -1585,18 +1633,35 @@ static struct kvm_mmu_page *tdp_mmu_alloc_sp_for_split(struct kvm *kvm,
 
 /* Note, the caller is responsible for initializing @sp. */
 static int tdp_mmu_split_huge_page(struct kvm *kvm, struct tdp_iter *iter,
-				   struct kvm_mmu_page *sp, bool shared)
+				   struct kvm_mmu_page *sp, bool shared,
+				   struct kvm_mmu_memory_cache *cache,
+				   const struct kvm_memory_slot *slot)
 {
 	const u64 huge_spte = iter->old_spte;
 	const int level = iter->level;
 	int ret, i;
+	gfn_t l1_gfn;
+	u64 *sptep, *huge_sptep = rcu_dereference(iter->sptep);
+	struct kvm_mmu_page *huge_sp = sptep_to_sp(huge_sptep);
+
+	if (sp->role.kpop) {
+		WARN_ON(!cache || !slot);
+		l1_gfn = kvm_mmu_page_get_gfn(huge_sp, spte_index(huge_sptep));
+	}
 
 	/*
 	 * No need for atomics when writing to sp->spt since the page table has
 	 * not been linked in yet and thus is not reachable from any other CPU.
 	 */
-	for (i = 0; i < SPTE_ENT_PER_PAGE; i++)
+	for (i = 0; i < SPTE_ENT_PER_PAGE; i++) {
 		sp->spt[i] = make_huge_page_split_spte(kvm, huge_spte, sp->role, i);
+		if (sp->role.kpop) {
+			sptep = &sp->spt[i];
+			kpop_rmap_add(kvm, cache, slot, sptep,
+				l1_gfn + i * KVM_PAGES_PER_HPAGE(level - 1),
+				sp->role.access);
+		}
+	}
 
 	/*
 	 * Replace the huge spte with a pointer to the populated lower level
@@ -1625,7 +1690,8 @@ out:
 static int tdp_mmu_split_huge_pages_root(struct kvm *kvm,
 					 struct kvm_mmu_page *root,
 					 gfn_t start, gfn_t end,
-					 int target_level, bool shared)
+					 int target_level, bool shared,
+					 const struct kvm_memory_slot *slot)
 {
 	struct kvm_mmu_page *sp = NULL;
 	struct tdp_iter iter;
@@ -1668,7 +1734,7 @@ retry:
 
 		tdp_mmu_init_child_sp(sp, &iter);
 
-		if (tdp_mmu_split_huge_page(kvm, &iter, sp, shared))
+		if (tdp_mmu_split_huge_page(kvm, &iter, sp, shared, NULL, NULL))
 			goto retry;
 
 		sp = NULL;
@@ -1702,7 +1768,7 @@ void kvm_tdp_mmu_try_split_huge_pages(struct kvm *kvm,
 	kvm_lockdep_assert_mmu_lock_held(kvm, shared);
 
 	for_each_valid_tdp_mmu_root_yield_safe(kvm, &kvm->arch.tdp_mmu_roots, root, slot->as_id, shared) {
-		r = tdp_mmu_split_huge_pages_root(kvm, root, start, end, target_level, shared);
+		r = tdp_mmu_split_huge_pages_root(kvm, root, start, end, target_level, shared, slot);
 		if (r) {
 			kvm_tdp_mmu_put_root(kvm, root, shared);
 			break;

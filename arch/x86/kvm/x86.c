@@ -12397,7 +12397,7 @@ static int kvm_alloc_memslot_metadata(struct kvm *kvm,
 	 */
 	memset(&slot->arch, 0, sizeof(slot->arch));
 
-	if (kvm_memslots_have_rmaps(kvm)) {
+	if (kvm_memslots_have_rmaps(kvm) || nested_kpop_on()) {
 		r = memslot_rmap_alloc(slot, npages);
 		if (r)
 			return r;

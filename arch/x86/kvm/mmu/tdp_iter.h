@@ -94,6 +94,15 @@ struct tdp_iter {
 	 * level instead of advancing to the next entry.
 	 */
 	bool yielded;
+
+	struct {
+		/* The L1-GFN mapped by the current SPTE, assist for rmap */
+		gfn_t gfn;
+		/* The memory cache assist for rmap */
+		struct kvm_mmu_memory_cache *cache;
+		/* The L1 memory slot assist for rmap */
+		struct kvm_memory_slot *slot;
+	} kpop_rmap;
 };
 
 /*

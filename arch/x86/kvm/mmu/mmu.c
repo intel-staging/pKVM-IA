@@ -656,9 +656,26 @@ static int mmu_topup_memory_caches(struct kvm_vcpu *vcpu, bool maybe_indirect)
 {
 	int r;
 
-	/* 1 rmap, 1 parent PTE per level, and the prefetched rmaps. */
-	r = kvm_mmu_topup_memory_cache(&vcpu->arch.mmu_pte_list_desc_cache,
-				       1 + PT64_ROOT_MAX_LEVEL + PTE_PREFETCH_NUM);
+	/*
+	 * For non-kpop case:
+	 *   1 rmap, 1 parent PTE per level, and the prefetched rmaps.
+	 *
+	 * For kpop case:
+	 *   consider worst case if kvm_tdp_mmu_map lead to split
+	 *   huge page when nx huge page workaround enabled.
+	 *   SPLIT_DESC_CACHE_MIN_NR_OBJECTS rmaps for spliting, and 1 rmap,
+	 *   1 parent PTE per level
+	 */
+	if (nested_kpop_on()) {
+		const int capacity = SPLIT_DESC_CACHE_MIN_NR_OBJECTS +
+			KVM_ARCH_NR_OBJS_PER_MEMORY_CACHE;
+
+		r = __kvm_mmu_topup_memory_cache(&vcpu->arch.mmu_pte_list_desc_cache,
+				capacity, SPLIT_DESC_CACHE_MIN_NR_OBJECTS +
+				1 + PT64_ROOT_MAX_LEVEL);
+	} else
+		r = kvm_mmu_topup_memory_cache(&vcpu->arch.mmu_pte_list_desc_cache,
+				1 + PT64_ROOT_MAX_LEVEL + PTE_PREFETCH_NUM);
 	if (r)
 		return r;
 	r = kvm_mmu_topup_memory_cache(&vcpu->arch.mmu_shadow_page_cache,
@@ -690,12 +707,12 @@ static void mmu_free_pte_list_desc(struct pte_list_desc *pte_list_desc)
 
 static bool sp_has_gptes(struct kvm_mmu_page *sp);
 
-static gfn_t kvm_mmu_page_get_gfn(struct kvm_mmu_page *sp, int index)
+gfn_t kvm_mmu_page_get_gfn(struct kvm_mmu_page *sp, int index)
 {
 	if (sp->role.passthrough)
 		return sp->gfn;
 
-	if (!sp->role.direct)
+	if (!sp->role.direct || sp->role.kpop)
 		return sp->shadowed_translation[index] >> PAGE_SHIFT;
 
 	return sp->gfn + (index << ((sp->role.level - 1) * SPTE_LEVEL_BITS));
@@ -709,7 +726,7 @@ static gfn_t kvm_mmu_page_get_gfn(struct kvm_mmu_page *sp, int index)
  */
 static u32 kvm_mmu_page_get_access(struct kvm_mmu_page *sp, int index)
 {
-	if (sp_has_gptes(sp))
+	if (sp_has_gptes(sp) || sp->role.kpop)
 		return sp->shadowed_translation[index] & ACC_ALL;
 
 	/*
@@ -730,7 +747,7 @@ static u32 kvm_mmu_page_get_access(struct kvm_mmu_page *sp, int index)
 static void kvm_mmu_page_set_translation(struct kvm_mmu_page *sp, int index,
 					 gfn_t gfn, unsigned int access)
 {
-	if (sp_has_gptes(sp)) {
+	if (sp_has_gptes(sp) || sp->role.kpop) {
 		sp->shadowed_translation[index] = (gfn << PAGE_SHIFT) | access;
 		return;
 	}
@@ -1081,12 +1098,26 @@ static void rmap_remove(struct kvm *kvm, u64 *spte)
 	 * so we have to determine which memslots to use based on context
 	 * information in sp->role.
 	 */
-	slots = kvm_memslots_for_spte_role(kvm, sp->role);
+	if (sp->role.kpop) {
+		union kvm_mmu_page_role role = sp->role;
+
+		/* L0 only use slots under non-smm for KPOP */
+		role.smm = 0;
+		slots = kvm_memslots_for_spte_role(kvm, role);
+	} else
+		slots = kvm_memslots_for_spte_role(kvm, sp->role);
 
 	slot = __gfn_to_memslot(slots, gfn);
 	rmap_head = gfn_to_rmap(gfn, sp->role.level, slot);
 
 	pte_list_remove(spte, rmap_head);
+}
+
+void kpop_rmap_remove(struct kvm *kvm, u64 *spte)
+{
+	spin_lock(&kvm->arch.kpop_rmap_lock);
+	rmap_remove(kvm, spte);
+	spin_unlock(&kvm->arch.kpop_rmap_lock);
 }
 
 /*
@@ -1564,7 +1595,7 @@ static bool __kvm_unmap_gfn_range(struct kvm *kvm, struct kvm_gfn_range *range)
 {
 	bool flush = false;
 
-	if (kvm_memslots_have_rmaps(kvm))
+	if (kvm_memslots_have_rmaps(kvm) || nested_kpop_on())
 		flush = kvm_handle_gfn_range(kvm, range, kvm_zap_rmap);
 
 	if (is_tdp_mmu_enabled(kvm))
@@ -1582,7 +1613,7 @@ static bool __kvm_set_spte_gfn(struct kvm *kvm, struct kvm_gfn_range *range)
 {
 	bool flush = false;
 
-	if (kvm_memslots_have_rmaps(kvm))
+	if (kvm_memslots_have_rmaps(kvm) || nested_kpop_on())
 		flush = kvm_handle_gfn_range(kvm, range, kvm_set_pte_rmap);
 
 	if (is_tdp_mmu_enabled(kvm))
@@ -1648,6 +1679,16 @@ static void __rmap_add(struct kvm *kvm,
 		kvm_flush_remote_tlbs_with_address(
 				kvm, sp->gfn, KVM_PAGES_PER_HPAGE(sp->role.level));
 	}
+}
+
+void kpop_rmap_add(struct kvm *kvm,
+		       struct kvm_mmu_memory_cache *cache,
+		       const struct kvm_memory_slot *slot,
+		       u64 *spte, gfn_t gfn, unsigned int access)
+{
+	spin_lock(&kvm->arch.kpop_rmap_lock);
+	__rmap_add(kvm, cache, slot, spte, gfn, access);
+	spin_unlock(&kvm->arch.kpop_rmap_lock);
 }
 
 static void rmap_add(struct kvm_vcpu *vcpu, const struct kvm_memory_slot *slot,
@@ -3739,7 +3780,7 @@ static int kpop_reload_guest_mmu(struct kvm_vcpu *vcpu)
 
 	/* if a root is obsoleted, put it then get a new valid one */
 	if (is_obsolete_root(vcpu->kvm, gmmu->root_hpa)) {
-		int ret = mmu_topup_memory_caches(vcpu, false);
+		int ret = mmu_topup_memory_caches(vcpu, true);
 
 		if (ret)
 			return ret;
@@ -3774,7 +3815,7 @@ static int kpop_alloc_guest_mmu(struct kvm_vcpu *vcpu,
 	int ret = 0;
 	struct kpop_guest_mmu *gmmu, *new, *found = NULL;
 
-	ret = mmu_topup_memory_caches(vcpu, false);
+	ret = mmu_topup_memory_caches(vcpu, true);
 	if (ret)
 		return ret;
 
@@ -3939,6 +3980,7 @@ unsigned long kpop_mmu_map(struct kvm_vcpu *vcpu, u64 guest_id,
 		 *  pfn for L2 guest
 		 */
 		struct kvm_page_fault fault = {
+			.addr = guest_pfn << PAGE_SHIFT,
 			.exec = data.exec,
 			.nx_huge_page_workaround_enabled =
 				is_nx_huge_page_enabled(vcpu->kvm),
@@ -3981,7 +4023,7 @@ unsigned long kpop_mmu_map(struct kvm_vcpu *vcpu, u64 guest_id,
 			return RET_PF_INVALID;
 		}
 
-		r = mmu_topup_memory_caches(vcpu, false);
+		r = mmu_topup_memory_caches(vcpu, true);
 		if (r)
 			return r;
 
@@ -5771,13 +5813,15 @@ static void init_kvm_kpop_mmu(struct kvm_vcpu *vcpu)
 {
 	struct kvm_mmu *context = &vcpu->arch.guest_kpop_mmu;
 	struct kvm_mmu *root_context = &vcpu->arch.root_mmu;
+	union kvm_mmu_page_role root_role =  root_context->root_role;
 
+	root_role.kpop = 1;
 	if (root_context->cpu_role.as_u64 == context->cpu_role.as_u64 &&
-	    root_context->root_role.word == context->root_role.word)
+	    root_role.word == context->root_role.word)
 		return;
 
 	context->cpu_role = root_context->cpu_role;
-	context->root_role = root_context->root_role;
+	context->root_role = root_role;
 	context->page_fault = kpop_page_fault;
 	context->sync_page = nonpaging_sync_page;
 	context->invlpg = NULL;
@@ -6562,7 +6606,7 @@ static bool kvm_rmap_zap_gfn_range(struct kvm *kvm, gfn_t gfn_start, gfn_t gfn_e
 	gfn_t start, end;
 	int i;
 
-	if (!kvm_memslots_have_rmaps(kvm))
+	if (!kvm_memslots_have_rmaps(kvm) && !nested_kpop_on())
 		return flush;
 
 	for (i = 0; i < KVM_ADDRESS_SPACE_NUM; i++) {
@@ -6855,6 +6899,7 @@ int kvm_mmu_init_vm(struct kvm *kvm)
 	if (nested_kpop_on()) {
 		hash_init(kvm->arch.kpop_guest_mmu_htable);
 		spin_lock_init(&kvm->arch.kpop_guest_mmu_lock);
+		spin_lock_init(&kvm->arch.kpop_rmap_lock);
 	}
 
 	return 0;

@@ -342,7 +342,8 @@ union kvm_mmu_page_role {
 		unsigned ad_disabled:1;
 		unsigned guest_mode:1;
 		unsigned passthrough:1;
-		unsigned :5;
+		unsigned kpop:1;
+		unsigned :4;
 
 		/*
 		 * This is left at the top of the word so that
@@ -1385,6 +1386,7 @@ struct kvm_arch {
 #define KPOP_GUEST_MMU_HASH_BITS  10
 	DECLARE_HASHTABLE(kpop_guest_mmu_htable, KPOP_GUEST_MMU_HASH_BITS);
 	spinlock_t kpop_guest_mmu_lock;
+	spinlock_t kpop_rmap_lock;
 
 	/*
 	 * Protects accesses to the following fields when the MMU lock

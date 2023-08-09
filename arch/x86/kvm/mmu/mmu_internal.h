@@ -330,4 +330,11 @@ void *mmu_memory_cache_alloc(struct kvm_mmu_memory_cache *mc);
 void track_possible_nx_huge_page(struct kvm *kvm, struct kvm_mmu_page *sp);
 void untrack_possible_nx_huge_page(struct kvm *kvm, struct kvm_mmu_page *sp);
 
+gfn_t kvm_mmu_page_get_gfn(struct kvm_mmu_page *sp, int index);
+void kpop_rmap_add(struct kvm *kvm,
+		       struct kvm_mmu_memory_cache *cache,
+		       const struct kvm_memory_slot *slot,
+		       u64 *spte, gfn_t gfn, unsigned int access);
+void kpop_rmap_remove(struct kvm *kvm, u64 *spte);
+
 #endif /* __KVM_X86_MMU_INTERNAL_H */
