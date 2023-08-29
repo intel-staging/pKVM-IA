@@ -6194,6 +6194,40 @@ restart:
 	}
 }
 
+static int __kpop_mmu_load(struct kvm_vcpu *vcpu)
+{
+	union kvm_mmu_page_role role = vcpu->arch.mmu->root_role;
+	int as_id = kvm_mmu_role_as_id(role);
+	long ret;
+
+	write_lock(&vcpu->kvm->mmu_lock);
+	ret = kvm_hypercall4(KVM_HC_KPOP_MMU_LOAD_UNLOAD,
+			kpop_arch_get_vcpu_holder(vcpu),
+			(unsigned long)vcpu->kvm, as_id, 1);
+	if (!ret) {
+		vcpu->arch.mmu->root.hpa = KPOP_ASID2FAKEROOT(as_id);
+		kvm_mmu_load_pgd(vcpu);
+	}
+	write_unlock(&vcpu->kvm->mmu_lock);
+
+	return (int)ret;
+}
+
+static void __kpop_mmu_unload(struct kvm_vcpu *vcpu)
+{
+	union kvm_mmu_page_role role = vcpu->arch.mmu->root_role;
+	long ret;
+
+	write_lock(&vcpu->kvm->mmu_lock);
+	ret = kvm_hypercall4(KVM_HC_KPOP_MMU_LOAD_UNLOAD,
+			kpop_arch_get_vcpu_holder(vcpu),
+			(unsigned long)vcpu->kvm,
+			kvm_mmu_role_as_id(role), 0);
+	if (!ret)
+		vcpu->arch.mmu->root.hpa = INVALID_PAGE;
+	write_unlock(&vcpu->kvm->mmu_lock);
+}
+
 int kvm_mmu_init_vm(struct kvm *kvm)
 {
 	struct kvm_page_track_notifier_node *node = &kvm->arch.mmu_sp_tracker;
@@ -6210,6 +6244,9 @@ int kvm_mmu_init_vm(struct kvm *kvm)
 
 	if (is_tdp_mmu_enabled(kvm) && kvm_para_has_feature(KVM_FEATURE_KPOP)) {
 		kvm->mmu_ops.kpop_on = true;
+
+		kvm->mmu_ops.mmu_load = __kpop_mmu_load;
+		kvm->mmu_ops.mmu_unload = __kpop_mmu_unload;
 		/* To be added */
 	} else {
 		kvm->mmu_ops.kpop_on = false;

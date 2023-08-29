@@ -120,6 +120,9 @@ void kvm_mmu_free_obsolete_roots(struct kvm_vcpu *vcpu);
 void kvm_mmu_sync_roots(struct kvm_vcpu *vcpu);
 void kvm_mmu_sync_prev_roots(struct kvm_vcpu *vcpu);
 
+#define KPOP_ASID2FAKEROOT(as_id) (as_id << PAGE_SHIFT)
+#define KPOP_FAKEROOT2ASID(root) (root >> PAGE_SHIFT)
+
 static inline int kvm_mmu_reload(struct kvm_vcpu *vcpu)
 {
 	if (likely(vcpu->arch.mmu->root.hpa != INVALID_PAGE))

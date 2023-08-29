@@ -486,4 +486,5 @@ int kvm_sev_es_string_io(struct kvm_vcpu *vcpu, unsigned int size,
 			 unsigned int port, void *data,  unsigned int count,
 			 int in);
 
+u64 kpop_arch_get_vcpu_holder(struct kvm_vcpu *vcpu);
 #endif

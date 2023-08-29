@@ -1317,6 +1317,11 @@ static void vmx_write_guest_kernel_gs_base(struct vcpu_vmx *vmx, u64 data)
 }
 #endif
 
+u64 kpop_arch_get_vcpu_holder(struct kvm_vcpu *vcpu)
+{
+	return __pa(to_vmx(vcpu)->loaded_vmcs->vmcs);
+}
+
 void vmx_vcpu_load_vmcs(struct kvm_vcpu *vcpu, int cpu,
 			struct loaded_vmcs *buddy)
 {
