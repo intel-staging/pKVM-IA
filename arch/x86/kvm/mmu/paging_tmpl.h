@@ -845,7 +845,7 @@ static int FNAME(page_fault)(struct kvm_vcpu *vcpu, struct kvm_page_fault *fault
 	if (r != RET_PF_CONTINUE)
 		return r;
 
-	r = handle_abnormal_pfn(vcpu, fault, walker.pte_access);
+	r = handle_abnormal_pfn(vcpu, fault, walker.pte_access, false);
 	if (r != RET_PF_CONTINUE)
 		return r;
 

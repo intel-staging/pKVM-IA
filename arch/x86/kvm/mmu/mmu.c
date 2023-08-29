@@ -3137,6 +3137,33 @@ void kvm_mmu_hugepage_adjust(struct kvm_vcpu *vcpu, struct kvm_page_fault *fault
 	fault->pfn &= ~mask;
 }
 
+/*
+ * KPOP in L1 KVM just want to get fault->req_level based on guest mem solt
+ * The fault->pfn is not mask, which try to keep original info to L0
+ */
+static void kvm_mmu_kpop_hugepage_adjust(struct kvm_vcpu *vcpu, struct kvm_page_fault *fault)
+{
+	struct kvm_memory_slot *slot = fault->slot;
+	kvm_pfn_t mask;
+
+	if (unlikely(fault->max_level == PG_LEVEL_4K))
+		return;
+
+	if (is_error_noslot_pfn(fault->pfn))
+		return;
+
+	fault->req_level = kvm_mmu_max_mapping_level(vcpu->kvm, slot,
+						     fault->gfn, fault->max_level);
+	if (fault->req_level == PG_LEVEL_4K)
+		return;
+	/*
+	 * mmu_invalidate_retry() was successful and mmu_lock is held, so
+	 * the pmd can't be split from under us.
+	 */
+	mask = KVM_PAGES_PER_HPAGE(fault->req_level) - 1;
+	VM_BUG_ON((fault->gfn & mask) != (fault->pfn & mask));
+}
+
 void disallowed_hugepage_adjust(struct kvm_page_fault *fault, u64 spte, int cur_level)
 {
 	if (cur_level > PG_LEVEL_4K &&
@@ -3231,13 +3258,13 @@ static int kvm_handle_error_pfn(struct kvm_vcpu *vcpu, gfn_t gfn, kvm_pfn_t pfn)
 }
 
 static int handle_abnormal_pfn(struct kvm_vcpu *vcpu, struct kvm_page_fault *fault,
-			       unsigned int access)
+			       unsigned int access, bool kpop_ops_enabled)
 {
 	/* The pfn is invalid, report the error! */
 	if (unlikely(is_error_pfn(fault->pfn)))
 		return kvm_handle_error_pfn(vcpu, fault->gfn, fault->pfn);
 
-	if (unlikely(!fault->slot)) {
+	if (unlikely(!fault->slot && !kpop_ops_enabled)) {
 		gva_t gva = fault->is_tdp ? 0 : fault->addr;
 
 		vcpu_cache_mmio_info(vcpu, gva, fault->gfn,
@@ -4438,47 +4465,61 @@ static int kvm_faultin_pfn(struct kvm_vcpu *vcpu, struct kvm_page_fault *fault)
 static bool is_page_fault_stale(struct kvm_vcpu *vcpu,
 				struct kvm_page_fault *fault, int mmu_seq)
 {
-	struct kvm_mmu_page *sp = to_shadow_page(vcpu->arch.mmu->root.hpa);
+	if (kvm_mmu_ops_kpop_on(vcpu->kvm)) {
+		if (vcpu->arch.mmu->root.hpa == INVALID_PAGE)
+			return true;
+	} else {
+		struct kvm_mmu_page *sp = to_shadow_page(vcpu->arch.mmu->root.hpa);
 
-	/* Special roots, e.g. pae_root, are not backed by shadow pages. */
-	if (sp && is_obsolete_sp(vcpu->kvm, sp))
-		return true;
+		/* Special roots, e.g. pae_root, are not backed by shadow pages. */
+		if (sp && is_obsolete_sp(vcpu->kvm, sp))
+			return true;
 
-	/*
-	 * Roots without an associated shadow page are considered invalid if
-	 * there is a pending request to free obsolete roots.  The request is
-	 * only a hint that the current root _may_ be obsolete and needs to be
-	 * reloaded, e.g. if the guest frees a PGD that KVM is tracking as a
-	 * previous root, then __kvm_mmu_prepare_zap_page() signals all vCPUs
-	 * to reload even if no vCPU is actively using the root.
-	 */
-	if (!sp && kvm_test_request(KVM_REQ_MMU_FREE_OBSOLETE_ROOTS, vcpu))
-		return true;
+		/*
+		 * Roots without an associated shadow page are considered invalid if
+		 * there is a pending request to free obsolete roots.  The request is
+		 * only a hint that the current root _may_ be obsolete and needs to be
+		 * reloaded, e.g. if the guest frees a PGD that KVM is tracking as a
+		 * previous root, then __kvm_mmu_prepare_zap_page() signals all vCPUs
+		 * to reload even if no vCPU is actively using the root.
+		 */
+		if (!sp && kvm_test_request(KVM_REQ_MMU_FREE_OBSOLETE_ROOTS, vcpu))
+			return true;
+	}
 
 	return fault->slot &&
 	       mmu_invalidate_retry_hva(vcpu->kvm, mmu_seq, fault->hva);
 }
 
+static int __kpop_mmu_map(struct kvm_vcpu *vcpu,
+		u64 gfn, u64 pfn, u64 size, int as_id, bool exec);
 static int direct_page_fault(struct kvm_vcpu *vcpu, struct kvm_page_fault *fault)
 {
-	bool is_tdp_mmu_fault = is_tdp_mmu(vcpu->arch.mmu);
-
+	bool is_tdp_mmu_fault, kpop_ops_enabled = kvm_mmu_ops_kpop_on(vcpu->kvm);
 	unsigned long mmu_seq;
 	int r;
+
+	is_tdp_mmu_fault = is_tdp_mmu(vcpu->arch.mmu) || kpop_ops_enabled;
 
 	fault->gfn = fault->addr >> PAGE_SHIFT;
 	fault->slot = kvm_vcpu_gfn_to_memslot(vcpu, fault->gfn);
 
-	if (page_fault_handle_page_track(vcpu, fault))
-		return RET_PF_EMULATE;
+	/*
+	 * kpop does not support page track, write protection & A/D emulation,
+	 * and do not need allocate shadow page for root, so can ignore below steps
+	 */
+	if (!kpop_ops_enabled) {
+		if (page_fault_handle_page_track(vcpu, fault))
+			return RET_PF_EMULATE;
 
-	r = fast_page_fault(vcpu, fault);
-	if (r != RET_PF_INVALID)
-		return r;
+		r = fast_page_fault(vcpu, fault);
+		if (r != RET_PF_INVALID)
+			return r;
 
-	r = mmu_topup_memory_caches(vcpu, false);
-	if (r)
-		return r;
+		r = mmu_topup_memory_caches(vcpu, false);
+		if (r)
+			return r;
+	}
 
 	mmu_seq = vcpu->kvm->mmu_invalidate_seq;
 	smp_rmb();
@@ -4487,7 +4528,7 @@ static int direct_page_fault(struct kvm_vcpu *vcpu, struct kvm_page_fault *fault
 	if (r != RET_PF_CONTINUE)
 		return r;
 
-	r = handle_abnormal_pfn(vcpu, fault, ACC_ALL);
+	r = handle_abnormal_pfn(vcpu, fault, ACC_ALL, kpop_ops_enabled);
 	if (r != RET_PF_CONTINUE)
 		return r;
 
@@ -4501,13 +4542,29 @@ static int direct_page_fault(struct kvm_vcpu *vcpu, struct kvm_page_fault *fault
 	if (is_page_fault_stale(vcpu, fault, mmu_seq))
 		goto out_unlock;
 
-	if (is_tdp_mmu_fault) {
-		r = kvm_tdp_mmu_map(vcpu, fault);
+	if (kpop_ops_enabled) {
+		if (unlikely(!fault->slot)) {
+			/* mmio fault */
+			r = RET_PF_EMULATE;
+		} else  {
+			u64 gfn = fault->gfn;
+			int as_id = KPOP_FAKEROOT2ASID(vcpu->arch.mmu->root.hpa);
+
+			kvm_mmu_kpop_hugepage_adjust(vcpu, fault);
+
+			r = __kpop_mmu_map(vcpu, gfn, fault->pfn,
+					KVM_PAGES_PER_HPAGE(fault->req_level),
+					as_id, fault->exec);
+		}
 	} else {
-		r = make_mmu_pages_available(vcpu);
-		if (r)
-			goto out_unlock;
-		r = __direct_map(vcpu, fault);
+		if (is_tdp_mmu_fault) {
+			r = kvm_tdp_mmu_map(vcpu, fault);
+		} else {
+			r = make_mmu_pages_available(vcpu);
+			if (r)
+				goto out_unlock;
+			r = __direct_map(vcpu, fault);
+		}
 	}
 
 out_unlock:
@@ -6425,6 +6482,32 @@ static void __kpop_mmu_unload(struct kvm_vcpu *vcpu)
 	write_unlock(&vcpu->kvm->mmu_lock);
 }
 
+static bool __kpop_set_spte_gfn(struct kvm *kvm, struct kvm_gfn_range *range)
+{
+	u64 gfn = range->start, pfn = pte_pfn(range->pte), size = range->end - range->start;
+	union kpop_map_data data = {.size = size, .as_id = range->slot->as_id, .remap = 1};
+	long ret;
+
+	ret = kvm_hypercall4(KVM_HC_KPOP_MMU_MAP, (unsigned long)kvm, gfn, pfn, data.val);
+	if (ret)
+		pr_err("%s: fail with ret %ld\n", __func__, ret);
+
+	return false;
+}
+
+static int __kpop_mmu_map(struct kvm_vcpu *vcpu,
+		u64 gfn, u64 pfn, u64 size, int as_id, bool exec)
+{
+	union kpop_map_data data = {
+		.size = size,
+		.as_id = as_id,
+		.exec = exec,
+	};
+
+	return kvm_hypercall4(KVM_HC_KPOP_MMU_MAP,
+			kpop_arch_get_vcpu_holder(vcpu), gfn, pfn, data.val);
+}
+
 int kvm_mmu_init_vm(struct kvm *kvm)
 {
 	struct kvm_page_track_notifier_node *node = &kvm->arch.mmu_sp_tracker;
@@ -6444,6 +6527,7 @@ int kvm_mmu_init_vm(struct kvm *kvm)
 
 		kvm->mmu_ops.mmu_load = __kpop_mmu_load;
 		kvm->mmu_ops.mmu_unload = __kpop_mmu_unload;
+		kvm->mmu_ops.mmu_set_spte_gfn = __kpop_set_spte_gfn;
 		/* To be added */
 	} else {
 		kvm->mmu_ops.kpop_on = false;
