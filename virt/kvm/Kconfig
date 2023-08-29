@@ -92,3 +92,7 @@ config KVM_XFER_TO_GUEST_WORK
 
 config HAVE_KVM_PM_NOTIFIER
        bool
+
+# Allow enabling KVM manage nested guest MMU based on KPOP
+config HAVE_KVM_KPOP
+       bool
