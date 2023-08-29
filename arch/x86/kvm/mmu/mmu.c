@@ -1551,7 +1551,7 @@ static __always_inline bool kvm_handle_gfn_range(struct kvm *kvm,
 	return ret;
 }
 
-bool kvm_unmap_gfn_range(struct kvm *kvm, struct kvm_gfn_range *range)
+static bool __kvm_unmap_gfn_range(struct kvm *kvm, struct kvm_gfn_range *range)
 {
 	bool flush = false;
 
@@ -1564,7 +1564,12 @@ bool kvm_unmap_gfn_range(struct kvm *kvm, struct kvm_gfn_range *range)
 	return flush;
 }
 
-bool kvm_set_spte_gfn(struct kvm *kvm, struct kvm_gfn_range *range)
+bool kvm_unmap_gfn_range(struct kvm *kvm, struct kvm_gfn_range *range)
+{
+	return kvm->mmu_ops.mmu_unmap_gfn_range(kvm, range);
+}
+
+static bool __kvm_set_spte_gfn(struct kvm *kvm, struct kvm_gfn_range *range)
 {
 	bool flush = false;
 
@@ -1575,6 +1580,11 @@ bool kvm_set_spte_gfn(struct kvm *kvm, struct kvm_gfn_range *range)
 		flush |= kvm_tdp_mmu_set_spte_gfn(kvm, range);
 
 	return flush;
+}
+
+bool kvm_set_spte_gfn(struct kvm *kvm, struct kvm_gfn_range *range)
+{
+	return kvm->mmu_ops.mmu_set_spte_gfn(kvm, range);
 }
 
 static bool kvm_age_rmap(struct kvm *kvm, struct kvm_rmap_head *rmap_head,
@@ -1639,7 +1649,7 @@ static void rmap_add(struct kvm_vcpu *vcpu, const struct kvm_memory_slot *slot,
 	__rmap_add(vcpu->kvm, cache, slot, spte, gfn, access);
 }
 
-bool kvm_age_gfn(struct kvm *kvm, struct kvm_gfn_range *range)
+static bool __kvm_age_gfn(struct kvm *kvm, struct kvm_gfn_range *range)
 {
 	bool young = false;
 
@@ -1652,7 +1662,12 @@ bool kvm_age_gfn(struct kvm *kvm, struct kvm_gfn_range *range)
 	return young;
 }
 
-bool kvm_test_age_gfn(struct kvm *kvm, struct kvm_gfn_range *range)
+bool kvm_age_gfn(struct kvm *kvm, struct kvm_gfn_range *range)
+{
+	return kvm->mmu_ops.mmu_age_gfn(kvm, range);
+}
+
+static bool __kvm_test_age_gfn(struct kvm *kvm, struct kvm_gfn_range *range)
 {
 	bool young = false;
 
@@ -1663,6 +1678,11 @@ bool kvm_test_age_gfn(struct kvm *kvm, struct kvm_gfn_range *range)
 		young |= kvm_tdp_mmu_test_age_gfn(kvm, range);
 
 	return young;
+}
+
+bool kvm_test_age_gfn(struct kvm *kvm, struct kvm_gfn_range *range)
+{
+	return kvm->mmu_ops.mmu_test_age_gfn(kvm, range);
 }
 
 #ifdef MMU_DEBUG
@@ -5329,7 +5349,7 @@ void kvm_mmu_reset_context(struct kvm_vcpu *vcpu)
 }
 EXPORT_SYMBOL_GPL(kvm_mmu_reset_context);
 
-int kvm_mmu_load(struct kvm_vcpu *vcpu)
+static int __kvm_mmu_load(struct kvm_vcpu *vcpu)
 {
 	int r;
 
@@ -5362,7 +5382,12 @@ out:
 	return r;
 }
 
-void kvm_mmu_unload(struct kvm_vcpu *vcpu)
+int kvm_mmu_load(struct kvm_vcpu *vcpu)
+{
+	return vcpu->kvm->mmu_ops.mmu_load(vcpu);
+}
+
+static void __kvm_mmu_unload(struct kvm_vcpu *vcpu)
 {
 	struct kvm *kvm = vcpu->kvm;
 
@@ -5371,6 +5396,11 @@ void kvm_mmu_unload(struct kvm_vcpu *vcpu)
 	kvm_mmu_free_roots(kvm, &vcpu->arch.guest_mmu, KVM_MMU_ROOTS_ALL);
 	WARN_ON(VALID_PAGE(vcpu->arch.guest_mmu.root.hpa));
 	vcpu_clear_mmio_info(vcpu, MMIO_GVA_ANY);
+}
+
+void kvm_mmu_unload(struct kvm_vcpu *vcpu)
+{
+	vcpu->kvm->mmu_ops.mmu_unload(vcpu);
 }
 
 static bool is_obsolete_root(struct kvm *kvm, hpa_t root_hpa)
@@ -5946,53 +5976,7 @@ restart:
  */
 static void kvm_mmu_zap_all_fast(struct kvm *kvm)
 {
-	lockdep_assert_held(&kvm->slots_lock);
-
-	write_lock(&kvm->mmu_lock);
-	trace_kvm_mmu_zap_all_fast(kvm);
-
-	/*
-	 * Toggle mmu_valid_gen between '0' and '1'.  Because slots_lock is
-	 * held for the entire duration of zapping obsolete pages, it's
-	 * impossible for there to be multiple invalid generations associated
-	 * with *valid* shadow pages at any given time, i.e. there is exactly
-	 * one valid generation and (at most) one invalid generation.
-	 */
-	kvm->arch.mmu_valid_gen = kvm->arch.mmu_valid_gen ? 0 : 1;
-
-	/*
-	 * In order to ensure all vCPUs drop their soon-to-be invalid roots,
-	 * invalidating TDP MMU roots must be done while holding mmu_lock for
-	 * write and in the same critical section as making the reload request,
-	 * e.g. before kvm_zap_obsolete_pages() could drop mmu_lock and yield.
-	 */
-	if (is_tdp_mmu_enabled(kvm))
-		kvm_tdp_mmu_invalidate_all_roots(kvm);
-
-	/*
-	 * Notify all vcpus to reload its shadow page table and flush TLB.
-	 * Then all vcpus will switch to new shadow page table with the new
-	 * mmu_valid_gen.
-	 *
-	 * Note: we need to do this under the protection of mmu_lock,
-	 * otherwise, vcpu would purge shadow page but miss tlb flush.
-	 */
-	kvm_make_all_cpus_request(kvm, KVM_REQ_MMU_FREE_OBSOLETE_ROOTS);
-
-	kvm_zap_obsolete_pages(kvm);
-
-	write_unlock(&kvm->mmu_lock);
-
-	/*
-	 * Zap the invalidated TDP MMU roots, all SPTEs must be dropped before
-	 * returning to the caller, e.g. if the zap is in response to a memslot
-	 * deletion, mmu_notifier callbacks will be unable to reach the SPTEs
-	 * associated with the deleted memslot once the update completes, and
-	 * Deferring the zap until the final reference to the root is put would
-	 * lead to use-after-free.
-	 */
-	if (is_tdp_mmu_enabled(kvm))
-		kvm_tdp_mmu_zap_invalidated_roots(kvm);
+	kvm->mmu_ops.mmu_zap_all(kvm, true);
 }
 
 static bool kvm_has_zapped_obsolete_pages(struct kvm *kvm)
@@ -6005,6 +5989,141 @@ static void kvm_mmu_invalidate_zap_pages_in_memslot(struct kvm *kvm,
 			struct kvm_page_track_notifier_node *node)
 {
 	kvm_mmu_zap_all_fast(kvm);
+}
+
+static bool kvm_rmap_zap_gfn_range(struct kvm *kvm, gfn_t gfn_start, gfn_t gfn_end)
+{
+	const struct kvm_memory_slot *memslot;
+	struct kvm_memslots *slots;
+	struct kvm_memslot_iter iter;
+	bool flush = false;
+	gfn_t start, end;
+	int i;
+
+	if (!kvm_memslots_have_rmaps(kvm))
+		return flush;
+
+	for (i = 0; i < KVM_ADDRESS_SPACE_NUM; i++) {
+		slots = __kvm_memslots(kvm, i);
+
+		kvm_for_each_memslot_in_gfn_range(&iter, slots, gfn_start, gfn_end) {
+			memslot = iter.slot;
+			start = max(gfn_start, memslot->base_gfn);
+			end = min(gfn_end, memslot->base_gfn + memslot->npages);
+			if (WARN_ON_ONCE(start >= end))
+				continue;
+
+			flush = slot_handle_level_range(kvm, memslot, __kvm_zap_rmap,
+							PG_LEVEL_4K, KVM_MAX_HUGEPAGE_LEVEL,
+							start, end - 1, true, flush);
+		}
+	}
+
+	return flush;
+}
+
+static void __kvm_zap_gfn_range(struct kvm *kvm, gfn_t gfn_start, gfn_t gfn_end)
+{
+	bool flush;
+	int i;
+
+	if (WARN_ON_ONCE(gfn_end <= gfn_start))
+		return;
+
+	write_lock(&kvm->mmu_lock);
+
+	kvm_mmu_invalidate_begin(kvm, 0, -1ul);
+
+	flush = kvm_rmap_zap_gfn_range(kvm, gfn_start, gfn_end);
+
+	if (is_tdp_mmu_enabled(kvm)) {
+		for (i = 0; i < KVM_ADDRESS_SPACE_NUM; i++)
+			flush = kvm_tdp_mmu_zap_leafs(kvm, i, gfn_start,
+						      gfn_end, true, flush);
+	}
+
+	if (flush)
+		kvm_flush_remote_tlbs_with_address(kvm, gfn_start,
+						   gfn_end - gfn_start);
+
+	kvm_mmu_invalidate_end(kvm, 0, -1ul);
+
+	write_unlock(&kvm->mmu_lock);
+}
+
+static void __kvm_mmu_zap_all(struct kvm *kvm, bool fast)
+{
+	if (fast) {
+		lockdep_assert_held(&kvm->slots_lock);
+
+		write_lock(&kvm->mmu_lock);
+		trace_kvm_mmu_zap_all_fast(kvm);
+
+		/*
+		 * Toggle mmu_valid_gen between '0' and '1'.  Because slots_lock is
+		 * held for the entire duration of zapping obsolete pages, it's
+		 * impossible for there to be multiple invalid generations associated
+		 * with *valid* shadow pages at any given time, i.e. there is exactly
+		 * one valid generation and (at most) one invalid generation.
+		 */
+		kvm->arch.mmu_valid_gen = kvm->arch.mmu_valid_gen ? 0 : 1;
+
+		/*
+		 * In order to ensure all vCPUs drop their soon-to-be invalid roots,
+		 * invalidating TDP MMU roots must be done while holding mmu_lock for
+		 * write and in the same critical section as making the reload request,
+		 * e.g. before kvm_zap_obsolete_pages() could drop mmu_lock and yield.
+		 */
+		if (is_tdp_mmu_enabled(kvm))
+			kvm_tdp_mmu_invalidate_all_roots(kvm);
+
+		/*
+		 * Notify all vcpus to reload its shadow page table and flush TLB.
+		 * Then all vcpus will switch to new shadow page table with the new
+		 * mmu_valid_gen.
+		 *
+		 * Note: we need to do this under the protection of mmu_lock,
+		 * otherwise, vcpu would purge shadow page but miss tlb flush.
+		 */
+		kvm_make_all_cpus_request(kvm, KVM_REQ_MMU_FREE_OBSOLETE_ROOTS);
+
+		kvm_zap_obsolete_pages(kvm);
+
+		write_unlock(&kvm->mmu_lock);
+
+		/*
+		 * Zap the invalidated TDP MMU roots, all SPTEs must be dropped before
+		 * returning to the caller, e.g. if the zap is in response to a memslot
+		 * deletion, mmu_notifier callbacks will be unable to reach the SPTEs
+		 * associated with the deleted memslot once the update completes, and
+		 * Deferring the zap until the final reference to the root is put would
+		 * lead to use-after-free.
+		 */
+		if (is_tdp_mmu_enabled(kvm))
+			kvm_tdp_mmu_zap_invalidated_roots(kvm);
+	} else {
+		struct kvm_mmu_page *sp, *node;
+		LIST_HEAD(invalid_list);
+		int ign;
+
+		write_lock(&kvm->mmu_lock);
+restart:
+		list_for_each_entry_safe(sp, node, &kvm->arch.active_mmu_pages, link) {
+			if (WARN_ON(sp->role.invalid))
+				continue;
+			if (__kvm_mmu_prepare_zap_page(kvm, sp, &invalid_list, &ign))
+				goto restart;
+			if (cond_resched_rwlock_write(&kvm->mmu_lock))
+				goto restart;
+		}
+
+		kvm_mmu_commit_zap_page(kvm, &invalid_list);
+
+		if (is_tdp_mmu_enabled(kvm))
+			kvm_tdp_mmu_zap_all(kvm);
+
+		write_unlock(&kvm->mmu_lock);
+	}
 }
 
 int kvm_mmu_init_vm(struct kvm *kvm)
@@ -6020,6 +6139,21 @@ int kvm_mmu_init_vm(struct kvm *kvm)
 	r = kvm_mmu_init_tdp_mmu(kvm);
 	if (r < 0)
 		return r;
+
+	if (is_tdp_mmu_enabled(kvm) && kvm_para_has_feature(KVM_FEATURE_KPOP)) {
+		kvm->mmu_ops.kpop_on = true;
+		/* To be added */
+	} else {
+		kvm->mmu_ops.kpop_on = false;
+		kvm->mmu_ops.mmu_load = __kvm_mmu_load;
+		kvm->mmu_ops.mmu_unload = __kvm_mmu_unload;
+		kvm->mmu_ops.mmu_set_spte_gfn = __kvm_set_spte_gfn;
+		kvm->mmu_ops.mmu_unmap_gfn_range = __kvm_unmap_gfn_range;
+		kvm->mmu_ops.mmu_zap_gfn_range = __kvm_zap_gfn_range;
+		kvm->mmu_ops.mmu_zap_all = __kvm_mmu_zap_all;
+		kvm->mmu_ops.mmu_age_gfn = __kvm_age_gfn;
+		kvm->mmu_ops.mmu_test_age_gfn = __kvm_test_age_gfn;
+	}
 
 	node->track_write = kvm_mmu_pte_write;
 	node->track_flush_slot = kvm_mmu_invalidate_zap_pages_in_memslot;
@@ -6054,68 +6188,13 @@ void kvm_mmu_uninit_vm(struct kvm *kvm)
 	mmu_free_vm_memory_caches(kvm);
 }
 
-static bool kvm_rmap_zap_gfn_range(struct kvm *kvm, gfn_t gfn_start, gfn_t gfn_end)
-{
-	const struct kvm_memory_slot *memslot;
-	struct kvm_memslots *slots;
-	struct kvm_memslot_iter iter;
-	bool flush = false;
-	gfn_t start, end;
-	int i;
-
-	if (!kvm_memslots_have_rmaps(kvm))
-		return flush;
-
-	for (i = 0; i < KVM_ADDRESS_SPACE_NUM; i++) {
-		slots = __kvm_memslots(kvm, i);
-
-		kvm_for_each_memslot_in_gfn_range(&iter, slots, gfn_start, gfn_end) {
-			memslot = iter.slot;
-			start = max(gfn_start, memslot->base_gfn);
-			end = min(gfn_end, memslot->base_gfn + memslot->npages);
-			if (WARN_ON_ONCE(start >= end))
-				continue;
-
-			flush = slot_handle_level_range(kvm, memslot, __kvm_zap_rmap,
-							PG_LEVEL_4K, KVM_MAX_HUGEPAGE_LEVEL,
-							start, end - 1, true, flush);
-		}
-	}
-
-	return flush;
-}
-
 /*
  * Invalidate (zap) SPTEs that cover GFNs from gfn_start and up to gfn_end
  * (not including it)
  */
 void kvm_zap_gfn_range(struct kvm *kvm, gfn_t gfn_start, gfn_t gfn_end)
 {
-	bool flush;
-	int i;
-
-	if (WARN_ON_ONCE(gfn_end <= gfn_start))
-		return;
-
-	write_lock(&kvm->mmu_lock);
-
-	kvm_mmu_invalidate_begin(kvm, 0, -1ul);
-
-	flush = kvm_rmap_zap_gfn_range(kvm, gfn_start, gfn_end);
-
-	if (is_tdp_mmu_enabled(kvm)) {
-		for (i = 0; i < KVM_ADDRESS_SPACE_NUM; i++)
-			flush = kvm_tdp_mmu_zap_leafs(kvm, i, gfn_start,
-						      gfn_end, true, flush);
-	}
-
-	if (flush)
-		kvm_flush_remote_tlbs_with_address(kvm, gfn_start,
-						   gfn_end - gfn_start);
-
-	kvm_mmu_invalidate_end(kvm, 0, -1ul);
-
-	write_unlock(&kvm->mmu_lock);
+	kvm->mmu_ops.mmu_zap_gfn_range(kvm, gfn_start, gfn_end);
 }
 
 static bool slot_rmap_write_protect(struct kvm *kvm,
@@ -6536,27 +6615,7 @@ void kvm_mmu_slot_leaf_clear_dirty(struct kvm *kvm,
 
 void kvm_mmu_zap_all(struct kvm *kvm)
 {
-	struct kvm_mmu_page *sp, *node;
-	LIST_HEAD(invalid_list);
-	int ign;
-
-	write_lock(&kvm->mmu_lock);
-restart:
-	list_for_each_entry_safe(sp, node, &kvm->arch.active_mmu_pages, link) {
-		if (WARN_ON(sp->role.invalid))
-			continue;
-		if (__kvm_mmu_prepare_zap_page(kvm, sp, &invalid_list, &ign))
-			goto restart;
-		if (cond_resched_rwlock_write(&kvm->mmu_lock))
-			goto restart;
-	}
-
-	kvm_mmu_commit_zap_page(kvm, &invalid_list);
-
-	if (is_tdp_mmu_enabled(kvm))
-		kvm_tdp_mmu_zap_all(kvm);
-
-	write_unlock(&kvm->mmu_lock);
+	kvm->mmu_ops.mmu_zap_all(kvm, false);
 }
 
 void kvm_mmu_invalidate_mmio_sptes(struct kvm *kvm, u64 gen)
