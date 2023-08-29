@@ -780,6 +780,23 @@ struct kvm {
 	struct hlist_head irq_ack_notifier_list;
 #endif
 
+	struct {
+		bool kpop_on;
+
+		int (*mmu_load)(struct kvm_vcpu *vcpu);
+		void (*mmu_unload)(struct kvm_vcpu *vcpu);
+
+		bool (*mmu_set_spte_gfn)(struct kvm *kvm, struct kvm_gfn_range *range);
+		bool (*mmu_unmap_gfn_range)(struct kvm *kvm, struct kvm_gfn_range *range);
+		void (*mmu_zap_gfn_range)(struct kvm *kvm, gfn_t gfn_start, gfn_t gfn_end);
+		void (*mmu_zap_all)(struct kvm *kvm, bool fast);
+
+		bool (*mmu_age_gfn)(struct kvm *kvm, struct kvm_gfn_range *range);
+		bool (*mmu_test_age_gfn)(struct kvm *kvm, struct kvm_gfn_range *range);
+
+		/*TODO: no hook for page track, dirty log yet*/
+	} mmu_ops;
+
 #if defined(CONFIG_MMU_NOTIFIER) && defined(KVM_ARCH_WANT_MMU_NOTIFIER)
 	struct mmu_notifier mmu_notifier;
 	unsigned long mmu_invalidate_seq;
