@@ -1111,7 +1111,7 @@ static int tdp_mmu_map_handle_target_level(struct kvm_vcpu *vcpu,
 	else
 		wrprot = make_spte(vcpu, sp, fault->slot, ACC_ALL, iter->gfn,
 					 fault->pfn, iter->old_spte, fault->prefetch, true,
-					 fault->map_writable, &new_spte);
+					 fault->map_writable, &new_spte, fault->kpop);
 
 	if (new_spte == iter->old_spte)
 		ret = RET_PF_SPURIOUS;
@@ -1186,11 +1186,16 @@ static int tdp_mmu_split_huge_page(struct kvm *kvm, struct tdp_iter *iter,
  */
 int kvm_tdp_mmu_map(struct kvm_vcpu *vcpu, struct kvm_page_fault *fault)
 {
-	struct kvm_mmu *mmu = vcpu->arch.mmu;
+	struct kvm_mmu *mmu;
 	struct kvm *kvm = vcpu->kvm;
 	struct tdp_iter iter;
 	struct kvm_mmu_page *sp;
 	int ret = RET_PF_RETRY;
+
+	if (fault->kpop)
+		mmu = &vcpu->arch.guest_kpop_mmu;
+	else
+		mmu = vcpu->arch.mmu;
 
 	kvm_mmu_hugepage_adjust(vcpu, fault);
 
@@ -1278,6 +1283,8 @@ typedef bool (*tdp_handler_t)(struct kvm *kvm, struct tdp_iter *iter,
 
 static __always_inline bool kvm_tdp_mmu_handle_gfn(struct kvm *kvm,
 						   struct kvm_gfn_range *range,
+						   struct list_head *head,
+						   u64 kvm_id,
 						   tdp_handler_t handler)
 {
 	struct kvm_mmu_page *root;
@@ -1288,13 +1295,15 @@ static __always_inline bool kvm_tdp_mmu_handle_gfn(struct kvm *kvm,
 	 * Don't support rescheduling, none of the MMU notifiers that funnel
 	 * into this helper allow blocking; it'd be dead, wasteful code.
 	 */
-	for_each_tdp_mmu_root(kvm, &kvm->arch.tdp_mmu_roots, root, range->slot->as_id) {
-		rcu_read_lock();
+	for_each_tdp_mmu_root(kvm, head, root, range->slot->as_id) {
+		if (match_kpop_kvm_id(root, kvm_id)) {
+			rcu_read_lock();
 
-		tdp_root_for_each_leaf_pte(iter, root, range->start, range->end)
-			ret |= handler(kvm, &iter, range);
+			tdp_root_for_each_leaf_pte(iter, root, range->start, range->end)
+				ret |= handler(kvm, &iter, range);
 
-		rcu_read_unlock();
+			rcu_read_unlock();
+		}
 	}
 
 	return ret;
@@ -1335,7 +1344,8 @@ static bool age_gfn_range(struct kvm *kvm, struct tdp_iter *iter,
 
 bool kvm_tdp_mmu_age_gfn_range(struct kvm *kvm, struct kvm_gfn_range *range)
 {
-	return kvm_tdp_mmu_handle_gfn(kvm, range, age_gfn_range);
+	return kvm_tdp_mmu_handle_gfn(kvm, range,
+			&kvm->arch.tdp_mmu_roots, ANY_KPOP_KVMID, age_gfn_range);
 }
 
 static bool test_age_gfn(struct kvm *kvm, struct tdp_iter *iter,
@@ -1346,7 +1356,8 @@ static bool test_age_gfn(struct kvm *kvm, struct tdp_iter *iter,
 
 bool kvm_tdp_mmu_test_age_gfn(struct kvm *kvm, struct kvm_gfn_range *range)
 {
-	return kvm_tdp_mmu_handle_gfn(kvm, range, test_age_gfn);
+	return kvm_tdp_mmu_handle_gfn(kvm, range,
+			&kvm->arch.tdp_mmu_roots, ANY_KPOP_KVMID, test_age_gfn);
 }
 
 static bool set_spte_gfn(struct kvm *kvm, struct tdp_iter *iter,
@@ -1392,7 +1403,20 @@ bool kvm_tdp_mmu_set_spte_gfn(struct kvm *kvm, struct kvm_gfn_range *range)
 	 * target SPTE _must_ be a leaf SPTE, i.e. cannot result in freeing a
 	 * shadow page.  See the WARN on pfn_changed in __handle_changed_spte().
 	 */
-	return kvm_tdp_mmu_handle_gfn(kvm, range, set_spte_gfn);
+	return kvm_tdp_mmu_handle_gfn(kvm, range,
+			&kvm->arch.tdp_mmu_roots, ANY_KPOP_KVMID, set_spte_gfn);
+}
+
+bool kvm_tdp_kpop_set_spte_gfn(struct kvm *kvm,
+		struct kvm_gfn_range *range, u64 kvm_id)
+{
+	/*
+	 * No need to handle the remote TLB flush under RCU protection, the
+	 * target SPTE _must_ be a leaf SPTE, i.e. cannot result in freeing a
+	 * shadow page.  See the WARN on pfn_changed in __handle_changed_spte().
+	 */
+	return kvm_tdp_mmu_handle_gfn(kvm, range,
+			&kvm->arch.kpop_mmu_roots, kvm_id, set_spte_gfn);
 }
 
 /*

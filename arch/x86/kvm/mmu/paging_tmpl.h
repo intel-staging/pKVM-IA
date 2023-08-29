@@ -1081,7 +1081,7 @@ static int FNAME(sync_page)(struct kvm_vcpu *vcpu, struct kvm_mmu_page *sp)
 		slot = kvm_vcpu_gfn_to_memslot(vcpu, gfn);
 		make_spte(vcpu, sp, slot, pte_access, gfn,
 			  spte_to_pfn(spte), spte, true, false,
-			  host_writable, &spte);
+			  host_writable, &spte, false);
 
 		flush |= mmu_spte_update(sptep, spte);
 	}

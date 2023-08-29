@@ -2881,7 +2881,7 @@ static int mmu_set_spte(struct kvm_vcpu *vcpu, struct kvm_memory_slot *slot,
 	}
 
 	wrprot = make_spte(vcpu, sp, slot, pte_access, gfn, pfn, *sptep, prefetch,
-			   true, host_writable, &spte);
+			   true, host_writable, &spte, false);
 
 	if (*sptep == spte) {
 		ret = RET_PF_SPURIOUS;
@@ -3106,6 +3106,7 @@ void kvm_mmu_hugepage_adjust(struct kvm_vcpu *vcpu, struct kvm_page_fault *fault
 {
 	struct kvm_memory_slot *slot = fault->slot;
 	kvm_pfn_t mask;
+	gfn_t l1_gfn;
 
 	fault->huge_page_disallowed = fault->exec && fault->nx_huge_page_workaround_enabled;
 
@@ -3122,8 +3123,12 @@ void kvm_mmu_hugepage_adjust(struct kvm_vcpu *vcpu, struct kvm_page_fault *fault
 	 * Enforce the iTLB multihit workaround after capturing the requested
 	 * level, which will be used to do precise, accurate accounting.
 	 */
+	if (fault->kpop)
+		l1_gfn = fault->addr >> PAGE_SHIFT;
+	else
+		l1_gfn = fault->gfn;
 	fault->req_level = kvm_mmu_max_mapping_level(vcpu->kvm, slot,
-						     fault->gfn, fault->max_level);
+			l1_gfn, fault->max_level);
 	if (fault->req_level == PG_LEVEL_4K || fault->huge_page_disallowed)
 		return;
 
@@ -3851,6 +3856,132 @@ unsigned long kpop_mmu_load_unload(struct kvm_vcpu *vcpu,
 	}
 
 	return -EINVAL;
+}
+
+static void kpop_mmu_do_set_spte_gfn(struct kvm *kvm, kvm_pfn_t pfn,
+		gfn_t start, gfn_t end, u16 as_id, u64 kvm_id)
+{
+	struct kvm_memory_slot tmp_slot = {.as_id = as_id,};
+	struct kvm_gfn_range range = {
+		.start = start,
+		.end = end,
+		.pte = pfn_pte(pfn, PAGE_KERNEL),
+		.slot = &tmp_slot,
+	};
+	bool flush;
+
+	flush = kvm_tdp_kpop_set_spte_gfn(kvm, &range, kvm_id);
+	if (flush)
+		kvm_make_all_cpus_request(kvm, KVM_REQ_KPOP_MMU_RELOAD);
+}
+
+unsigned long kpop_mmu_map(struct kvm_vcpu *vcpu, u64 guest_id,
+		u64 guest_gfn, u64 guest_pfn, union kpop_map_data data)
+{
+	unsigned long pfn, r = 0;
+	bool writeable;
+	struct kvm_memory_slot *slot = gfn_to_memslot(vcpu->kvm, guest_pfn);
+
+	WARN_ON(!is_tdp_mmu_enabled(vcpu->kvm));
+	WARN_ON(!slot);
+
+	pfn = __gfn_to_pfn_memslot(slot, guest_pfn, false, false, NULL,
+			true, &writeable, NULL);
+	if (is_error_noslot_pfn(pfn) || !pfn_valid(pfn)) {
+		pr_err("%s: ERR: guest_pfn 0x%llx is invalid\n", __func__, guest_pfn);
+		return data.remap ? RET_PF_INVALID : -EINVAL;
+	}
+
+	if (likely(!data.remap)) {
+		/*
+		 * for page fault triggered mapping
+		 *  - fault.addr is used to store l1_gpa (l1_pfn >> PAGE_SHIFT)
+		 *  - fault.exec is data.exec from L1 hypercall
+		 *  - fault.gfn is l2_gfn
+		 *  - fault.pfn is pfn which fetch by above based on l1_pfn
+		 *  - fault.slot is l1 memslot which fetch by above based on
+		 *    l1_pfn
+		 *  - fault.max_level is limited by data.size from L1 hypercall
+		 *
+		 *  the kvm_tdp_mmu_map will do kvm_mmu_hugepage_adjust based on
+		 *  {l1_gfn, slot, max_level} then finaly do mapping of l2_gfn to
+		 *  pfn for L2 guest
+		 */
+		struct kvm_page_fault fault = {
+			.exec = data.exec,
+			.nx_huge_page_workaround_enabled =
+				is_nx_huge_page_enabled(vcpu->kvm),
+			.gfn = guest_gfn,
+			.pfn = pfn,
+			.slot = slot,
+			.req_level = PG_LEVEL_4K,
+			.goal_level = PG_LEVEL_4K,
+			.map_writable = writeable,
+			.kpop = true,
+		};
+		int max_level = PG_LEVEL_4K;
+		kvm_pfn_t mask;
+		struct kpop_guest_mmu *gmmu;
+
+		while (max_level <= KVM_MAX_HUGEPAGE_LEVEL) {
+			if (KVM_PAGES_PER_HPAGE(max_level) == data.size)
+				break;
+			max_level++;
+		}
+
+		if (max_level > KVM_MAX_HUGEPAGE_LEVEL) {
+			pr_err("%s: ERR: mapping size 0x%x is not align with level\n",
+					__func__, data.size);
+			return RET_PF_INVALID;
+		}
+
+		fault.max_level = max_level;
+		mask = KVM_PAGES_PER_HPAGE(max_level) - 1;
+		if ((guest_gfn & mask) != (guest_pfn & mask)) {
+			pr_err("%s: ERR: guest_gfn 0x%llx is not align with guest_pfn 0x%llx\n",
+					__func__, guest_gfn, guest_pfn);
+			return RET_PF_INVALID;
+		}
+
+		gmmu = kpop_find_guest_mmu(vcpu->kvm, guest_id, data.as_id);
+		if (!gmmu) {
+			pr_err("%s: ERR: cannot find guest mmu for vcpu_holder 0x%llx, as_id 0x%x",
+					__func__, guest_id, data.as_id);
+			return RET_PF_INVALID;
+		}
+
+		r = mmu_topup_memory_caches(vcpu, false);
+		if (r)
+			return r;
+
+		read_lock(&vcpu->kvm->mmu_lock);
+		if (kvm_test_request(KVM_REQ_KPOP_MMU_RELOAD, vcpu))
+			r = RET_PF_RETRY;
+		else {
+			hpa_t cur_root_hpa = vcpu->arch.guest_kpop_mmu.root.hpa;
+
+			/*
+			 * L1 KVM should do MMU_MAP hypercall on the same vcpu page
+			 * fault happen, but L0 should allow L1 not following it.
+			 * If L1 not following, L0 just tmply replace guest_kpop_mmu's
+			 * root_hpa to target root_hpa.
+			 */
+			if (unlikely(cur_root_hpa != gmmu->root_hpa))
+				vcpu->arch.guest_kpop_mmu.root.hpa = gmmu->root_hpa;
+			r = kvm_tdp_mmu_map(vcpu, &fault);
+			if (unlikely(cur_root_hpa != gmmu->root_hpa))
+				vcpu->arch.guest_kpop_mmu.root.hpa = cur_root_hpa;
+		}
+		read_unlock(&vcpu->kvm->mmu_lock);
+	} else {
+		/* for mmu notifier change_pte */
+		write_lock(&vcpu->kvm->mmu_lock);
+		kpop_mmu_do_set_spte_gfn(vcpu->kvm, pfn,
+				guest_gfn, guest_gfn + data.size, data.as_id, guest_id);
+		write_unlock(&vcpu->kvm->mmu_lock);
+	}
+
+	return r;
 }
 
 static int mmu_first_shadow_root_alloc(struct kvm *kvm)

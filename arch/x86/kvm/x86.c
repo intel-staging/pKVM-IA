@@ -9694,6 +9694,14 @@ int kvm_emulate_hypercall(struct kvm_vcpu *vcpu)
 		ret = kpop_mmu_load_unload(vcpu, vcpu_holder, kvm_id, as_id, load);
 		break;
 	}
+	case KVM_HC_KPOP_MMU_MAP: {
+		u64 guest_id = a0, guest_gfn = a1, guest_pfn = a2;
+		union kpop_map_data data;
+
+		data.val = a3;
+		ret = kpop_mmu_map(vcpu, guest_id, guest_gfn, guest_pfn, data);
+		break;
+	}
 	default:
 		ret = -KVM_ENOSYS;
 		break;
@@ -10395,6 +10403,9 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
 
 		if (kvm_check_request(KVM_REQ_UPDATE_CPU_DIRTY_LOGGING, vcpu))
 			static_call(kvm_x86_update_cpu_dirty_logging)(vcpu);
+
+		if (kvm_check_request(KVM_REQ_KPOP_MMU_RELOAD, vcpu))
+			vcpu->arch.guest_kpop_mmu.root.hpa = INVALID_PAGE;
 	}
 
 	if (kvm_check_request(KVM_REQ_EVENT, vcpu) || req_int_win ||

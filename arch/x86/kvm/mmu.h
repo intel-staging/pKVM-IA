@@ -136,6 +136,8 @@ union kpop_map_data {
 
 unsigned long kpop_mmu_load_unload(struct kvm_vcpu *vcpu,
 		u64 vcpu_holder, u64 kvm_id, u64 as_id, bool load);
+unsigned long kpop_mmu_map(struct kvm_vcpu *vcpu, u64 guest_id,
+		u64 guest_gfn, u64 guest_pfn, union kpop_map_data data);
 bool kpop_is_root_hpa_obsolete_in_guest_mmu(struct kvm *kvm,
 		u64 vcpu_holder, u64 as_id, hpa_t root_hpa);
 
