@@ -9687,6 +9687,13 @@ int kvm_emulate_hypercall(struct kvm_vcpu *vcpu)
 		vcpu->arch.complete_userspace_io = complete_hypercall_exit;
 		return 0;
 	}
+	case KVM_HC_KPOP_MMU_LOAD_UNLOAD: {
+		u64 vcpu_holder = a0, kvm_id = a1, as_id = a2;
+		bool load = a3;
+
+		ret = kpop_mmu_load_unload(vcpu, vcpu_holder, kvm_id, as_id, load);
+		break;
+	}
 	default:
 		ret = -KVM_ENOSYS;
 		break;

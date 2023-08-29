@@ -3650,6 +3650,37 @@ out_unlock:
 	return r;
 }
 
+static int kpop_alloc_guest_mmu(struct kvm_vcpu *vcpu,
+		u64 vcpu_holder, u64 kvm_id, u64 as_id)
+{
+	/* To be added, allocate guest mmu */
+	return -ENOTSUPP;
+}
+
+static void kpop_put_guest_mmu(struct kvm_vcpu *vcpu,
+		u64 vcpu_holder, u64 kvm_id, u64 as_id)
+{
+	/* To be added, put guest mmu */
+}
+
+unsigned long kpop_mmu_load_unload(struct kvm_vcpu *vcpu,
+		u64 vcpu_holder, u64 kvm_id, u64 as_id, bool load)
+{
+	WARN_ON(!is_tdp_mmu_enabled(vcpu->kvm));
+
+	if (nested_kpop_on()) {
+		if (load)
+			return kpop_alloc_guest_mmu(vcpu, vcpu_holder, kvm_id, as_id);
+		else {
+			kpop_put_guest_mmu(vcpu, vcpu_holder, kvm_id, as_id);
+
+			return 0;
+		}
+	}
+
+	return -EINVAL;
+}
+
 static int mmu_first_shadow_root_alloc(struct kvm *kvm)
 {
 	struct kvm_memslots *slots;
