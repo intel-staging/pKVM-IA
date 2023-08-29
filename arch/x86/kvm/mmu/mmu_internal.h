@@ -134,6 +134,8 @@ struct kvm_mmu_page {
 #endif
 };
 
+#define KPOP_ALL_AS_ID 0xffUL
+
 extern struct kmem_cache *mmu_page_header_cache;
 
 static inline int kvm_mmu_role_as_id(union kvm_mmu_page_role role)

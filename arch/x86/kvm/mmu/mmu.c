@@ -6639,6 +6639,58 @@ static int __kpop_mmu_map(struct kvm_vcpu *vcpu,
 			kpop_arch_get_vcpu_holder(vcpu), gfn, pfn, data.val);
 }
 
+static void __kpop_mmu_unmap(struct kvm *kvm, u64 gfn, u64 size, u64 as_id, bool fast)
+{
+	union kpop_map_data data = {
+		.size = size,
+		.as_id = as_id,
+		.fast = fast,
+	};
+	long ret = kvm_hypercall3(KVM_HC_KPOP_MMU_UNMAP, (unsigned long)kvm, gfn, data.val);
+
+	if (ret)
+		pr_err("%s: fail with ret %ld\n", __func__, ret);
+}
+
+static void __kpop_mmu_complete_fast_zap(struct kvm *kvm)
+{
+	kvm_hypercall0(KVM_HC_KPOP_COMP_FAST_ZAP);
+}
+
+static bool __kpop_unmap_gfn_range(struct kvm *kvm, struct kvm_gfn_range *range)
+{
+	__kpop_mmu_unmap(kvm, range->start, range->end - range->start,
+			range->slot->as_id, false);
+
+	return false;
+}
+
+static void __kpop_zap_gfn_range(struct kvm *kvm, gfn_t gfn_start, gfn_t gfn_end)
+{
+	if (WARN_ON_ONCE(gfn_end <= gfn_start))
+		return;
+
+	write_lock(&kvm->mmu_lock);
+
+	kvm_mmu_invalidate_begin(kvm, 0, -1ul);
+
+	__kpop_mmu_unmap(kvm, gfn_start, gfn_end - gfn_start, KPOP_ALL_AS_ID, false);
+
+	kvm_mmu_invalidate_end(kvm, 0, -1ul);
+
+	write_unlock(&kvm->mmu_lock);
+}
+
+static void __kpop_mmu_zap_all(struct kvm *kvm, bool fast)
+{
+	write_lock(&kvm->mmu_lock);
+	__kpop_mmu_unmap(kvm, 0, UINT_MAX, KPOP_ALL_AS_ID, fast);
+	write_unlock(&kvm->mmu_lock);
+
+	if (fast)
+		__kpop_mmu_complete_fast_zap(kvm);
+}
+
 int kvm_mmu_init_vm(struct kvm *kvm)
 {
 	struct kvm_page_track_notifier_node *node = &kvm->arch.mmu_sp_tracker;
@@ -6659,6 +6711,9 @@ int kvm_mmu_init_vm(struct kvm *kvm)
 		kvm->mmu_ops.mmu_load = __kpop_mmu_load;
 		kvm->mmu_ops.mmu_unload = __kpop_mmu_unload;
 		kvm->mmu_ops.mmu_set_spte_gfn = __kpop_set_spte_gfn;
+		kvm->mmu_ops.mmu_unmap_gfn_range = __kpop_unmap_gfn_range;
+		kvm->mmu_ops.mmu_zap_gfn_range = __kpop_zap_gfn_range;
+		kvm->mmu_ops.mmu_zap_all = __kpop_mmu_zap_all;
 		/* To be added */
 	} else {
 		kvm->mmu_ops.kpop_on = false;

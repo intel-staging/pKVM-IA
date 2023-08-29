@@ -128,9 +128,10 @@ union kpop_map_data {
 	struct {
 		u32 size;
 		unsigned as_id:16;
-		unsigned invalid:14;
+		unsigned invalid:13;
 		unsigned exec:1;
 		unsigned remap:1;
+		unsigned fast:1;
 	};
 };
 

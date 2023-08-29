@@ -32,6 +32,8 @@
 #define KVM_HC_MAP_GPA_RANGE		12
 #define KVM_HC_KPOP_MMU_LOAD_UNLOAD	13
 #define KVM_HC_KPOP_MMU_MAP		14
+#define KVM_HC_KPOP_MMU_UNMAP		15
+#define KVM_HC_KPOP_COMP_FAST_ZAP	16
 
 /*
  * hypercalls use architecture specific
