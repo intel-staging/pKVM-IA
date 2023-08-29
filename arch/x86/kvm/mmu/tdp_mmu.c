@@ -1016,18 +1016,35 @@ static bool tdp_mmu_zap_leafs(struct kvm *kvm, struct kvm_mmu_page *root,
  * true if a TLB flush is needed before releasing the MMU lock, i.e. if one or
  * more SPTEs were zapped since the MMU lock was last acquired.
  */
-bool kvm_tdp_mmu_zap_leafs(struct kvm *kvm, int as_id, gfn_t start, gfn_t end,
-			   bool can_yield, bool flush)
+static bool __kvm_tdp_mmu_zap_leafs(struct kvm *kvm, int as_id,
+		gfn_t start, gfn_t end, bool can_yield, bool flush,
+		struct list_head *head, u64 kvm_id)
 {
 	struct kvm_mmu_page *root;
 
-	for_each_tdp_mmu_root_yield_safe(kvm, &kvm->arch.tdp_mmu_roots, root, as_id)
-		flush = tdp_mmu_zap_leafs(kvm, root, start, end, can_yield, flush);
+	for_each_tdp_mmu_root_yield_safe(kvm, head, root, as_id)
+		if (match_kpop_kvm_id(root, kvm_id))
+			flush = tdp_mmu_zap_leafs(kvm, root, start, end, can_yield, flush);
 
 	return flush;
 }
 
-void kvm_tdp_mmu_zap_all(struct kvm *kvm)
+bool kvm_tdp_mmu_zap_leafs(struct kvm *kvm, int as_id, gfn_t start,
+		gfn_t end, bool can_yield, bool flush)
+{
+	return __kvm_tdp_mmu_zap_leafs(kvm, as_id, start, end, can_yield,
+			flush, &kvm->arch.tdp_mmu_roots, ANY_KPOP_KVMID);
+}
+
+bool kvm_tdp_mmu_kpop_zap_leafs(struct kvm *kvm, int as_id, gfn_t start,
+		gfn_t end, bool can_yield, bool flush, u64 kvm_id)
+{
+	return __kvm_tdp_mmu_zap_leafs(kvm, as_id, start, end, can_yield,
+			flush, &kvm->arch.kpop_mmu_roots, kvm_id);
+}
+
+static void __kvm_tdp_mmu_zap_all(struct kvm *kvm,
+		struct list_head *head, u64 kvm_id)
 {
 	struct kvm_mmu_page *root;
 	int i;
@@ -1045,9 +1062,20 @@ void kvm_tdp_mmu_zap_all(struct kvm *kvm)
 	 * KVM_RUN is unreachable, i.e. no vCPUs will ever service the request.
 	 */
 	for (i = 0; i < KVM_ADDRESS_SPACE_NUM; i++) {
-		for_each_tdp_mmu_root_yield_safe(kvm, &kvm->arch.tdp_mmu_roots, root, i)
-			tdp_mmu_zap_root(kvm, root, false);
+		for_each_tdp_mmu_root_yield_safe(kvm, head, root, i)
+			if (match_kpop_kvm_id(root, kvm_id))
+				tdp_mmu_zap_root(kvm, root, false);
 	}
+}
+
+void kvm_tdp_mmu_zap_all(struct kvm *kvm)
+{
+	__kvm_tdp_mmu_zap_all(kvm, &kvm->arch.tdp_mmu_roots, ANY_KPOP_KVMID);
+}
+
+void kvm_tdp_mmu_kpop_zap_all(struct kvm *kvm, u64 kvm_id)
+{
+	__kvm_tdp_mmu_zap_all(kvm, &kvm->arch.kpop_mmu_roots, kvm_id);
 }
 
 /*
@@ -1076,18 +1104,31 @@ void kvm_tdp_mmu_zap_invalidated_roots(struct kvm *kvm)
  * This has essentially the same effect for the TDP MMU
  * as updating mmu_valid_gen does for the shadow MMU.
  */
-void kvm_tdp_mmu_invalidate_all_roots(struct kvm *kvm)
+static void __kvm_tdp_mmu_invalidate_all_roots(struct kvm *kvm,
+		struct list_head *head, u64 kvm_id)
 {
 	struct kvm_mmu_page *root;
 
 	lockdep_assert_held_write(&kvm->mmu_lock);
-	list_for_each_entry(root, &kvm->arch.tdp_mmu_roots, link) {
+	list_for_each_entry(root, head, link) {
 		if (!root->role.invalid &&
+		    match_kpop_kvm_id(root, kvm_id) &&
 		    !WARN_ON_ONCE(!kvm_tdp_mmu_get_root(root))) {
 			root->role.invalid = true;
 			tdp_mmu_schedule_zap_root(kvm, root);
 		}
 	}
+}
+
+void kvm_tdp_mmu_invalidate_all_roots(struct kvm *kvm)
+{
+	__kvm_tdp_mmu_invalidate_all_roots(kvm, &kvm->arch.tdp_mmu_roots, ANY_KPOP_KVMID);
+}
+
+void kvm_tdp_mmu_kpop_invalidate_all_roots(struct kvm *kvm, u64 kvm_id)
+{
+	__kvm_tdp_mmu_invalidate_all_roots(kvm,
+			&kvm->arch.kpop_mmu_roots, kvm_id);
 }
 
 /*
@@ -1276,6 +1317,13 @@ bool kvm_tdp_mmu_unmap_gfn_range(struct kvm *kvm, struct kvm_gfn_range *range,
 {
 	return kvm_tdp_mmu_zap_leafs(kvm, range->slot->as_id, range->start,
 				     range->end, range->may_block, flush);
+}
+
+bool kvm_tdp_mmu_kpop_unmap_gfn_range(struct kvm *kvm, struct kvm_gfn_range *range,
+				 bool flush, u64 kvm_id)
+{
+	return kvm_tdp_mmu_kpop_zap_leafs(kvm, range->slot->as_id, range->start,
+				     range->end, range->may_block, flush, kvm_id);
 }
 
 typedef bool (*tdp_handler_t)(struct kvm *kvm, struct tdp_iter *iter,

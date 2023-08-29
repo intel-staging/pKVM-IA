@@ -3722,6 +3722,7 @@ static struct kpop_guest_mmu *kpop_find_guest_mmu(struct kvm *kvm,
 	return gmmu;
 }
 
+static bool is_obsolete_root(struct kvm *kvm, hpa_t root_hpa);
 static int kpop_reload_guest_mmu(struct kvm_vcpu *vcpu)
 {
 	struct kpop_guest_mmu *gmmu;
@@ -3734,6 +3735,20 @@ static int kpop_reload_guest_mmu(struct kvm_vcpu *vcpu)
 				vcpu_holder 0x%llx, as_id 0x%x",
 				__func__, vcpu_holder, as_id);
 		return -EINVAL;
+	}
+
+	/* if a root is obsoleted, put it then get a new valid one */
+	if (is_obsolete_root(vcpu->kvm, gmmu->root_hpa)) {
+		int ret = mmu_topup_memory_caches(vcpu, false);
+
+		if (ret)
+			return ret;
+
+		write_lock(&vcpu->kvm->mmu_lock);
+		kvm_mmu_put_kpop_root_hpa(vcpu->kvm, gmmu->root_hpa);
+		gmmu->root_hpa =
+			kvm_tdp_mmu_get_kpop_root_hpa(vcpu, gmmu->kvm_id, as_id);
+		write_unlock(&vcpu->kvm->mmu_lock);
 	}
 
 	vcpu->arch.guest_kpop_mmu.root.hpa = gmmu->root_hpa;
@@ -3955,7 +3970,8 @@ unsigned long kpop_mmu_map(struct kvm_vcpu *vcpu, u64 guest_id,
 			return r;
 
 		read_lock(&vcpu->kvm->mmu_lock);
-		if (kvm_test_request(KVM_REQ_KPOP_MMU_RELOAD, vcpu))
+		if (is_obsolete_root(vcpu->kvm, gmmu->root_hpa) ||
+				kvm_test_request(KVM_REQ_KPOP_MMU_RELOAD, vcpu))
 			r = RET_PF_RETRY;
 		else {
 			hpa_t cur_root_hpa = vcpu->arch.guest_kpop_mmu.root.hpa;
@@ -3982,6 +3998,83 @@ unsigned long kpop_mmu_map(struct kvm_vcpu *vcpu, u64 guest_id,
 	}
 
 	return r;
+}
+
+unsigned long kpop_mmu_complete_fast_zap(struct kvm_vcpu *vcpu)
+{
+	WARN_ON(!is_tdp_mmu_enabled(vcpu->kvm));
+
+	kvm_tdp_mmu_zap_invalidated_roots(vcpu->kvm);
+
+	return 0;
+}
+
+static inline void kpop_mmu_do_zap_all(struct kvm *kvm, u64 kvm_id, bool fast)
+{
+	if (fast)
+		kvm_tdp_mmu_kpop_invalidate_all_roots(kvm, kvm_id);
+	else
+		kvm_tdp_mmu_kpop_zap_all(kvm, kvm_id);
+	kvm_make_all_cpus_request(kvm, KVM_REQ_KPOP_MMU_RELOAD);
+}
+
+static inline void kpop_mmu_do_zap_leafs(struct kvm *kvm,
+		gfn_t start, gfn_t end, u64 kvm_id)
+{
+	bool flush = false;
+	int i;
+
+	for (i = 0; i < KVM_ADDRESS_SPACE_NUM; i++)
+		flush = kvm_tdp_mmu_kpop_zap_leafs(kvm, i, start,
+				end, true, flush, kvm_id);
+	if (flush)
+		kvm_make_all_cpus_request(kvm, KVM_REQ_KPOP_MMU_RELOAD);
+}
+
+static inline void kpop_mmu_do_unmap_gfn_range(struct kvm *kvm,
+		gfn_t start, gfn_t end, u16 as_id, u64 kvm_id)
+{
+	struct kvm_memory_slot slot = {.as_id = as_id,};
+	struct kvm_gfn_range range = {
+		.start = start,
+		.end = end,
+		.slot = &slot,
+	};
+	bool flush = false;
+
+	flush = kvm_tdp_mmu_kpop_unmap_gfn_range(kvm, &range, flush, kvm_id);
+	if (flush)
+		kvm_make_all_cpus_request(kvm, KVM_REQ_KPOP_MMU_RELOAD);
+}
+
+unsigned long kpop_mmu_unmap(struct kvm_vcpu *vcpu,
+		u64 kvm_id, u64 guest_gfn, union kpop_map_data data)
+{
+	WARN_ON(!is_tdp_mmu_enabled(vcpu->kvm));
+
+	if (guest_gfn == 0 && data.size == UINT_MAX) {
+		/* zap all */
+		if (data.as_id != KPOP_ALL_AS_ID) {
+			pr_err("%s: only support zap all for all as_id\n", __func__);
+			return -EINVAL;
+		}
+
+		write_lock(&vcpu->kvm->mmu_lock);
+		kpop_mmu_do_zap_all(vcpu->kvm, kvm_id, data.fast);
+		write_unlock(&vcpu->kvm->mmu_lock);
+	} else {
+		/* zap range */
+		write_lock(&vcpu->kvm->mmu_lock);
+		if (data.as_id == KPOP_ALL_AS_ID)
+			kpop_mmu_do_zap_leafs(vcpu->kvm, guest_gfn,
+					guest_gfn + data.size, kvm_id);
+		else
+			kpop_mmu_do_unmap_gfn_range(vcpu->kvm, guest_gfn,
+					guest_gfn + data.size, data.as_id, kvm_id);
+		write_unlock(&vcpu->kvm->mmu_lock);
+	}
+
+	return 0;
 }
 
 static int mmu_first_shadow_root_alloc(struct kvm *kvm)

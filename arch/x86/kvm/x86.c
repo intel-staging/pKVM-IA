@@ -9702,6 +9702,18 @@ int kvm_emulate_hypercall(struct kvm_vcpu *vcpu)
 		ret = kpop_mmu_map(vcpu, guest_id, guest_gfn, guest_pfn, data);
 		break;
 	}
+	case KVM_HC_KPOP_MMU_UNMAP: {
+		u64 kvm_id = a0, guest_gfn = a1;
+		union kpop_map_data data;
+
+		data.val = a2;
+		ret = kpop_mmu_unmap(vcpu, kvm_id, guest_gfn, data);
+		break;
+	}
+	case KVM_HC_KPOP_COMP_FAST_ZAP: {
+		ret = kpop_mmu_complete_fast_zap(vcpu);
+		break;
+	}
 	default:
 		ret = -KVM_ENOSYS;
 		break;
