@@ -1459,6 +1459,19 @@ int kvm_arch_post_init_vm(struct kvm *kvm);
 void kvm_arch_pre_destroy_vm(struct kvm *kvm);
 int kvm_arch_create_vm_debugfs(struct kvm *kvm);
 
+#ifdef __KVM_HAVE_ARCH_NESTED_KPOP
+bool kvm_arch_nested_kpop_on(void);
+#else
+static inline bool kvm_arch_nested_kpop_on(void)
+{
+	return false;
+}
+#endif
+static inline bool nested_kpop_on(void)
+{
+	return kvm_arch_nested_kpop_on();
+}
+
 #ifndef __KVM_HAVE_ARCH_VM_ALLOC
 /*
  * All architectures that want to use vzalloc currently also

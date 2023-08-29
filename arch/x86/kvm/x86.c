@@ -172,6 +172,8 @@ bool __read_mostly enable_vmware_backdoor = false;
 module_param(enable_vmware_backdoor, bool, S_IRUGO);
 EXPORT_SYMBOL_GPL(enable_vmware_backdoor);
 
+bool __read_mostly nested_kpop;
+
 /*
  * Flags to manipulate forced emulation behavior (any non-zero value will
  * enable forced emulation).

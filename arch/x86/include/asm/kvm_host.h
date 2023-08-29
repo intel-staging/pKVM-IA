@@ -2093,6 +2093,13 @@ static inline bool kvm_is_supported_user_return_msr(u32 msr)
 	return kvm_find_user_return_msr(msr) >= 0;
 }
 
+#define __KVM_HAVE_ARCH_NESTED_KPOP
+extern bool nested_kpop;
+static inline bool kvm_arch_nested_kpop_on(void)
+{
+	return nested_kpop;
+}
+
 u64 kvm_scale_tsc(u64 tsc, u64 ratio);
 u64 kvm_read_l1_tsc(struct kvm_vcpu *vcpu, u64 host_tsc);
 u64 kvm_calc_nested_tsc_offset(u64 l1_offset, u64 l2_offset, u64 l2_multiplier);

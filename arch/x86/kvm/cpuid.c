@@ -1114,6 +1114,9 @@ static inline int __do_cpuid_func(struct kvm_cpuid_array *array, u32 function)
 		if (sched_info_on())
 			entry->eax |= (1 << KVM_FEATURE_STEAL_TIME);
 
+		if (nested_kpop_on())
+			entry->eax |= (1 << KVM_FEATURE_KPOP);
+
 		entry->ebx = 0;
 		entry->ecx = 0;
 		entry->edx = 0;

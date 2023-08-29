@@ -7002,12 +7002,17 @@ void nested_vmx_hardware_unsetup(void)
 		for (i = 0; i < VMX_BITMAP_NR; i++)
 			free_page((unsigned long)vmx_bitmap[i]);
 	}
+
+	if (IS_ENABLED(CONFIG_HAVE_KVM_KPOP))
+		nested_kpop = 0;
 }
 
 __init int nested_vmx_hardware_setup(int (*exit_handlers[])(struct kvm_vcpu *))
 {
 	int i;
 
+	if (IS_ENABLED(CONFIG_HAVE_KVM_KPOP))
+		nested_kpop = 1;
 	if (!cpu_has_vmx_shadow_vmcs())
 		enable_shadow_vmcs = 0;
 	if (enable_shadow_vmcs) {
