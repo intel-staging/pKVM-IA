@@ -1442,6 +1442,13 @@ bool kvm_tdp_mmu_age_gfn_range(struct kvm *kvm, struct kvm_gfn_range *range)
 			&kvm->arch.tdp_mmu_roots, ANY_KPOP_KVMID, age_gfn_range);
 }
 
+bool kvm_tdp_mmu_kpop_age_gfn_range(struct kvm *kvm,
+		struct kvm_gfn_range *range, u64 kvm_id)
+{
+	return kvm_tdp_mmu_handle_gfn(kvm, range,
+			&kvm->arch.kpop_mmu_roots, kvm_id, age_gfn_range);
+}
+
 static bool test_age_gfn(struct kvm *kvm, struct tdp_iter *iter,
 			 struct kvm_gfn_range *range)
 {
@@ -1452,6 +1459,13 @@ bool kvm_tdp_mmu_test_age_gfn(struct kvm *kvm, struct kvm_gfn_range *range)
 {
 	return kvm_tdp_mmu_handle_gfn(kvm, range,
 			&kvm->arch.tdp_mmu_roots, ANY_KPOP_KVMID, test_age_gfn);
+}
+
+bool kvm_tdp_mmu_kpop_test_age_gfn(struct kvm *kvm,
+		struct kvm_gfn_range *range, u64 kvm_id)
+{
+	return kvm_tdp_mmu_handle_gfn(kvm, range,
+			&kvm->arch.kpop_mmu_roots, kvm_id, test_age_gfn);
 }
 
 static bool set_spte_gfn(struct kvm *kvm, struct tdp_iter *iter,

@@ -9714,6 +9714,22 @@ int kvm_emulate_hypercall(struct kvm_vcpu *vcpu)
 		ret = kpop_mmu_complete_fast_zap(vcpu);
 		break;
 	}
+	case KVM_HC_KPOP_MMU_AGE_GFN: {
+		u64 kvm_id = a0, guest_gfn = a1;
+		union kpop_data data;
+
+		data.val = a2;
+		ret = kpop_mmu_age_gfn(vcpu->kvm, kvm_id, guest_gfn, data);
+		break;
+	}
+	case KVM_HC_KPOP_MMU_TEST_AGE_GFN: {
+		u64 kvm_id = a0, guest_gfn = a1;
+		union kpop_data data;
+
+		data.val = a2;
+		ret = kpop_mmu_test_age_gfn(vcpu->kvm, kvm_id, guest_gfn, data);
+		break;
+	}
 	default:
 		ret = -KVM_ENOSYS;
 		break;

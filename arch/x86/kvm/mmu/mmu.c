@@ -4135,6 +4135,38 @@ unsigned long kpop_mmu_unmap(struct kvm_vcpu *vcpu,
 	return 0;
 }
 
+bool kpop_mmu_age_gfn(struct kvm *kvm, u64 kvm_id,
+		u64 guest_gfn, union kpop_data data)
+{
+	bool young = false;
+	struct kvm_memory_slot slot = {.as_id = data.as_id,};
+	struct kvm_gfn_range range = {
+		.start = guest_gfn,
+		.end = guest_gfn + data.size,
+		.slot = &slot,
+	};
+
+	young |= kvm_tdp_mmu_kpop_age_gfn_range(kvm, &range, kvm_id);
+
+	return young;
+}
+
+bool kpop_mmu_test_age_gfn(struct kvm *kvm, u64 kvm_id,
+		u64 guest_gfn, union kpop_data data)
+{
+	bool young = false;
+	struct kvm_memory_slot slot = {.as_id = data.as_id,};
+	struct kvm_gfn_range range = {
+		.start = guest_gfn,
+		.end = guest_gfn + data.size,
+		.slot = &slot,
+	};
+
+	young |= kvm_tdp_mmu_kpop_test_age_gfn(kvm, &range, kvm_id);
+
+	return young;
+}
+
 static int mmu_first_shadow_root_alloc(struct kvm *kvm)
 {
 	struct kvm_memslots *slots;
@@ -5766,6 +5798,11 @@ EXPORT_SYMBOL_GPL(kvm_init_shadow_ept_mmu);
 static int kpop_page_fault(struct kvm_vcpu *vcpu, struct kvm_page_fault *fault)
 {
 	struct x86_exception ex_fault;
+	int r;
+
+	r = fast_page_fault(vcpu, fault);
+	if (r != RET_PF_INVALID)
+		return r;
 
 	ex_fault.vector = PF_VECTOR;
 	ex_fault.nested_page_fault = true;

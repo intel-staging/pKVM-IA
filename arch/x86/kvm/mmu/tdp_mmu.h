@@ -38,7 +38,9 @@ bool kvm_tdp_mmu_unmap_gfn_range(struct kvm *kvm, struct kvm_gfn_range *range,
 bool kvm_tdp_mmu_kpop_unmap_gfn_range(struct kvm *kvm, struct kvm_gfn_range *range,
 				 bool flush, u64 kvm_id);
 bool kvm_tdp_mmu_age_gfn_range(struct kvm *kvm, struct kvm_gfn_range *range);
+bool kvm_tdp_mmu_kpop_age_gfn_range(struct kvm *kvm, struct kvm_gfn_range *range, u64 kvm_id);
 bool kvm_tdp_mmu_test_age_gfn(struct kvm *kvm, struct kvm_gfn_range *range);
+bool kvm_tdp_mmu_kpop_test_age_gfn(struct kvm *kvm, struct kvm_gfn_range *range, u64 kvm_id);
 bool kvm_tdp_mmu_set_spte_gfn(struct kvm *kvm, struct kvm_gfn_range *range);
 bool kvm_tdp_kpop_set_spte_gfn(struct kvm *kvm, struct kvm_gfn_range *range, u64 kvm_id);
 

@@ -142,6 +142,10 @@ unsigned long kpop_mmu_map(struct kvm_vcpu *vcpu, u64 guest_id,
 unsigned long kpop_mmu_unmap(struct kvm_vcpu *vcpu,
 		u64 kvm_id, u64 guest_gfn, union kpop_data data);
 unsigned long kpop_mmu_complete_fast_zap(struct kvm_vcpu *vcpu);
+bool kpop_mmu_age_gfn(struct kvm *kvm, u64 kvm_id,
+		u64 guest_gfn, union kpop_data data);
+bool kpop_mmu_test_age_gfn(struct kvm *kvm, u64 kvm_id,
+		u64 guest_gfn, union kpop_data data);
 bool kpop_is_root_hpa_obsolete_in_guest_mmu(struct kvm *kvm,
 		u64 vcpu_holder, u64 as_id, hpa_t root_hpa);
 
