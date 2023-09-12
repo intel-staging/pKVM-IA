@@ -34,6 +34,8 @@
 #define KVM_HC_KPOP_MMU_MAP		14
 #define KVM_HC_KPOP_MMU_UNMAP		15
 #define KVM_HC_KPOP_COMP_FAST_ZAP	16
+#define KVM_HC_KPOP_MMU_AGE_GFN		17
+#define KVM_HC_KPOP_MMU_TEST_AGE_GFN	18
 
 /*
  * hypercalls use architecture specific

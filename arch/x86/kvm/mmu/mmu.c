@@ -3948,7 +3948,7 @@ static void kpop_mmu_do_set_spte_gfn(struct kvm *kvm, kvm_pfn_t pfn,
 }
 
 unsigned long kpop_mmu_map(struct kvm_vcpu *vcpu, u64 guest_id,
-		u64 guest_gfn, u64 guest_pfn, union kpop_map_data data)
+		u64 guest_gfn, u64 guest_pfn, union kpop_data data)
 {
 	unsigned long pfn, r = 0;
 	bool writeable;
@@ -4106,7 +4106,7 @@ static inline void kpop_mmu_do_unmap_gfn_range(struct kvm *kvm,
 }
 
 unsigned long kpop_mmu_unmap(struct kvm_vcpu *vcpu,
-		u64 kvm_id, u64 guest_gfn, union kpop_map_data data)
+		u64 kvm_id, u64 guest_gfn, union kpop_data data)
 {
 	WARN_ON(!is_tdp_mmu_enabled(vcpu->kvm));
 
@@ -6773,7 +6773,7 @@ static void __kpop_mmu_unload(struct kvm_vcpu *vcpu)
 static bool __kpop_set_spte_gfn(struct kvm *kvm, struct kvm_gfn_range *range)
 {
 	u64 gfn = range->start, pfn = pte_pfn(range->pte), size = range->end - range->start;
-	union kpop_map_data data = {.size = size, .as_id = range->slot->as_id, .remap = 1};
+	union kpop_data data = {.size = size, .as_id = range->slot->as_id, .remap = 1};
 	long ret;
 
 	ret = kvm_hypercall4(KVM_HC_KPOP_MMU_MAP, (unsigned long)kvm, gfn, pfn, data.val);
@@ -6786,7 +6786,7 @@ static bool __kpop_set_spte_gfn(struct kvm *kvm, struct kvm_gfn_range *range)
 static int __kpop_mmu_map(struct kvm_vcpu *vcpu,
 		u64 gfn, u64 pfn, u64 size, int as_id, bool exec)
 {
-	union kpop_map_data data = {
+	union kpop_data data = {
 		.size = size,
 		.as_id = as_id,
 		.exec = exec,
@@ -6798,7 +6798,7 @@ static int __kpop_mmu_map(struct kvm_vcpu *vcpu,
 
 static void __kpop_mmu_unmap(struct kvm *kvm, u64 gfn, u64 size, u64 as_id, bool fast)
 {
-	union kpop_map_data data = {
+	union kpop_data data = {
 		.size = size,
 		.as_id = as_id,
 		.fast = fast,
@@ -6848,6 +6848,28 @@ static void __kpop_mmu_zap_all(struct kvm *kvm, bool fast)
 		__kpop_mmu_complete_fast_zap(kvm);
 }
 
+static bool __kpop_age_gfn(struct kvm *kvm, struct kvm_gfn_range *range)
+{
+	union kpop_data data = {
+		.size = range->end - range->start,
+		.as_id = range->slot->as_id,
+	};
+
+	return kvm_hypercall3(KVM_HC_KPOP_MMU_AGE_GFN, (unsigned long)kvm,
+			range->start, data.val);
+}
+
+static bool __kpop_test_age_gfn(struct kvm *kvm, struct kvm_gfn_range *range)
+{
+	union kpop_data data = {
+		.size = range->end - range->start,
+		.as_id = range->slot->as_id,
+	};
+
+	return kvm_hypercall3(KVM_HC_KPOP_MMU_TEST_AGE_GFN, (unsigned long)kvm,
+			range->start, data.val);
+}
+
 int kvm_mmu_init_vm(struct kvm *kvm)
 {
 	struct kvm_page_track_notifier_node *node = &kvm->arch.mmu_sp_tracker;
@@ -6871,7 +6893,8 @@ int kvm_mmu_init_vm(struct kvm *kvm)
 		kvm->mmu_ops.mmu_unmap_gfn_range = __kpop_unmap_gfn_range;
 		kvm->mmu_ops.mmu_zap_gfn_range = __kpop_zap_gfn_range;
 		kvm->mmu_ops.mmu_zap_all = __kpop_mmu_zap_all;
-		/* To be added */
+		kvm->mmu_ops.mmu_age_gfn = __kpop_age_gfn;
+		kvm->mmu_ops.mmu_test_age_gfn = __kpop_test_age_gfn;
 	} else {
 		kvm->mmu_ops.kpop_on = false;
 		kvm->mmu_ops.mmu_load = __kvm_mmu_load;

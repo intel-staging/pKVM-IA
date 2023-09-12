@@ -123,7 +123,7 @@ void kvm_mmu_sync_prev_roots(struct kvm_vcpu *vcpu);
 #define KPOP_ASID2FAKEROOT(as_id) (as_id << PAGE_SHIFT)
 #define KPOP_FAKEROOT2ASID(root) (root >> PAGE_SHIFT)
 
-union kpop_map_data {
+union kpop_data {
 	u64 val;
 	struct {
 		u32 size;
@@ -138,9 +138,9 @@ union kpop_map_data {
 unsigned long kpop_mmu_load_unload(struct kvm_vcpu *vcpu,
 		u64 vcpu_holder, u64 kvm_id, u64 as_id, bool load);
 unsigned long kpop_mmu_map(struct kvm_vcpu *vcpu, u64 guest_id,
-		u64 guest_gfn, u64 guest_pfn, union kpop_map_data data);
+		u64 guest_gfn, u64 guest_pfn, union kpop_data data);
 unsigned long kpop_mmu_unmap(struct kvm_vcpu *vcpu,
-		u64 kvm_id, u64 guest_gfn, union kpop_map_data data);
+		u64 kvm_id, u64 guest_gfn, union kpop_data data);
 unsigned long kpop_mmu_complete_fast_zap(struct kvm_vcpu *vcpu);
 bool kpop_is_root_hpa_obsolete_in_guest_mmu(struct kvm *kvm,
 		u64 vcpu_holder, u64 as_id, hpa_t root_hpa);
