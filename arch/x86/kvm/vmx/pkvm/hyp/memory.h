@@ -16,6 +16,9 @@
  */
 #define PKVM_IOVA_OFFSET	0x0000080000000000
 
+/* MMU entry property bits for UC. Can be used to map MMIO. */
+#define PKVM_PAGE_IO_NOCACHE	((u64)(__PAGE_KERNEL | _PAGE_PWT | _PAGE_PCD))
+
 unsigned long pkvm_virt_to_symbol_phys(void *virt);
 #define __pkvm_pa_symbol(x) pkvm_virt_to_symbol_phys((void *)x)
 
