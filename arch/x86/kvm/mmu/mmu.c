@@ -4545,19 +4545,11 @@ static bool is_page_fault_stale(struct kvm_vcpu *vcpu,
 
 static int direct_page_fault(struct kvm_vcpu *vcpu, struct kvm_page_fault *fault)
 {
-	struct kvm_pinned_page *ppage = NULL;
-	struct page *page;
 	int r;
 
 	/* Dummy roots are used only for shadowing bad guest roots. */
 	if (WARN_ON_ONCE(kvm_mmu_is_dummy_root(vcpu->arch.mmu->root.hpa)))
 		return RET_PF_RETRY;
-
-	if (vcpu->kvm->arch.vm_type == KVM_X86_PROTECTED_VM) {
-		ppage = kmalloc(sizeof(*ppage), GFP_KERNEL_ACCOUNT);
-		if (!ppage)
-			return -ENOMEM;
-	}
 
 	if (page_fault_handle_page_track(vcpu, fault))
 		return RET_PF_EMULATE;
@@ -4585,18 +4577,6 @@ static int direct_page_fault(struct kvm_vcpu *vcpu, struct kvm_page_fault *fault
 		goto out_unlock;
 
 	r = direct_map(vcpu, fault);
-
-	if (ppage) {
-		if (r == RET_PF_FIXED && (page = kvm_pfn_to_refcounted_page(fault->pfn))) {
-			ppage->page = page;
-			get_page(page);
-			spin_lock(&vcpu->kvm->pkvm.pinned_page_lock);
-			list_add(&ppage->list, &vcpu->kvm->pkvm.pinned_pages);
-			spin_unlock(&vcpu->kvm->pkvm.pinned_page_lock);
-		} else {
-			kfree(ppage);
-		}
-	}
 
 out_unlock:
 	write_unlock(&vcpu->kvm->mmu_lock);
@@ -4709,12 +4689,38 @@ bool kvm_mmu_may_ignore_guest_pat(void)
 
 int kvm_tdp_page_fault(struct kvm_vcpu *vcpu, struct kvm_page_fault *fault)
 {
+	struct kvm_pinned_page *ppage = NULL;
+	struct page *page;
+	int r;
+
+	if (vcpu->kvm->arch.vm_type == KVM_X86_PROTECTED_VM) {
+		ppage = kmalloc(sizeof(*ppage), GFP_KERNEL_ACCOUNT);
+		if (!ppage)
+			return -ENOMEM;
+	}
+
 #ifdef CONFIG_X86_64
 	if (tdp_mmu_enabled)
-		return kvm_tdp_mmu_page_fault(vcpu, fault);
+		r = kvm_tdp_mmu_page_fault(vcpu, fault);
+	else
+		r = direct_page_fault(vcpu, fault);
+#else
+	r = direct_page_fault(vcpu, fault);
 #endif
 
-	return direct_page_fault(vcpu, fault);
+	if (ppage) {
+		if (r == RET_PF_FIXED && (page = kvm_pfn_to_refcounted_page(fault->pfn))) {
+			ppage->page = page;
+			get_page(page);
+			spin_lock(&vcpu->kvm->pkvm.pinned_page_lock);
+			list_add(&ppage->list, &vcpu->kvm->pkvm.pinned_pages);
+			spin_unlock(&vcpu->kvm->pkvm.pinned_page_lock);
+		} else {
+			kfree(ppage);
+		}
+	}
+
+	return r;
 }
 
 static int kvm_tdp_map_page(struct kvm_vcpu *vcpu, gpa_t gpa, u64 error_code,
