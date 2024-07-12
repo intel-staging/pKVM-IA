@@ -45,7 +45,7 @@ static struct gdt_page pkvm_gdt_page = {
 	},
 };
 
-static int check_pci_device_count(void)
+static __init int check_pci_device_count(void)
 {
 	struct pci_dev *pdev = NULL;
 	int devs = 0, devs_with_pasid = 0;
@@ -83,7 +83,7 @@ static inline bool is_iommu_coherent(u64 ecap)
 	return ecap_smts(ecap) ? !!ecap_smpwc(ecap) : !!ecap_coherent(ecap);
 }
 
-static int check_and_init_iommu(struct pkvm_hyp *pkvm)
+static __init int check_and_init_iommu(struct pkvm_hyp *pkvm)
 {
 	struct pkvm_iommu_info *info;
 	struct dmar_drhd_unit *drhd;
