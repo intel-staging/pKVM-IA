@@ -46,6 +46,8 @@
 
 SYM_CODE_START(noop_handler)
 	UNWIND_HINT_UNDEFINED
+	ENDBR
+
 	save_frame
 
 	call handle_noop
@@ -57,6 +59,8 @@ SYM_CODE_END(noop_handler)
 
 SYM_CODE_START(nmi_handler)
 	UNWIND_HINT_UNDEFINED
+	ENDBR
+
 	save_frame
 
 	call handle_nmi
