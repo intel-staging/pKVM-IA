@@ -1672,7 +1672,7 @@ static int iotlb_lm_invalidate(struct pkvm_iommu *iommu, struct qi_desc *desc)
 	u64 mask = ((u64)-1) << (VTD_PAGE_SHIFT + QI_DESC_IOTLB_AM(desc->qw1));
 	struct shadow_pgt_sync_data data;
 	struct pkvm_ptdev *p;
-	int ret;
+	int ret = 0;
 
 	switch (granu) {
 	case DMA_TLB_GLOBAL_FLUSH:
