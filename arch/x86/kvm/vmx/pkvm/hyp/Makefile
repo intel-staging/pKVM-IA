@@ -11,6 +11,7 @@ lib-dir		:= lib
 pkvm-hyp-y	:= vmx_asm.o vmexit.o
 
 pkvm-hyp-$(CONFIG_MITIGATION_RETPOLINE)	+= $(lib-dir)/retpoline.o
+pkvm-hyp-$(CONFIG_LIST_HARDENED)	+= $(lib-dir)/list_debug.o
 
 pkvm-obj 	:= $(patsubst %.o,%.pkvm.o,$(pkvm-hyp-y))
 obj-$(CONFIG_PKVM_INTEL)	+= pkvm.o
