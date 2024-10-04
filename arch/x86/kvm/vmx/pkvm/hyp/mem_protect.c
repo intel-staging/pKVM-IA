@@ -10,6 +10,7 @@
 #include "mem_protect.h"
 #include "pgtable.h"
 #include "ept.h"
+#include "iommu.h"
 
 struct check_walk_data {
 	int 			nstate;
@@ -382,6 +383,12 @@ int __pkvm_host_donate_hyp(u64 hpa, u64 size)
 
 	host_ept_unlock();
 
+	/*
+	 * Also need to flush the IOTLB as host EPT is used
+	 * as second-stage IOMMU page table for some devices.
+	 */
+	pkvm_iommu_flush_iotlb(pkvm_hyp->host_vm.ept, hpa, size);
+
 	return ret;
 }
 
@@ -443,6 +450,12 @@ int __pkvm_host_donate_guest(u64 hpa, struct pkvm_pgtable *guest_pgt,
 	ret = do_donate(&donation);
 
 	host_ept_unlock();
+
+	/*
+	 * Also need to flush the IOTLB as host EPT is used
+	 * as second-stage IOMMU page table for some devices.
+	 */
+	pkvm_iommu_flush_iotlb(pkvm_hyp->host_vm.ept, hpa, size);
 
 	return ret;
 }

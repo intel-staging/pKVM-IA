@@ -100,12 +100,6 @@ static void host_ept_flush_tlb(struct pkvm_pgtable *pgt,
 		kvm_make_request(PKVM_REQ_TLB_FLUSH_HOST_EPT, &hvcpu->vmx.vcpu);
 		pkvm_kick_vcpu(&hvcpu->vmx.vcpu);
 	}
-
-	/*
-	 * Also needs to flush the IOTLB as host EPT is used
-	 * as second-stage page table for some devices.
-	 */
-	pkvm_iommu_flush_iotlb(pgt, vaddr, size);
 }
 
 static void host_ept_flush_cache(void *vaddr, unsigned int size)
@@ -923,6 +917,8 @@ static bool allow_shadow_ept_mapping(struct pkvm_shadow_vm *vm,
 		 */
 		size = host_ept.pgt_ops->pgt_level_to_size(host_ept.level + 1);
 		host_ept_flush_tlb(&host_ept, 0, size);
+		pkvm_iommu_flush_iotlb(&host_ept, 0, size);
+
 		vm->need_prepopulation = false;
 	}
 
