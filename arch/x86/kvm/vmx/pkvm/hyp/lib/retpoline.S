@@ -5,6 +5,7 @@
 #include <asm/nospec-branch.h>
 #include <asm/unwind_hints.h>
 #include <asm/frame.h>
+#include <asm/nops.h>
 
 	.section .text..__x86.indirect_thunk
 
