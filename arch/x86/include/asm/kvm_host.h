@@ -1294,6 +1294,13 @@ enum kvm_apicv_inhibit {
 	__APICV_INHIBIT_REASON(SEV),			\
 	__APICV_INHIBIT_REASON(LOGICAL_ID_ALIASED)
 
+struct kvm_protected_vm {
+	int shadow_vm_handle;
+
+	struct list_head pinned_pages;
+	spinlock_t pinned_page_lock;
+};
+
 struct kvm_arch {
 	unsigned long n_used_mmu_pages;
 	unsigned long n_requested_mmu_pages;
@@ -1535,6 +1542,8 @@ struct kvm_arch {
 	 */
 #define SPLIT_DESC_CACHE_MIN_NR_OBJECTS (SPTE_ENT_PER_PAGE + 1)
 	struct kvm_mmu_memory_cache split_desc_cache;
+
+	struct kvm_protected_vm pkvm;
 };
 
 struct kvm_vm_stat {
@@ -1877,13 +1886,6 @@ struct kvm_arch_async_pf {
 struct kvm_pinned_page {
 	struct list_head list;
 	struct page *page;
-};
-
-struct kvm_protected_vm {
-	int shadow_vm_handle;
-
-	struct list_head pinned_pages;
-	spinlock_t pinned_page_lock;
 };
 
 extern u32 __read_mostly kvm_nr_uret_msrs;
