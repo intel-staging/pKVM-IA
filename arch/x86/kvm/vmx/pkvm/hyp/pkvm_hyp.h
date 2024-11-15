@@ -184,7 +184,7 @@ extern struct pkvm_hyp *pkvm_hyp;
 
 static inline bool shadow_vm_is_protected(struct pkvm_shadow_vm *vm)
 {
-	return vm->vm_type == KVM_X86_PROTECTED_VM;
+	return vm->vm_type == KVM_X86_PKVM_PROTECTED_VM;
 }
 
 static inline bool shadow_vcpu_is_protected(struct shadow_vcpu_state *shadow_vcpu)
