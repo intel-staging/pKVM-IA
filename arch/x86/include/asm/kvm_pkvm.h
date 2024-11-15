@@ -229,7 +229,7 @@ u64 hyp_total_reserve_pages(void);
 
 static inline bool pkvm_is_protected_vm(struct kvm *kvm)
 {
-	return kvm->arch.vm_type == KVM_X86_PROTECTED_VM;
+	return kvm->arch.vm_type == KVM_X86_PKVM_PROTECTED_VM;
 }
 
 static inline bool pkvm_is_protected_vcpu(struct kvm_vcpu *vcpu)
