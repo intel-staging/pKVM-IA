@@ -102,3 +102,19 @@ noinstr struct cpu_entry_area *__pkvm_get_cpu_entry_area(int cpu)
 {
 	return get_cpu_entry_area(cpu);
 }
+
+int __pkvm____ratelimit(struct ratelimit_state *rs, const char *func)
+{
+	return ___ratelimit(rs, func);
+}
+
+void __pkvm___warn_printk(const char *fmt, ...)
+{
+	va_list args;
+
+	va_start(args, fmt);
+
+	__warn_printk(fmt, args);
+
+	va_end(args);
+}
