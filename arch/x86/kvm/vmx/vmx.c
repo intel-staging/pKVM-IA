@@ -4845,7 +4845,7 @@ static void init_vmcs(struct vcpu_vmx *vmx)
 		vmcs_write64(XSS_EXIT_BITMAP, VMX_XSS_EXIT_BITMAP);
 
 	if (enable_pml) {
-		vmcs_write64(PML_ADDRESS, page_to_phys(vmx->pml_pg));
+		vmcs_write64(PML_ADDRESS, __pa(vmx->pml_pg));
 		vmcs_write16(GUEST_PML_INDEX, PML_ENTITY_NUM - 1);
 	}
 
@@ -6218,7 +6218,7 @@ void vmx_get_exit_info(struct kvm_vcpu *vcpu, u32 *reason,
 static void vmx_destroy_pml_buffer(struct vcpu_vmx *vmx)
 {
 	if (vmx->pml_pg) {
-		__free_page(vmx->pml_pg);
+		free_page((unsigned long)vmx->pml_pg);
 		vmx->pml_pg = NULL;
 	}
 }
@@ -6241,7 +6241,7 @@ static void vmx_flush_pml_buffer(struct kvm_vcpu *vcpu)
 	else
 		pml_idx++;
 
-	pml_buf = page_address(vmx->pml_pg);
+	pml_buf = (u64 *)vmx->pml_pg;
 	for (; pml_idx < PML_ENTITY_NUM; pml_idx++) {
 		u64 gpa;
 
@@ -7537,6 +7537,7 @@ int vmx_vcpu_create(struct kvm_vcpu *vcpu)
 {
 	struct vmx_uret_msr *tsx_ctrl;
 	struct vcpu_vmx *vmx;
+	struct page *page;
 	int i, err;
 
 	BUILD_BUG_ON(offsetof(struct vcpu_vmx, vcpu) != 0);
@@ -7555,9 +7556,11 @@ int vmx_vcpu_create(struct kvm_vcpu *vcpu)
 	 * for the guest), etc.
 	 */
 	if (enable_pml) {
-		vmx->pml_pg = alloc_page(GFP_KERNEL_ACCOUNT | __GFP_ZERO);
-		if (!vmx->pml_pg)
+		page = alloc_page(GFP_KERNEL_ACCOUNT | __GFP_ZERO);
+		if (!page)
 			goto free_vpid;
+
+		vmx->pml_pg = page_to_virt(page);
 	}
 
 	for (i = 0; i < kvm_nr_uret_msrs; ++i)
@@ -7626,8 +7629,6 @@ int vmx_vcpu_create(struct kvm_vcpu *vcpu)
 
 	err = -ENOMEM;
 	if (vmcs_config.cpu_based_2nd_exec_ctrl & SECONDARY_EXEC_EPT_VIOLATION_VE) {
-		struct page *page;
-
 		BUILD_BUG_ON(sizeof(*vmx->ve_info) > PAGE_SIZE);
 
 		/* ve_info must be page aligned. */
