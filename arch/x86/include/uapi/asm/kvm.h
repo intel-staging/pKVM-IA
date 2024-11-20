@@ -930,4 +930,13 @@ struct kvm_hyperv_eventfd {
  */
 #define KVM_X86_PKVM_PROTECTED_VM    28
 
+/* Protected KVM */
+#define KVM_CAP_X86_PROTECTED_VM_FLAGS_SET_FW_GPA     0
+#define KVM_CAP_X86_PROTECTED_VM_FLAGS_INFO           1
+
+struct kvm_protected_vm_info {
+	__u64 firmware_size;
+	__u64 __reserved[7];
+};
+
 #endif /* _ASM_X86_KVM_H */

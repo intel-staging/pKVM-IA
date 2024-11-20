@@ -1131,6 +1131,7 @@ int pkvm_init_shadow_vm(struct kvm *kvm)
 		return 0;
 
 	INIT_LIST_HEAD(&pkvm->pinned_pages);
+	pkvm->pvmfw_load_addr = PVMFW_INVALID_LOAD_ADDR;
 
 	shadow_sz = PAGE_ALIGN(PKVM_SHADOW_VM_SIZE);
 	shadow_addr = alloc_pages_exact(shadow_sz, GFP_KERNEL_ACCOUNT);
@@ -1262,6 +1263,48 @@ int pkvm_set_mmio_ve(struct kvm_vcpu *vcpu, unsigned long gfn)
 	}
 
 	return 0;
+}
+
+static int pkvm_vm_ioctl_set_fw_gpa(struct kvm *kvm, u64 gpa)
+{
+	if (!cmdline_pvmfw_present)
+		return -EINVAL;
+
+	smp_store_release(&kvm->arch.pkvm.pvmfw_load_addr, gpa);
+	return 0;
+}
+
+static int pkvm_vm_ioctl_info(struct kvm *kvm,
+			      struct kvm_protected_vm_info __user *info)
+{
+	struct kvm_protected_vm_info kinfo = {
+		.firmware_size = cmdline_pvmfw_present ?
+				 cmdline_pvmfw_size :
+				 0,
+	};
+
+	return copy_to_user(info, &kinfo, sizeof(kinfo)) ? -EFAULT : 0;
+}
+
+int pkvm_vm_ioctl_enable_cap(struct kvm *kvm, struct kvm_enable_cap *cap)
+{
+	if (!enable_pkvm)
+		return -EINVAL;
+
+	if (!pkvm_is_protected_vm(kvm))
+		return -EINVAL;
+
+	if (cap->args[1] || cap->args[2] || cap->args[3])
+		return -EINVAL;
+
+	switch (cap->flags) {
+	case KVM_CAP_X86_PROTECTED_VM_FLAGS_SET_FW_GPA:
+		return pkvm_vm_ioctl_set_fw_gpa(kvm, cap->args[0]);
+	case KVM_CAP_X86_PROTECTED_VM_FLAGS_INFO:
+		return pkvm_vm_ioctl_info(kvm, (void __force __user *)cap->args[0]);
+	default:
+		return -EINVAL;
+	}
 }
 
 static __init int pkvm_init_io_emulation(struct pkvm_hyp *pkvm)

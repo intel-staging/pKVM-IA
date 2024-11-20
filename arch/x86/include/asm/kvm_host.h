@@ -1301,6 +1301,8 @@ struct kvm_protected_vm {
 
 	struct list_head pinned_pages;
 	spinlock_t pinned_page_lock;
+
+	gpa_t pvmfw_load_addr;
 };
 
 struct kvm_arch {
