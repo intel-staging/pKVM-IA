@@ -8,7 +8,7 @@
 #include <vdso/limits.h>
 #include <buddy_memory.h>
 #include <pkvm.h>
-#include "hyp/pkvm_hyp.h"
+#include "hyp/pkvm_hyp_types.h"
 #include "hyp/iommu_internal.h"
 
 int main(void)
