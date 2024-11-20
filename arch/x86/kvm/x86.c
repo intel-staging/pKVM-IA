@@ -6518,6 +6518,16 @@ int kvm_vm_ioctl_enable_cap(struct kvm *kvm,
 {
 	int r;
 
+	/* Capabilities with flags */
+	switch (cap->cap) {
+	case KVM_CAP_X86_PROTECTED_VM:
+		return pkvm_vm_ioctl_enable_cap(kvm, cap);
+	default:
+		if (cap->flags)
+			return -EINVAL;
+	}
+
+	/* Capabilities without flags */
 	if (cap->flags)
 		return -EINVAL;
 
