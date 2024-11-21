@@ -1167,7 +1167,7 @@ int pkvm_finalize_shadow_vm(struct kvm *kvm, struct kvm_vcpu *vcpu)
 
 	return kvm_hypercall3(PKVM_HC_FINALIZE_SHADOW_VM, pkvm->shadow_vm_handle,
 			      vcpu->pkvm_shadow_vcpu_handle,
-			      smp_load_acquire(pkvm->pvmfw_load_addr));
+			      smp_load_acquire(&pkvm->pvmfw_load_addr));
 }
 
 void pkvm_teardown_shadow_vm(struct kvm *kvm)
