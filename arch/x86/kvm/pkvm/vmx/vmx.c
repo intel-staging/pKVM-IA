@@ -4874,8 +4874,7 @@ static int handle_pause(struct kvm_vcpu *vcpu)
 
 static int handle_monitor_trap(struct kvm_vcpu *vcpu)
 {
-	/* TODO */
-	return 0;
+	return 1;
 }
 
 static int handle_invpcid(struct kvm_vcpu *vcpu)
