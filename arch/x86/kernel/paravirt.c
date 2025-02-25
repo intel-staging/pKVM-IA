@@ -54,6 +54,8 @@ DEFINE_ASM_FUNC(pv_native_read_cr2, "mov %cr2, %rax", .noinstr.text);
 
 DEFINE_STATIC_KEY_FALSE(virt_spin_lock_key);
 
+DEFINE_STATIC_KEY_FALSE(pv_mmio);
+
 void __init native_pv_lock_init(void)
 {
 	if (boot_cpu_has(X86_FEATURE_HYPERVISOR))
@@ -245,6 +247,24 @@ struct paravirt_patch_template pv_ops = {
 				PV_CALLEE_SAVE(__native_vcpu_is_preempted),
 #endif /* SMP */
 #endif
+	.mmio.raw_readb			= raw_readb,
+	.mmio.raw_readw			= raw_readw,
+	.mmio.raw_readl			= raw_readl,
+	.mmio.raw_readb_relaxed		= raw_readb_relaxed,
+	.mmio.raw_readw_relaxed		= raw_readw_relaxed,
+	.mmio.raw_readl_relaxed		= raw_readl_relaxed,
+	.mmio.raw_writeb		= raw_writeb,
+	.mmio.raw_writew		= raw_writew,
+	.mmio.raw_writel		= raw_writel,
+	.mmio.raw_writeb_relaxed	= raw_writeb_relaxed,
+	.mmio.raw_writew_relaxed	= raw_writew_relaxed,
+	.mmio.raw_writel_relaxed	= raw_writel_relaxed,
+#ifdef CONFIG_X86_64
+	.mmio.raw_readq			= raw_readq,
+	.mmio.raw_readq_relaxed		= raw_readq_relaxed,
+	.mmio.raw_writeq		= raw_writeq,
+	.mmio.raw_writeq_relaxed	= raw_writeq_relaxed,
+#endif
 };
 
 #ifdef CONFIG_PARAVIRT_XXL
@@ -252,4 +272,5 @@ NOKPROBE_SYMBOL(native_load_idt);
 #endif
 
 EXPORT_SYMBOL(pv_ops);
+EXPORT_SYMBOL(pv_mmio);
 EXPORT_SYMBOL_GPL(pv_info);

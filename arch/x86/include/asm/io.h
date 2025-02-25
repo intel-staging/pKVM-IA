@@ -54,58 +54,84 @@ static inline void name(type val, volatile void __iomem *addr) \
 { asm volatile("mov" size " %0,%1": :reg (val), \
 "m" (*(volatile type __force *)addr) barrier); }
 
-build_mmio_read(readb, "b", unsigned char, "=q", :"memory")
-build_mmio_read(readw, "w", unsigned short, "=r", :"memory")
-build_mmio_read(readl, "l", unsigned int, "=r", :"memory")
+build_mmio_read(raw_readb, "b", unsigned char, "=q", : "memory")
+build_mmio_read(raw_readw, "w", unsigned short, "=r", : "memory")
+build_mmio_read(raw_readl, "l", unsigned int, "=r", : "memory")
 
-build_mmio_read(__readb, "b", unsigned char, "=q", )
-build_mmio_read(__readw, "w", unsigned short, "=r", )
-build_mmio_read(__readl, "l", unsigned int, "=r", )
+build_mmio_read(raw_readb_relaxed, "b", unsigned char, "=q", )
+build_mmio_read(raw_readw_relaxed, "w", unsigned short, "=r", )
+build_mmio_read(raw_readl_relaxed, "l", unsigned int, "=r", )
 
-build_mmio_write(writeb, "b", unsigned char, "q", :"memory")
-build_mmio_write(writew, "w", unsigned short, "r", :"memory")
-build_mmio_write(writel, "l", unsigned int, "r", :"memory")
+build_mmio_write(raw_writeb, "b", unsigned char, "q", : "memory")
+build_mmio_write(raw_writew, "w", unsigned short, "r", : "memory")
+build_mmio_write(raw_writel, "l", unsigned int, "r", : "memory")
 
-build_mmio_write(__writeb, "b", unsigned char, "q", )
-build_mmio_write(__writew, "w", unsigned short, "r", )
-build_mmio_write(__writel, "l", unsigned int, "r", )
+build_mmio_write(raw_writeb_relaxed, "b", unsigned char, "q", )
+build_mmio_write(raw_writew_relaxed, "w", unsigned short, "r", )
+build_mmio_write(raw_writel_relaxed, "l", unsigned int, "r", )
 
-#define readb readb
-#define readw readw
-#define readl readl
-#define readb_relaxed(a) __readb(a)
-#define readw_relaxed(a) __readw(a)
-#define readl_relaxed(a) __readl(a)
-#define __raw_readb __readb
-#define __raw_readw __readw
-#define __raw_readl __readl
+#ifdef CONFIG_PARAVIRT
+#include <asm/paravirt.h>
+#define __pv_mmio_read(native, pv, addr)				\
+	(static_branch_unlikely(&pv_mmio) ? pv(addr) :	native(addr))
+#define __pv_mmio_write(native, pv, val, addr)				\
+	(static_branch_unlikely(&pv_mmio) ? pv(val, addr) : native(val, addr))
+#define readb(a)		__pv_mmio_read(raw_readb, pv_readb, a)
+#define readw(a)		__pv_mmio_read(raw_readw, pv_readw, a)
+#define readl(a)		__pv_mmio_read(raw_readl, pv_readl, a)
+#define __raw_readb(a)		__pv_mmio_read(raw_readb_relaxed, pv_readb_relaxed, a)
+#define __raw_readw(a)		__pv_mmio_read(raw_readw_relaxed, pv_readw_relaxed, a)
+#define __raw_readl(a)		__pv_mmio_read(raw_readl_relaxed, pv_readl_relaxed, a)
+#define writeb(v, a)		__pv_mmio_write(raw_writeb, pv_writeb, v, a)
+#define writew(v, a)		__pv_mmio_write(raw_writew, pv_writew, v, a)
+#define writel(v, a)		__pv_mmio_write(raw_writel, pv_writel, v, a)
+#define __raw_writeb(v, a)	__pv_mmio_write(raw_writeb_relaxed, pv_writeb_relaxed, v, a)
+#define __raw_writew(v, a)	__pv_mmio_write(raw_writew_relaxed, pv_writew_relaxed, v, a)
+#define __raw_writel(v, a)	__pv_mmio_write(raw_writel_relaxed, pv_writel_relaxed, v, a)
+#else
+#define readb raw_readb
+#define readw raw_readw
+#define readl raw_readl
+#define __raw_readb raw_readb_relaxed
+#define __raw_readw raw_readw_relaxed
+#define __raw_readl raw_readl_relaxed
+#define writeb raw_writeb
+#define writew raw_writew
+#define writel raw_writel
+#define __raw_writeb raw_writeb_relaxed
+#define __raw_writew raw_writew_relaxed
+#define __raw_writel raw_writel_relaxed
+#endif
 
-#define writeb writeb
-#define writew writew
-#define writel writel
-#define writeb_relaxed(v, a) __writeb(v, a)
-#define writew_relaxed(v, a) __writew(v, a)
-#define writel_relaxed(v, a) __writel(v, a)
-#define __raw_writeb __writeb
-#define __raw_writew __writew
-#define __raw_writel __writel
+#define readb_relaxed(a) __raw_readb(a)
+#define readw_relaxed(a) __raw_readw(a)
+#define readl_relaxed(a) __raw_readl(a)
+
+#define writeb_relaxed(v, a) __raw_writeb(v, a)
+#define writew_relaxed(v, a) __raw_writew(v, a)
+#define writel_relaxed(v, a) __raw_writel(v, a)
 
 #ifdef CONFIG_X86_64
 
-build_mmio_read(readq, "q", u64, "=r", :"memory")
-build_mmio_read(__readq, "q", u64, "=r", )
-build_mmio_write(writeq, "q", u64, "r", :"memory")
-build_mmio_write(__writeq, "q", u64, "r", )
+build_mmio_read(raw_readq, "q", u64, "=r", : "memory")
+build_mmio_read(raw_readq_relaxed, "q", u64, "=r", )
+build_mmio_write(raw_writeq, "q", u64, "r", : "memory")
+build_mmio_write(raw_writeq_relaxed, "q", u64, "r", )
 
-#define readq_relaxed(a)	__readq(a)
-#define writeq_relaxed(v, a)	__writeq(v, a)
+#ifdef CONFIG_PARAVIRT
+#define readq(a)		__pv_mmio_read(raw_readq, pv_readq, a)
+#define __raw_readq(a)		__pv_mmio_read(raw_readq_relaxed, pv_readq_relaxed, a)
+#define writeq(v, a)		__pv_mmio_write(raw_writeq, pv_writeq, v, a)
+#define __raw_writeq(v, a)	__pv_mmio_write(raw_writeq_relaxed, pv_writeq_relaxed, v, a)
+#else
+#define readq			raw_readq
+#define __raw_readq		raw_readq_relaxed
+#define writeq			raw_writeq
+#define __raw_writeq		raw_writeq_relaxed
+#endif
 
-#define __raw_readq		__readq
-#define __raw_writeq		__writeq
-
-/* Let people know that we have them */
-#define readq			readq
-#define writeq			writeq
+#define readq_relaxed(a)	__raw_readq(a)
+#define writeq_relaxed(v, a)	__raw_writeq(v, a)
 
 #endif
 
