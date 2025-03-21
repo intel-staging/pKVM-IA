@@ -7,6 +7,7 @@
 #include <trace.h>
 #include <uapi/asm/debugreg.h>
 #include <smm.h>
+#include <lapic.h>
 #include "pkvm.h"
 
 #ifdef __PKVM_HYP__
@@ -254,6 +255,17 @@ noinstr void kvm_spurious_fault(void)
 #endif
 }
 EXPORT_SYMBOL_GPL(kvm_spurious_fault);
+
+u64 kvm_get_apic_base(struct kvm_vcpu *vcpu)
+{
+	return vcpu->arch.apic_base;
+}
+
+enum lapic_mode kvm_get_apic_mode(struct kvm_vcpu *vcpu)
+{
+	return kvm_apic_mode(kvm_get_apic_base(vcpu));
+}
+EXPORT_SYMBOL_GPL(kvm_get_apic_mode);
 
 #define EXCPT_BENIGN		0
 #define EXCPT_CONTRIBUTORY	1
