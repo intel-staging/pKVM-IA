@@ -905,6 +905,17 @@ static void pkvm_inject_irq(struct pkvm_vcpu *pkvm_vcpu)
 	kvm_x86_call(inject_irq)(vcpu, false);
 }
 
+static void pkvm_inject_nmi(struct pkvm_vcpu *pkvm_vcpu)
+{
+	if (WARN_ON_ONCE(!pkvm_vcpu))
+		return;
+
+	if (WARN_ON_ONCE(__pkvm_nmi_allowed(pkvm_vcpu, true) <= 0))
+		return;
+
+	kvm_x86_call(inject_nmi)(to_kvm_vcpu(pkvm_vcpu));
+}
+
 static unsigned long pkvm_vcpu_handle_kvm_call(unsigned long fn,
 					       struct kvm_vcpu *shared_vcpu,
 					       unsigned long p2, unsigned  long p3)
@@ -1010,6 +1021,9 @@ static unsigned long pkvm_vcpu_handle_kvm_call(unsigned long fn,
 		break;
 	case __pkvm__inject_irq:
 		pkvm_inject_irq(pkvm_vcpu);
+		break;
+	case __pkvm__inject_nmi:
+		pkvm_inject_nmi(pkvm_vcpu);
 		break;
 	default:
 		ret = -EINVAL;
