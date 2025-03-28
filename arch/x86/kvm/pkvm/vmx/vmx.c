@@ -1220,14 +1220,6 @@ void vmx_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
 #endif
 
 	vmx->host_debugctlmsr = get_debugctlmsr();
-
-#ifdef __PKVM_HYP__
-	/*
-	 * As the VMX emulate-based method is still in use, load the vmcs
-	 * following the nested way.
-	 */
-	pkvm_nested_load_vmcs(vcpu);
-#endif
 }
 
 void vmx_vcpu_put(struct kvm_vcpu *vcpu)
