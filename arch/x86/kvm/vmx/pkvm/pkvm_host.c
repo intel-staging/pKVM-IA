@@ -5,6 +5,7 @@
 
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/jump_label.h>
 #include <linux/dmar.h>
 #include <../drivers/iommu/intel/iommu.h>
 #include <linux/pci.h>
@@ -20,6 +21,8 @@
 #include "pkvm_constants.h"
 
 MODULE_LICENSE("GPL");
+
+DEFINE_STATIC_KEY_FALSE(pkvm_ia_enabled_key);
 
 bool __read_mostly enable_pkvm = false;
 
@@ -1397,6 +1400,9 @@ int __init vmx_pkvm_init(void)
 	ret = pkvm_init_finalise();
 	if (ret)
 		pkvm_firmware_rmem_clear();
+
+	static_branch_enable(&pkvm_ia_enabled_key);
+
 	return ret;
 
 out:
