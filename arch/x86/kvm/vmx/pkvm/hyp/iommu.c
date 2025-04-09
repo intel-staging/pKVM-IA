@@ -821,7 +821,6 @@ static int initialize_iommu_pgt(struct pkvm_iommu *iommu)
 	static struct pkvm_mm_ops *iommu_mm_ops;
 	struct pkvm_pgtable_ops *iommu_ops;
 	struct pkvm_pgtable_cap cap;
-	u64 grt_pa = readq(iommu->iommu.reg + DMAR_RTADDR_REG) & VTD_PAGE_MASK;
 	int ret;
 
 	if (ecap_smts(iommu->iommu.ecap)) {
@@ -832,7 +831,6 @@ static int initialize_iommu_pgt(struct pkvm_iommu *iommu)
 		iommu_ops = &iommu_lm_id_ops;
 	}
 
-	vpgt->root_pa = grt_pa;
 	ret = pkvm_pgtable_init(vpgt, &viommu_mm_ops, iommu_ops, &cap, false);
 	if (ret)
 		return ret;
@@ -863,6 +861,24 @@ static int initialize_iommu_pgt(struct pkvm_iommu *iommu)
 	return ret;
 }
 
+static void initialize_viommu_reg(struct pkvm_iommu *iommu, u32 gsts)
+{
+	struct viommu_reg *vreg = &iommu->viommu.vreg;
+
+	vreg->cap = iommu->iommu.cap;
+	vreg->ecap = iommu->iommu.ecap;
+	pkvm_update_iommu_virtual_caps(&vreg->cap, &vreg->ecap);
+
+	vreg->gsts = gsts;
+
+	pkvm_dbg("%s: iommu phys reg 0x%llx cap 0x%llx ecap 0x%llx gsts 0x%x\n",
+		 __func__, iommu->iommu.reg_phys, vreg->cap, vreg->ecap, vreg->gsts);
+
+	/* rta updated when host writes to DMAR_RTADDR_REG */
+
+	/* Invalidate Queue regs are updated when create descriptor */
+}
+
 int pkvm_init_iommu(unsigned long mem_base, unsigned long nr_pages)
 {
 	struct pkvm_iommu_info *info = &pkvm_hyp->iommu_infos[0];
@@ -873,6 +889,8 @@ int pkvm_init_iommu(unsigned long mem_base, unsigned long nr_pages)
 		return ret;
 
 	for (i = 0; i < PKVM_MAX_IOMMU_NUM; piommu++, info++, i++) {
+		u32 gsts;
+
 		if (!info->reg_phys)
 			break;
 
@@ -895,9 +913,11 @@ int pkvm_init_iommu(unsigned long mem_base, unsigned long nr_pages)
 
 		piommu->iommu.cap = readq(piommu->iommu.reg + DMAR_CAP_REG);
 		piommu->iommu.ecap = readq(piommu->iommu.reg + DMAR_ECAP_REG);
+		gsts = readl(piommu->iommu.reg + DMAR_GSTS_REG);
 		/* cache the enabled features from Global Status register */
-		piommu->iommu.gcmd = readl(piommu->iommu.reg + DMAR_GSTS_REG) &
-				     DMAR_GSTS_EN_BITS;
+		piommu->iommu.gcmd = gsts & DMAR_GSTS_EN_BITS;
+
+		initialize_viommu_reg(piommu, gsts);
 
 		ret = pkvm_host_ept_unmap((unsigned long)info->reg_phys,
 				     (unsigned long)info->reg_phys,
@@ -1521,42 +1541,21 @@ static void enable_translation(struct pkvm_iommu *iommu)
 	PKVM_IOMMU_WAIT_OP(reg + DMAR_GSTS_REG, readl, (sts & DMA_GSTS_TES), sts);
 }
 
-static void initialize_viommu_reg(struct pkvm_iommu *iommu)
-{
-	struct viommu_reg *vreg = &iommu->viommu.vreg;
-	void __iomem *reg_base = iommu->iommu.reg;
-
-	vreg->cap = readq(reg_base + DMAR_CAP_REG);
-	vreg->ecap = readq(reg_base + DMAR_ECAP_REG);
-	pkvm_update_iommu_virtual_caps(&vreg->cap, &vreg->ecap);
-
-	vreg->gsts = readl(reg_base + DMAR_GSTS_REG);
-	vreg->rta = readq(reg_base + DMAR_RTADDR_REG);
-
-	pkvm_dbg("%s: iommu phys reg 0x%llx cap 0x%llx ecap 0x%llx gsts 0x%x rta 0x%llx\n",
-		 __func__, iommu->iommu.reg_phys, vreg->cap, vreg->ecap, vreg->gsts, vreg->rta);
-
-	/* Invalidate Queue regs are updated when create descriptor */
-}
-
+/*
+ * Should be called with iommu->lock held.
+ */
 static int activate_iommu(struct pkvm_iommu *iommu)
 {
 	unsigned long vaddr = 0, vaddr_end = IOMMU_MAX_VADDR;
 	int ret;
 
-	pkvm_dbg("%s: iommu%d\n", __func__, iommu->iommu.seq_id);
-
-	pkvm_spin_lock(&iommu->lock);
-
 	ret = initialize_iommu_pgt(iommu);
 	if (ret)
-		goto out;
-
-	initialize_viommu_reg(iommu);
+		return ret;
 
 	ret = sync_shadow_id(iommu, vaddr, vaddr_end, 0, NULL);
 	if (ret)
-		goto out;
+		return ret;
 
 	ret = create_qi_desc(iommu);
 	if (ret)
@@ -1576,13 +1575,12 @@ static int activate_iommu(struct pkvm_iommu *iommu)
 	iommu->activated = true;
 	root_tbl_walk(iommu);
 
-	pkvm_spin_unlock(&iommu->lock);
+	pkvm_dbg("pkvm: %s: iommu%d activated\n", __func__, iommu->iommu.seq_id);
+
 	return 0;
 
 free_shadow:
 	free_shadow_id(iommu, vaddr, vaddr_end);
-out:
-	pkvm_spin_unlock(&iommu->lock);
 	return ret;
 }
 
@@ -1888,6 +1886,7 @@ static void handle_gcmd_te(struct pkvm_iommu *iommu, bool en)
 	unsigned long vaddr = 0, vaddr_end = MAX_NUM_OF_ADDRESS_SPACE(iommu);
 	struct pkvm_viommu *viommu = &iommu->viommu;
 
+	PKVM_ASSERT(iommu->activated);
 	if (en) {
 		viommu->vreg.gsts |= DMA_GSTS_TES;
 		/*
@@ -1929,7 +1928,11 @@ static void handle_gcmd_srtp(struct pkvm_iommu *iommu)
 
 	pkvm_dbg("pkvm: %s: set SRTP val 0x%llx\n", __func__, vreg->rta);
 
-	if (vreg->gsts & DMA_GSTS_TES) {
+	if (!iommu->activated) {
+		if (activate_iommu(iommu)) {
+			pkvm_dbg("pkvm: %s: iommu%d failed to activate\n", __func__, iommu->iommu.seq_id);
+		}
+	} else if (vreg->gsts & DMA_GSTS_TES) {
 		unsigned long vaddr = 0, vaddr_end = MAX_NUM_OF_ADDRESS_SPACE(iommu);
 
 		/* TE is already enabled, sync shadow */
@@ -1951,6 +1954,7 @@ static void handle_gcmd_qie(struct pkvm_iommu *iommu, bool en)
 {
 	struct viommu_reg *vreg = &iommu->viommu.vreg;
 
+	PKVM_ASSERT(iommu->activated);
 	if (en) {
 		if (vreg->iq_tail != 0) {
 			pkvm_err("pkvm: Queue invalidation descriptor tail is not zero\n");
@@ -1984,6 +1988,7 @@ static void handle_gcmd_direct(struct pkvm_iommu *iommu, u32 val)
 	u32 cmd, gcmd, sts;
 	int bit;
 
+	PKVM_ASSERT(iommu->activated);
 	if ((changed | set) & DMAR_GCMD_PROTECTED) {
 		pkvm_dbg("pkvm:%s touching protected bits changed 0x%lx set 0x%lx\n",
 			 __func__, changed, set);
@@ -2102,10 +2107,6 @@ static unsigned long access_iommu_mmio(struct pkvm_iommu *iommu, bool is_read,
 	unsigned long offset = phys - iommu->iommu.reg_phys;
 	unsigned long ret = 0;
 
-	/* pkvm IOMMU driver is not activated yet, so directly access MMIO */
-	if (unlikely(!iommu->activated))
-		return direct_access_iommu_mmio(iommu, is_read, len, phys, val);
-
 	/* Only need to emulate part of the MMIO */
 	switch (offset) {
 	case DMAR_CAP_REG:
@@ -2177,20 +2178,6 @@ unsigned long pkvm_access_iommu(bool is_read, int len, unsigned long phys, unsig
 	pkvm_spin_unlock(&pkvm_iommu->lock);
 
 	return ret;
-}
-
-int pkvm_activate_iommu(void)
-{
-	struct pkvm_iommu *iommu;
-	int ret = 0;
-
-	for_each_valid_iommu(iommu) {
-		ret = activate_iommu(iommu);
-		if (ret)
-			return ret;
-	}
-
-	return 0;
 }
 
 bool is_mem_range_overlap_iommu(unsigned long start, unsigned long end)

@@ -69,6 +69,17 @@ struct pkvm_deprivilege_param {
 };
 DEFINE_PER_CPU_READ_MOSTLY(bool, pkvm_enabled);
 
+struct pkvm_iommu_driver *iommu_driver = NULL;
+
+int pkvm_iommu_register_driver(struct pkvm_iommu_driver *kern_ops)
+{
+	if (WARN_ON(!kern_ops))
+		return -EINVAL;
+
+	return cmpxchg_release(&iommu_driver, NULL, kern_ops) ? -EBUSY : 0;
+}
+EXPORT_SYMBOL(pkvm_iommu_register_driver);
+
 struct pkvm_tlb_range {
 	u64 start_gfn;
 	u64 pages;
@@ -1083,7 +1094,6 @@ static __init int pkvm_init_finalise(void)
 					       NULL, true);
 	}
 
-	ret = kvm_hypercall0(PKVM_HC_ACTIVATE_IOMMU);
 out:
 	put_cpu();
 
@@ -1324,7 +1334,15 @@ static void __init setup_pkvm_syms(void)
 	pkvm_sym(x86_pred_cmd) = x86_pred_cmd;
 }
 
-int __init vmx_pkvm_init(void)
+static int __init pkvm_iommu_driver_init(void)
+{
+	if (!smp_load_acquire(&iommu_driver))
+		return 0;
+
+	return iommu_driver->init_driver();
+}
+
+static int __init __vmx_pkvm_init(void)
 {
 	int ret = 0, cpu;
 
@@ -1409,5 +1427,13 @@ out:
 	pkvm_firmware_rmem_clear();
 	pkvm_sym(pkvm_hyp) = NULL;
 	/* TODO: Revisit if the memory resource may be reused here */
+	return ret;
+}
+
+int __init vmx_pkvm_init(void)
+{
+	int ret = __vmx_pkvm_init();
+	pkvm_iommu_driver_init();
+
 	return ret;
 }
