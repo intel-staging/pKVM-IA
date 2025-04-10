@@ -447,9 +447,13 @@ static int domain_translation_struct_show(struct seq_file *m,
 		else
 			seq_printf(m, "@0x%llx\n", pgd);
 
-		seq_printf(m, "%-17s\t%-18s\t%-18s\t%-18s\t%-18s\t%-s\n",
+		if (!pgd) {
+			seq_printf(m, "Device configured for pass through!\n");
+		} else {
+			seq_printf(m, "%-17s\t%-18s\t%-18s\t%-18s\t%-18s\t%-s\n",
 			   "IOVA_PFN", "PML5E", "PML4E", "PDPE", "PDE", "PTE");
-		pgtable_walk_level(m, phys_to_virt(pgd), agaw + 2, 0, path);
+			pgtable_walk_level(m, phys_to_virt(pgd), agaw + 2, 0, path);
+		}
 
 		found = true;
 iommu_unlock:
