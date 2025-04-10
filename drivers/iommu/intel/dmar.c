@@ -916,6 +916,17 @@ dmar_validate_one_drhd(struct acpi_dmar_header *entry, void *arg)
 	return 0;
 }
 
+#ifdef CONFIG_PKVM_INTEL
+struct pkvm_iommu_driver kern_ops = {
+	.init_driver = intel_iommu_init,
+	.remove_driver = intel_iommu_shutdown
+};
+
+static int intel_iommu_init_nop(void) { return 0; }
+static void intel_iommu_shutdown_nop(void) { }
+
+#endif
+
 void __init detect_intel_iommu(void)
 {
 	int ret;
@@ -938,8 +949,14 @@ void __init detect_intel_iommu(void)
 
 #ifdef CONFIG_X86
 	if (!ret) {
+#ifdef CONFIG_PKVM_INTEL
+		pkvm_iommu_register_driver(&kern_ops);
+		x86_init.iommu.iommu_init = intel_iommu_init_nop;
+		x86_platform.iommu_shutdown = intel_iommu_shutdown_nop;
+#else
 		x86_init.iommu.iommu_init = intel_iommu_init;
 		x86_platform.iommu_shutdown = intel_iommu_shutdown;
+#endif
 	}
 
 #endif
