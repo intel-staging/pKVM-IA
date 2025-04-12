@@ -55,6 +55,14 @@ enum sm_level {
 	IOMMU_SM_LEVEL_NUM,
 };
 
+#ifndef __PKVM_IOMMU_CORE__
+extern struct pkvm_iommu iommus[PKVM_MAX_IOMMU_NUM];
+extern struct pkvm_mm_ops iommu_pw_coherency_mm_ops;
+extern struct pkvm_mm_ops iommu_pw_noncoherency_mm_ops;
+extern struct pkvm_pgtable_ops iommu_lm_id_ops;
+extern struct pkvm_pgtable_ops iommu_sm_id_ops;
+#endif
+
 #define LAST_LEVEL(level)	\
 	(((level) == 1) ? true : false)
 
@@ -340,9 +348,48 @@ static inline bool pasid_copy_entry(struct pasid_entry *to, struct pasid_entry *
 	return updated;
 }
 
+static inline bool iommu_coherency(u64 ecap)
+{
+	return ecap_smts(ecap) ? ecap_smpwc(ecap) : ecap_coherent(ecap);
+}
+
 extern void root_tbl_walk(struct pkvm_iommu *iommu);
 extern void pkvm_dump_domain_pgt(unsigned long phys, unsigned long bdf, unsigned long pasid);
 extern void domain_translation_struct_show(struct pkvm_iommu *iommu, u16 bdf, u32 pasid);
 extern void pkvm_dump_dmar_tr_struct(void);
 
+void *iommu_zalloc_page(void);
+void *iommu_zalloc_pages(size_t size);
+void iommu_get_page(void *vaddr);
+void iommu_put_page(void *vaddr);
+void iommu_flush_cache(void *ptep, unsigned int size);
+
+struct pkvm_ptdev *iommu_find_ptdev(struct pkvm_iommu *iommu, u16 bdf, u32 pasid);
+struct pkvm_ptdev *iommu_add_ptdev(struct pkvm_iommu *iommu, u16 bdf, u32 pasid);
+void iommu_del_ptdev(struct pkvm_iommu *iommu, struct pkvm_ptdev *ptdev);
+int iommu_audit_did(struct pkvm_iommu *iommu, u16 did, int shadow_vm_handle);
+
+int initialize_iommu_pgt(struct pkvm_iommu *iommu);
+#ifdef CONFIG_PKVM_INTEL_PVIOMMU
+static inline int handle_descriptor(struct pkvm_iommu *iommu, struct qi_desc *desc)
+{
+	return 0;
+}
+static inline int free_shadow_id(struct pkvm_iommu *iommu, unsigned long vaddr,
+		       unsigned long vaddr_end)
+{
+	return 0;
+}
+static inline int sync_shadow_id(struct pkvm_iommu *iommu, unsigned long vaddr,
+		       unsigned long vaddr_end, u16 did)
+{
+	return 0;
+}
+#else
+int handle_descriptor(struct pkvm_iommu *iommu, struct qi_desc *desc);
+int free_shadow_id(struct pkvm_iommu *iommu, unsigned long vaddr,
+		       unsigned long vaddr_end);
+int sync_shadow_id(struct pkvm_iommu *iommu, unsigned long vaddr,
+		       unsigned long vaddr_end, u16 did);
+#endif
 #endif
