@@ -584,6 +584,38 @@ struct context_entry {
 	u64 hi;
 };
 
+#define ROOT_ENTRY_NR (VTD_PAGE_SIZE/sizeof(struct root_entry))
+
+#ifdef CONFIG_PKVM_INTEL_PVIOMMU
+/*
+ * When IOMMU is paravirtualized, root table will be inaccessible,
+ * but we need to read access to root table for managing context entries.
+ * Following structures are a mechanism to maintain a readonly-like access
+ * to the root table and context entries. Updating this will not have any
+ * effect in the hardware.
+ *
+ * This mechanism is in place to avoid a hypercall for each access to the
+ * root and context tables.
+ */
+
+struct pkvm_ce_node {
+	u16 bdf;
+	struct context_entry ce;
+	struct rhash_head node;
+};
+
+struct pkvm_root_entry {
+	/*
+	 * vaddr of context table pages
+	 */
+	void *context_ptr[ROOT_ENTRY_NR];
+	/*
+	 * key = bdf, value = context entry.
+	 */
+	struct rhashtable context_entries;
+};
+#endif
+
 struct iommu_domain_info {
 	struct intel_iommu *iommu;
 	unsigned int refcnt;		/* Refcount of devices per iommu */
@@ -735,6 +767,17 @@ struct intel_iommu {
 	unsigned long	*copied_tables; /* bitmap of copied tables */
 	spinlock_t	lock; /* protect context, domain ids */
 	struct root_entry *root_entry; /* virtual address */
+#ifdef CONFIG_PKVM_INTEL_PVIOMMU
+	/*
+	 * Name is a bit misleading, so is 'root_entry'.
+	 * root_entry is the virtual address of root table, but
+	 * can also be visualized as an array of root entries.
+	 * Similarly, pv_root_entry is an abstraction of root_entry
+	 * when IOMMU is paravirttualized - meaning pv_root_entry
+	 * allows to retrieve root entries in paravirt mode.
+	 */
+	struct pkvm_root_entry *pv_root_entry;
+#endif
 
 	struct iommu_flush flush;
 #endif
@@ -1318,6 +1361,8 @@ static inline void intel_iommu_debugfs_remove_dev(struct device_domain_info *inf
 static inline void intel_iommu_debugfs_create_dev_pasid(struct dev_pasid_info *dev_pasid) {}
 static inline void intel_iommu_debugfs_remove_dev_pasid(struct dev_pasid_info *dev_pasid) {}
 #endif /* CONFIG_INTEL_IOMMU_DEBUGFS */
+
+void iommu_root_entry(struct intel_iommu *iommu, u8 bus, struct root_entry *re);
 
 extern const struct attribute_group *intel_iommu_groups[];
 struct context_entry *iommu_context_addr(struct intel_iommu *iommu, u8 bus,

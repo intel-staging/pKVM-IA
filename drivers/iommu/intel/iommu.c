@@ -19,6 +19,7 @@
 #include <linux/memory.h>
 #include <linux/pci.h>
 #include <linux/pci-ats.h>
+#include <linux/rhashtable.h>
 #include <linux/spinlock.h>
 #include <linux/syscore_ops.h>
 #include <linux/tboot.h>
@@ -65,8 +66,6 @@ static int rwbf_quirk;
 static int force_on = 0;
 static int intel_iommu_tboot_noforce;
 static int no_platform_optin;
-
-#define ROOT_ENTRY_NR (VTD_PAGE_SIZE/sizeof(struct root_entry))
 
 /*
  * Take a root_entry and return the Lower Context Table Pointer (LCTP)
@@ -480,12 +479,14 @@ void domain_update_iommu_cap(struct dmar_domain *domain)
 	domain->domain.pgsize_bitmap |= domain_super_pgsize_bitmap(domain);
 }
 
-struct context_entry *iommu_context_addr(struct intel_iommu *iommu, u8 bus,
+static struct context_entry *__iommu_context_addr(struct intel_iommu *iommu, u8 bus,
 					 u8 devfn, int alloc)
 {
 	struct root_entry *root = &iommu->root_entry[bus];
 	struct context_entry *context;
 	u64 *entry;
+
+	WARN_ON(IS_ENABLED(CONFIG_PKVM_INTEL_PVIOMMU) && pkvm_ia_enabled());
 
 	/*
 	 * Except that the caller requested to allocate a new entry,
@@ -520,6 +521,159 @@ struct context_entry *iommu_context_addr(struct intel_iommu *iommu, u8 bus,
 	}
 	return &context[devfn];
 }
+
+static inline void __iommu_root_entry(struct intel_iommu *iommu, u8 bus, struct root_entry *re)
+{
+	WARN_ON(IS_ENABLED(CONFIG_PKVM_INTEL_PVIOMMU) && pkvm_ia_enabled());
+	if (iommu->root_entry)
+		*re = iommu->root_entry[bus];
+	else
+		re->lo = re->hi = 0;
+}
+
+#ifdef CONFIG_PKVM_INTEL_PVIOMMU
+static const struct rhashtable_params pkvm_ce_ht_params = {
+	.key_offset = offsetof(struct pkvm_ce_node, bdf),
+	.key_len = sizeof_field(struct pkvm_ce_node, bdf),
+	.head_offset = offsetof(struct pkvm_ce_node, node),
+	.automatic_shrinking = true,
+};
+
+static int iommu_alloc_pv_root_entry(struct intel_iommu *iommu)
+{
+	struct pkvm_root_entry *pv_root_entry;
+	int ret = 0;
+
+	if (!pkvm_ia_enabled())
+		return 0;
+
+	pv_root_entry = kvmalloc(sizeof(struct pkvm_root_entry), GFP_ATOMIC);
+	if (!pv_root_entry) {
+		pr_err("Failed to allocate pv_root_entry for %s!\n", iommu->name);
+		return -ENOMEM;
+	}
+	memset(pv_root_entry->context_ptr, 0, ROOT_ENTRY_NR * 8);
+
+	if ((ret = rhashtable_init(&pv_root_entry->context_entries, &pkvm_ce_ht_params))) {
+		pr_err("Failed to init pv context entry hash table for %s!\n", iommu->name);
+		return ret;
+	}
+	iommu->pv_root_entry = pv_root_entry;
+
+	return ret;
+}
+
+static void iommu_free_pv_root_entry(struct intel_iommu *iommu)
+{
+	struct pkvm_root_entry *pv_root_entry = iommu->pv_root_entry;
+
+	if (!pkvm_ia_enabled())
+		return;
+
+	rhashtable_destroy(&pv_root_entry->context_entries);
+	kvfree(pv_root_entry);
+}
+
+static void iommu_set_pv_root_entry(struct intel_iommu *iommu)
+{
+	pkvm_set_iommu_root(iommu->reg_phys, virt_to_phys(iommu->root_entry));
+}
+
+void iommu_root_entry(struct intel_iommu *iommu, u8 bus, struct root_entry *re)
+{
+	if (pkvm_ia_enabled()) {
+		re->hi = re->lo = 0;
+		if (iommu->pv_root_entry->context_ptr[bus])
+			re->lo = virt_to_phys(iommu->pv_root_entry->context_ptr[bus]) | 1;
+	} else {
+		__iommu_root_entry(iommu, bus, re);
+	}
+}
+
+static void iommu_free_context(struct intel_iommu *iommu, struct context_entry *context)
+{
+	void *addr = (void *)context;
+	if (pkvm_ia_enabled()) {
+		struct pkvm_ce_node *ce_node = container_of(context, struct pkvm_ce_node, ce);
+		u8 bus = ce_node->bdf >> 8;
+		addr = iommu->pv_root_entry->context_ptr[bus];
+		kvfree(ce_node);
+	}
+	iommu_free_page(addr);
+}
+
+static struct pkvm_ce_node * __get_ce_node(struct rhashtable *context_entries, u8 bus, u8 devfn)
+{
+	u16 bdf = bus << 8 | devfn;
+	struct pkvm_ce_node *ce_node;
+
+	ce_node = rhashtable_lookup_fast(context_entries, &bdf, pkvm_ce_ht_params);
+	if (!ce_node) {
+		ce_node = kvmalloc(sizeof(struct pkvm_ce_node), GFP_ATOMIC);
+		ce_node->bdf = bdf;
+		rhashtable_insert_fast(context_entries, &ce_node->node, pkvm_ce_ht_params);
+	}
+
+	return ce_node;
+}
+
+struct context_entry *iommu_context_addr(struct intel_iommu *iommu, u8 bus,
+					 u8 devfn, int alloc)
+{
+	struct pkvm_root_entry *pv_root = iommu->pv_root_entry;
+	struct pkvm_ce_node *ce_node;
+	void *context;
+
+	if (!pkvm_ia_enabled())
+		return __iommu_context_addr(iommu, bus, devfn, alloc);
+
+	context = pv_root->context_ptr[bus];
+	if (!context) {
+		if (!alloc)
+			return NULL;
+		context = iommu_alloc_page_node(iommu->node, GFP_ATOMIC);
+		if (!context)
+			return NULL;
+	}
+
+	ce_node = __get_ce_node(&pv_root->context_entries, bus, devfn);
+
+	if (!ce_node) {
+		if (context)
+			iommu_free_page(context);
+		return NULL;
+	}
+
+	pv_root->context_ptr[bus] = context;
+
+	return &ce_node->ce;
+}
+#else
+static inline int iommu_alloc_pv_root_entry(struct intel_iommu *iommu)
+{
+	return 0;
+}
+
+static inline void iommu_free_pv_root_entry(struct intel_iommu *iommu) {}
+
+static inline void iommu_set_pv_root_entry(struct intel_iommu *iommu) { }
+
+void iommu_root_entry(struct intel_iommu *iommu, u8 bus, struct root_entry *re)
+{
+	__iommu_root_entry(iommu, bus, re);
+}
+
+static inline void iommu_free_context(struct intel_iommu *iommu, struct context_entry *context)
+{
+	iommu_free_page((void *)context);
+}
+
+struct context_entry *iommu_context_addr(struct intel_iommu *iommu,
+		u8 bus, u8 devfn, int alloc)
+{
+	return __iommu_context_addr(iommu, bus, devfn, alloc);
+}
+#endif
 
 /**
  * is_downstream_to_pci_bridge - test if a device belongs to the PCI
@@ -683,17 +837,18 @@ static void free_context_table(struct intel_iommu *iommu)
 	for (i = 0; i < ROOT_ENTRY_NR; i++) {
 		context = iommu_context_addr(iommu, i, 0, 0);
 		if (context)
-			iommu_free_page(context);
+			iommu_free_context(iommu, context);
 
 		if (!sm_supported(iommu))
 			continue;
 
 		context = iommu_context_addr(iommu, i, 0x80, 0);
 		if (context)
-			iommu_free_page(context);
+			iommu_free_context(iommu, context);
 	}
 
 	iommu_free_page(iommu->root_entry);
+	iommu_free_pv_root_entry(iommu);
 	iommu->root_entry = NULL;
 }
 
@@ -729,7 +884,7 @@ void dmar_fault_dump_ptes(struct intel_iommu *iommu, u16 source_id,
 	struct pasid_dir_entry *dir, *pde;
 	struct pasid_entry *entries, *pte;
 	struct context_entry *ctx_entry;
-	struct root_entry *rt_entry;
+	struct root_entry rt_entry;
 	int i, dir_index, index, level;
 	u8 devfn = source_id & 0xff;
 	u8 bus = source_id >> 8;
@@ -742,13 +897,13 @@ void dmar_fault_dump_ptes(struct intel_iommu *iommu, u16 source_id,
 		pr_info("root table is not present\n");
 		return;
 	}
-	rt_entry = &iommu->root_entry[bus];
+	iommu_root_entry(iommu, bus, &rt_entry);
 
 	if (sm_supported(iommu))
 		pr_info("scalable mode root entry: hi 0x%016llx, low 0x%016llx\n",
-			rt_entry->hi, rt_entry->lo);
+			rt_entry.hi, rt_entry.lo);
 	else
-		pr_info("root entry: 0x%016llx", rt_entry->lo);
+		pr_info("root entry: 0x%016llx", rt_entry.lo);
 
 	/* context entry dump */
 	ctx_entry = iommu_context_addr(iommu, bus, devfn, 0);
@@ -1093,6 +1248,7 @@ static void domain_unmap(struct dmar_domain *domain, unsigned long start_pfn,
 /* iommu handling */
 static int iommu_alloc_root_entry(struct intel_iommu *iommu)
 {
+	int ret = 0;
 	struct root_entry *root;
 
 	root = iommu_alloc_page_node(iommu->node, GFP_ATOMIC);
@@ -1102,19 +1258,25 @@ static int iommu_alloc_root_entry(struct intel_iommu *iommu)
 		return -ENOMEM;
 	}
 
+	if ((ret = iommu_alloc_pv_root_entry(iommu))) {
+		iommu_free_page(root);
+		return ret;
+	}
+
 	__iommu_flush_cache(iommu, root, ROOT_SIZE);
 	iommu->root_entry = root;
 
 	return 0;
 }
 
-static void iommu_set_root_entry(struct intel_iommu *iommu)
+static void __iommu_set_root_entry(struct intel_iommu *iommu)
 {
 	u64 addr;
 	u32 sts;
 	unsigned long flag;
 
 	addr = virt_to_phys(iommu->root_entry);
+
 	if (sm_supported(iommu))
 		addr |= DMA_RTADDR_SMT;
 
@@ -1140,6 +1302,14 @@ static void iommu_set_root_entry(struct intel_iommu *iommu)
 	if (sm_supported(iommu))
 		qi_flush_pasid_cache(iommu, 0, QI_PC_GLOBAL, 0);
 	iommu->flush.flush_iotlb(iommu, 0, 0, 0, DMA_TLB_GLOBAL_FLUSH);
+}
+
+static void iommu_set_root_entry(struct intel_iommu *iommu)
+{
+	if (IS_ENABLED(CONFIG_PKVM_INTEL_PVIOMMU) && pkvm_ia_enabled())
+		iommu_set_pv_root_entry(iommu);
+	else
+		__iommu_set_root_entry(iommu);
 }
 
 void iommu_flush_write_buffer(struct intel_iommu *iommu)
@@ -1628,6 +1798,9 @@ static void copied_context_tear_down(struct intel_iommu *iommu,
  * non-present entry we only need to flush the write-buffer. If the
  * _does_ cache non-present entries, then it does so in the special
  * domain #0, which we have to flush:
+ *
+ * pkvm flushes the caches on the context entry update hypercall. So
+ * we do not need this for pkvm
  */
 static void context_present_cache_flush(struct intel_iommu *iommu, u16 did,
 					u8 bus, u8 devfn)
@@ -1642,6 +1815,28 @@ static void context_present_cache_flush(struct intel_iommu *iommu, u16 did,
 		iommu_flush_write_buffer(iommu);
 	}
 }
+
+#ifdef CONFIG_PKVM_INTEL_PVIOMMU
+static long pv_update_context_entry(struct intel_iommu *iommu,
+		u8 bus, u8 devfn, struct context_entry *context)
+{
+	struct pkvm_root_entry *pv_root = iommu->pv_root_entry;
+	unsigned long rte;
+
+	if (WARN_ON(!pkvm_ia_enabled()))
+		return 0;
+
+	rte = virt_to_phys(pv_root->context_ptr[bus]) | 1;
+	return pkvm_update_context_entry(iommu->reg_phys, PCI_DEVID(bus, devfn), rte,
+			context->hi, context->lo);
+}
+#else
+static inline long pv_update_context_entry(struct intel_iommu *iommu,
+		u8 bus, u8 devfn, struct context_entry *context)
+{
+	return 0;
+}
+#endif
 
 static int domain_context_mapping_one(struct dmar_domain *domain,
 				      struct intel_iommu *iommu,
@@ -1694,9 +1889,19 @@ static int domain_context_mapping_one(struct dmar_domain *domain,
 	context_set_translation_type(context, translation);
 	context_set_fault_enable(context);
 	context_set_present(context);
-	if (!ecap_coherent(iommu->ecap))
-		clflush_cache_range(context, sizeof(*context));
-	context_present_cache_flush(iommu, did, bus, devfn);
+
+	if (IS_ENABLED(CONFIG_PKVM_INTEL_PVIOMMU) && pkvm_ia_enabled()) {
+		ret = pv_update_context_entry(iommu, bus, devfn, context);
+		if (ret) {
+			pr_warn("PV call to update context entry failed! ce: %llx:%llx\n",
+				context->hi, context->lo);
+			goto out_unlock;
+		}
+	} else {
+		if (!ecap_coherent(iommu->ecap))
+			clflush_cache_range(context, sizeof(*context));
+		context_present_cache_flush(iommu, did, bus, devfn);
+	}
 	ret = 0;
 
 out_unlock:
@@ -1912,9 +2117,17 @@ static void domain_context_clear_one(struct device_domain_info *info, u8 bus, u8
 
 	did = context_domain_id(context);
 	context_clear_entry(context);
-	__iommu_flush_cache(iommu, context, sizeof(*context));
+
+	if (IS_ENABLED(CONFIG_PKVM_INTEL_PVIOMMU) && pkvm_ia_enabled()) {
+		if (pv_update_context_entry(iommu, bus, devfn, context)) {
+			pr_warn("PV call to update context entry failed! ce: %llx:%llx\n",
+				context->hi, context->lo);
+		}
+	} else {
+		__iommu_flush_cache(iommu, context, sizeof(*context));
+		intel_context_flush_present(info, context, did, true);
+	}
 	spin_unlock(&iommu->lock);
-	intel_context_flush_present(info, context, did, true);
 }
 
 static int domain_setup_first_level(struct intel_iommu *iommu,
@@ -4508,6 +4721,7 @@ static int context_setup_pass_through(struct device *dev, u8 bus, u8 devfn)
 	struct device_domain_info *info = dev_iommu_priv_get(dev);
 	struct intel_iommu *iommu = info->iommu;
 	struct context_entry *context;
+	int ret = 0;
 
 	spin_lock(&iommu->lock);
 	context = iommu_context_addr(iommu, bus, devfn, 1);
@@ -4533,12 +4747,21 @@ static int context_setup_pass_through(struct device *dev, u8 bus, u8 devfn)
 	context_set_translation_type(context, CONTEXT_TT_PASS_THROUGH);
 	context_set_fault_enable(context);
 	context_set_present(context);
-	if (!ecap_coherent(iommu->ecap))
-		clflush_cache_range(context, sizeof(*context));
-	context_present_cache_flush(iommu, FLPT_DEFAULT_DID, bus, devfn);
+
+	if (IS_ENABLED(CONFIG_PKVM_INTEL_PVIOMMU) && pkvm_ia_enabled()) {
+		ret = pv_update_context_entry(iommu, bus, devfn, context);
+		if (ret) {
+			pr_warn("PV call to update context entry failed! ce: %llx:%llx\n",
+				context->hi, context->lo);
+		}
+	} else {
+		if (!ecap_coherent(iommu->ecap))
+			clflush_cache_range(context, sizeof(*context));
+		context_present_cache_flush(iommu, FLPT_DEFAULT_DID, bus, devfn);
+	}
 	spin_unlock(&iommu->lock);
 
-	return 0;
+	return ret;
 }
 
 static int context_setup_pass_through_cb(struct pci_dev *pdev, u16 alias, void *data)

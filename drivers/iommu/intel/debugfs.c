@@ -23,7 +23,7 @@ struct tbl_walk {
 	u16 bus;
 	u16 devfn;
 	u32 pasid;
-	struct root_entry *rt_entry;
+	struct root_entry rt_entry;
 	struct context_entry *ctx_entry;
 	struct pasid_entry *pasid_tbl_entry;
 };
@@ -163,8 +163,8 @@ static inline void print_tbl_walk(struct seq_file *m)
 
 	seq_printf(m, "%02x:%02x.%x\t0x%016llx:0x%016llx\t0x%016llx:0x%016llx\t",
 		   tbl_wlk->bus, PCI_SLOT(tbl_wlk->devfn),
-		   PCI_FUNC(tbl_wlk->devfn), tbl_wlk->rt_entry->hi,
-		   tbl_wlk->rt_entry->lo, tbl_wlk->ctx_entry->hi,
+		   PCI_FUNC(tbl_wlk->devfn), tbl_wlk->rt_entry.hi,
+		   tbl_wlk->rt_entry.lo, tbl_wlk->ctx_entry->hi,
 		   tbl_wlk->ctx_entry->lo);
 
 	/*
@@ -246,7 +246,7 @@ static void ctx_tbl_walk(struct seq_file *m, struct intel_iommu *iommu, u16 bus)
 
 		tbl_wlk.bus = bus;
 		tbl_wlk.devfn = devfn;
-		tbl_wlk.rt_entry = &iommu->root_entry[bus];
+		iommu_root_entry(iommu, bus, &tbl_wlk.rt_entry);
 		tbl_wlk.ctx_entry = context;
 		m->private = &tbl_wlk;
 
