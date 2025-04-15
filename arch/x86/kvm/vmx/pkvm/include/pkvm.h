@@ -138,7 +138,7 @@ extern struct pkvm_hyp *pkvm_sym(pkvm_hyp);
 extern unsigned long pkvm_sym(__x86_clflush_size);
 extern struct cpuinfo_x86 pkvm_sym(boot_cpu_data);
 extern unsigned int pkvm_sym(tsc_khz);
-extern struct cpumask pkvm_sym(__cpu_possible_mask) __ro_after_init;
+extern struct cpumask pkvm_sym(__cpu_possible_mask);
 extern unsigned int pkvm_sym(nr_cpu_ids);
 extern u64 pkvm_sym(x86_pred_cmd);
 
