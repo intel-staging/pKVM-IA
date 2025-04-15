@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <linux/align.h>
+#include <asm/processor.h>
 #include <asm/sections.h>
 #include <asm/kvm_pkvm.h>
 #include <asm/percpu.h>
