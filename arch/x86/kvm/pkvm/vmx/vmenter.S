@@ -7,7 +7,7 @@
 #include <asm/nospec-branch.h>
 #include <asm/percpu.h>
 #include <asm/segment.h>
-#include <kvm-asm-offsets.h>
+#include "kvm-asm-offsets.h"
 #include <vmx/run_flags.h>
 
 #define WORD_SIZE (BITS_PER_LONG / 8)

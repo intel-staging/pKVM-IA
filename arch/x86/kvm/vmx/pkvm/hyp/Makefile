@@ -31,6 +31,8 @@ pkvm-hyp-$(CONFIG_LIST_HARDENED)	+= $(lib-dir)/list_debug.o
 pkvm-obj 	:= $(patsubst %.o,%.pkvm.o,$(pkvm-hyp-y))
 obj-$(CONFIG_PKVM_INTEL)	+= pkvm.o
 
+AFLAGS_$(pkvm)/vmx/vmenter.pkvm.o	+= -iquote $(obj)/../../..
+
 $(obj)/$(pkvm)/vmx/vmenter.pkvm.o: $(obj)/../../../kvm-asm-offsets.h
 $(obj)/../../../kvm-asm-offsets.h: $(obj)/../../../kvm-asm-offsets.s FORCE
 	$(call filechk,offsets,__KVM_ASM_OFFSETS_H__)
