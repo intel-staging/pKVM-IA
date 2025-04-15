@@ -3,6 +3,7 @@
 #define _ASM_X86_EXTABLE_H
 
 #include <asm/extable_fixup_types.h>
+#include <asm/processor.h>	/* for cpu_relax() */
 
 /*
  * The exception table consists of two addresses relative to the
