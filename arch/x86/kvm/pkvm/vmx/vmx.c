@@ -6683,6 +6683,7 @@ out:
 	guest_state_exit_irqoff();
 #else
 out:
+	;
 #endif
 }
 
