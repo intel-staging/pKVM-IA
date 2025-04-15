@@ -7,6 +7,13 @@
 #define PCI_CFG_ADDR 0xcf8
 #define PCI_CFG_DATA 0xcfc
 
+/*
+ * Taken from linux/pci.h
+ */
+#define PCI_DEVID(bus, devfn)   ((((u16)(bus)) << 8) | (devfn))
+#define PCI_BUS_NUM(x) (((x) >> 8) & 0xff)
+#define PCI_DEV_FN(x) ((x) & 0xff)
+
 union pci_cfg_addr_reg {
 	u32 value;
 	struct {

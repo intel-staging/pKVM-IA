@@ -399,7 +399,7 @@ static void submit_qi(struct pkvm_iommu *iommu, struct qi_desc *base, int count)
 	} while (count > 0);
 }
 
-static void flush_context_cache(struct pkvm_iommu *iommu, u16 did,
+void flush_context_cache(struct pkvm_iommu *iommu, u16 did,
 				u16 sid, u8 fm, u64 type)
 {
 	struct qi_desc desc = {.qw1 = 0, .qw2 = 0, .qw3 = 0};
@@ -441,7 +441,7 @@ static void setup_iotlb_qi_desc(struct pkvm_iommu *iommu,
 	desc->qw3 = 0;
 }
 
-static void flush_iotlb(struct pkvm_iommu *iommu, u16 did, u64 addr,
+void flush_iotlb(struct pkvm_iommu *iommu, u16 did, u64 addr,
 			unsigned int size_order, u64 type)
 {
 	struct qi_desc desc;
@@ -505,7 +505,7 @@ static void enable_translation(struct pkvm_iommu *iommu)
 /*
  * Should be called with iommu->lock held.
  */
-static int activate_iommu(struct pkvm_iommu *iommu)
+int activate_iommu(struct pkvm_iommu *iommu)
 {
 	unsigned long vaddr = 0, vaddr_end = IOMMU_MAX_VADDR;
 	int ret;
@@ -807,6 +807,9 @@ static void handle_global_cmd(struct pkvm_iommu *iommu, u32 val)
 	pkvm_dbg("pkvm: iommu%d: handle gcmd val 0x%x gsts 0x%x changed 0x%x\n",
 		  iommu->iommu.seq_id, val, iommu->viommu.vreg.gsts, changed);
 
+#ifdef CONFIG_PKVM_INTEL_PVIOMMU
+	PKVM_ASSERT(changed & DMA_GCMD_SRTP);
+#endif
 	if (changed & DMA_GCMD_TE)
 		handle_gcmd_te(iommu, !!(val & DMA_GCMD_TE));
 
@@ -819,7 +822,7 @@ static void handle_global_cmd(struct pkvm_iommu *iommu, u32 val)
 	handle_gcmd_direct(iommu, val);
 }
 
-static struct pkvm_iommu *find_iommu_by_reg_phys(unsigned long phys)
+struct pkvm_iommu *find_iommu_by_reg_phys(unsigned long phys)
 {
 	struct pkvm_iommu *iommu;
 

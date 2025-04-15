@@ -12,5 +12,9 @@ int pkvm_iommu_sync(u16 bdf, u32 pasid);
 bool pkvm_iommu_coherency(u16 bdf, u32 pasid);
 void pkvm_iommu_flush_iotlb(struct pkvm_pgtable *pgt, unsigned long addr, unsigned long size);
 
-
+#ifdef CONFIG_PKVM_INTEL_PVIOMMU
+unsigned long pkvm_iommu_set_rta(unsigned long phys,unsigned long rta_phys);
+unsigned long pkvm_iommu_update_ce(unsigned long phys, unsigned long rte,
+		unsigned long ce_hi, unsigned long ce_lo);
+#endif
 #endif

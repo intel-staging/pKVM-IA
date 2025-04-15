@@ -114,6 +114,14 @@ static unsigned long handle_vmcall(struct kvm_vcpu *vcpu)
 	case PKVM_HC_MMIO_ACCESS:
 		ret = pkvm_access_iommu(a0, a1, a2, a3);
 		break;
+#ifdef CONFIG_PKVM_INTEL_PVIOMMU
+	case PKVM_HC_IOMMU_SET_RTA:
+		ret = pkvm_iommu_set_rta(a0, a1);
+		break;
+	case PKVM_HC_IOMMU_UPDATE_CE:
+		ret = pkvm_iommu_update_ce(a0, a1, a2, a3);
+		break;
+#endif
 	case PKVM_HC_TLB_REMOTE_FLUSH_RANGE:
 		pkvm_invalidate_guest_ept(a0, a1, a2);
 		break;
