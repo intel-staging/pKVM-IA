@@ -5,7 +5,7 @@
 #include <asm/fred.h>
 #include <asm/pkvm.h>
 #include "pkvm.h"
-#include "./pkvm/pkvm_constants.h"
+#include "pkvm_constants.h"
 
 #include "x86_ops.h"
 #include "vmx.h"
