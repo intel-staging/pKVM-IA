@@ -299,8 +299,10 @@ static int pkvm_vcpu_create(struct kvm_vcpu *shared_vcpu, unsigned long gpa)
 
 	shared_kvm = kern_pkvm_va(pkvm_vcpu->shared_vcpu->kvm);
 	pkvm_vm = get_pkvm_vm(shared_kvm->arch.pkvm.pkvm_vm_handle);
-	if (!pkvm_vm)
+	if (!pkvm_vm) {
+		ret = -EBUSY;
 		goto undonate;
+	}
 
 	ret = attach_pkvm_vcpu_to_vm(pkvm_vcpu, pkvm_vm);
 	if (ret)
