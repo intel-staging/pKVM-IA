@@ -4,11 +4,13 @@
 
 #ifdef CONFIG_PKVM_INTEL_DEBUG
 
-void __pkvm___dynamic_pr_debug(struct _ddebug *descriptor, const char *fmt, ...);
-int __pkvm__printk(const char *fmt, ...);
-noinstr struct cpu_entry_area *__pkvm_get_cpu_entry_area(int cpu);
-int __pkvm____ratelimit(struct ratelimit_state *rs, const char *func);
-void __pkvm___warn_printk(const char *fmt, ...);
+#define pkvm_debug_sym(sym) __pkvm_##sym
+
+void pkvm_debug_sym(__dynamic_pr_debug)(struct _ddebug *descriptor, const char *fmt, ...);
+int pkvm_debug_sym(_printk)(const char *fmt, ...);
+noinstr struct cpu_entry_area *pkvm_debug_sym(get_cpu_entry_area)(int cpu);
+int pkvm_debug_sym(___ratelimit)(struct ratelimit_state *rs, const char *func);
+void pkvm_debug_sym(__warn_printk)(const char *fmt, ...);
 
 #endif
 

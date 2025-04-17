@@ -66,7 +66,7 @@ static inline char *dynamic_emit_prefix(struct _ddebug *desc, char *buf)
 	return buf;
 }
 
-void __pkvm___dynamic_pr_debug(struct _ddebug *descriptor, const char *fmt, ...)
+void pkvm_debug_sym(__dynamic_pr_debug)(struct _ddebug *descriptor, const char *fmt, ...)
 {
 	va_list args;
 	struct va_format vaf;
@@ -85,7 +85,7 @@ void __pkvm___dynamic_pr_debug(struct _ddebug *descriptor, const char *fmt, ...)
 	va_end(args);
 }
 
-int __pkvm__printk(const char *fmt, ...)
+int pkvm_debug_sym(_printk)(const char *fmt, ...)
 {
 	va_list args;
 	int r;
@@ -98,17 +98,17 @@ int __pkvm__printk(const char *fmt, ...)
 }
 
 /* Is called from entry code, so must be noinstr */
-noinstr struct cpu_entry_area *__pkvm_get_cpu_entry_area(int cpu)
+noinstr struct cpu_entry_area *pkvm_debug_sym(get_cpu_entry_area)(int cpu)
 {
 	return get_cpu_entry_area(cpu);
 }
 
-int __pkvm____ratelimit(struct ratelimit_state *rs, const char *func)
+int pkvm_debug_sym(___ratelimit)(struct ratelimit_state *rs, const char *func)
 {
 	return ___ratelimit(rs, func);
 }
 
-void __pkvm___warn_printk(const char *fmt, ...)
+void pkvm_debug_sym(__warn_printk)(const char *fmt, ...)
 {
 	va_list args;
 
