@@ -872,7 +872,7 @@ static int populate_pgstate_pgt(struct pkvm_pgtable *pgt)
 		}
 
 		ret = pkvm_pgtable_sync_map(&ptdev->vpgt, pgt, prot_override,
-					    pkvm_pgstate_pgt_map_leaf);
+					    pkvm_pgstate_pgt_map_leaf, NULL);
 		if (ret)
 			return ret;
 	}

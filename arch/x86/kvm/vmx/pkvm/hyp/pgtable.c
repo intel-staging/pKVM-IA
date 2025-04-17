@@ -264,7 +264,7 @@ static inline void *get_page_from_freelist(struct list_head *head)
 	return (void *)node;
 }
 
-static int pgtable_unmap_leaf(struct pkvm_pgtable *pgt, unsigned long vaddr,
+int pgtable_unmap_leaf(struct pkvm_pgtable *pgt, unsigned long vaddr,
 			      int level, void *ptep, struct pgt_flush_data *flush_data,
 			      void *const arg)
 {
@@ -744,7 +744,7 @@ static int pgtable_sync_map_cb(struct pkvm_pgtable *pgt, unsigned long vaddr,
 	size = pgt_ops->pgt_level_to_size(level);
 
 	if (!pgt->pgt_ops->pgt_entry_present(ptep))
-		return pkvm_pgtable_unmap(data->dest_pgt, vaddr, size, NULL);
+		return pkvm_pgtable_unmap(data->dest_pgt, vaddr, size, data->unmap_leaf_override);
 
 	if (data->prot_override)
 		prot = *data->prot_override;
@@ -769,13 +769,14 @@ static int pgtable_sync_map_cb(struct pkvm_pgtable *pgt, unsigned long vaddr,
  * @map_leaf:	function to map the leaf entry for destination pgtable.
  */
 int pkvm_pgtable_sync_map_range(struct pkvm_pgtable *src, struct pkvm_pgtable *dest,
-				unsigned long vaddr, unsigned long size,
-				u64 *prot, pgtable_leaf_ov_fn_t map_leaf)
+				unsigned long vaddr, unsigned long size, u64 *prot,
+				pgtable_leaf_ov_fn_t map_leaf, pgtable_leaf_ov_fn_t unmap_leaf)
 {
 	struct pkvm_pgtable_sync_data data = {
 		.dest_pgt = dest,
 		.prot_override = prot,
 		.map_leaf_override = map_leaf,
+		.unmap_leaf_override = unmap_leaf,
 	};
 	struct pkvm_pgtable_walker walker = {
 		.cb = pgtable_sync_map_cb,
@@ -797,9 +798,9 @@ int pkvm_pgtable_sync_map_range(struct pkvm_pgtable *src, struct pkvm_pgtable *d
  * @map_leaf:	function to map the leaf entry for destination pgtable.
  */
 int pkvm_pgtable_sync_map(struct pkvm_pgtable *src, struct pkvm_pgtable *dest,
-			  u64 *prot, pgtable_leaf_ov_fn_t map_leaf)
+			  u64 *prot, pgtable_leaf_ov_fn_t map_leaf, pgtable_leaf_ov_fn_t unmap_leaf)
 {
 	unsigned long size = src->pgt_ops->pgt_level_to_size(src->level + 1);
 
-	return pkvm_pgtable_sync_map_range(src, dest, 0, size, prot, map_leaf);
+	return pkvm_pgtable_sync_map_range(src, dest, 0, size, prot, map_leaf, unmap_leaf);
 }

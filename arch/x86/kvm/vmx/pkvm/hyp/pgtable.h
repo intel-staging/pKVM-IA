@@ -106,6 +106,7 @@ struct pkvm_pgtable_sync_data {
 	u64 *prot_override;
 
 	pgtable_leaf_ov_fn_t map_leaf_override;
+	pgtable_leaf_ov_fn_t unmap_leaf_override;
 };
 
 #define PGTABLE_WALK_DONE      1
@@ -133,6 +134,9 @@ int pkvm_pgtable_map(struct pkvm_pgtable *pgt, unsigned long vaddr_start,
 int pgtable_map_leaf(struct pkvm_pgtable *pgt, unsigned long vaddr,
 		     int level, void *ptep, struct pgt_flush_data *flush_data,
 		     struct pkvm_pgtable_map_data *data);
+int pgtable_unmap_leaf(struct pkvm_pgtable *pgt, unsigned long vaddr,
+		     int level, void *ptep, struct pgt_flush_data *flush_data,
+		     void *const arg);
 int pkvm_pgtable_unmap(struct pkvm_pgtable *pgt, unsigned long vaddr_start,
 		       unsigned long size, pgtable_leaf_ov_fn_t unmap_leaf);
 int pkvm_pgtable_unmap_safe(struct pkvm_pgtable *pgt, unsigned long vaddr_start,
@@ -146,10 +150,12 @@ void pkvm_pgtable_destroy(struct pkvm_pgtable *pgt, pgtable_leaf_ov_fn_t free_le
 int pkvm_pgtable_annotate(struct pkvm_pgtable *pgt, unsigned long addr,
 			  unsigned long size, u64 annotation);
 int pkvm_pgtable_sync_map(struct pkvm_pgtable *src, struct pkvm_pgtable *dest,
-			  u64 *prot, pgtable_leaf_ov_fn_t map_leaf);
+			  u64 *prot, pgtable_leaf_ov_fn_t map_leaf,
+			  pgtable_leaf_ov_fn_t unmap_leaf);
 int pkvm_pgtable_sync_map_range(struct pkvm_pgtable *src, struct pkvm_pgtable *dest,
 				unsigned long vaddr, unsigned long size,
-				u64 *prot, pgtable_leaf_ov_fn_t map_leaf);
+				u64 *prot, pgtable_leaf_ov_fn_t map_leaf,
+				pgtable_leaf_ov_fn_t unmap_leaf);
 
 static inline void pkvm_pgtable_set_mm_ops(struct pkvm_pgtable *pgt, struct pkvm_mm_ops *mm_ops)
 {

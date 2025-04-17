@@ -420,10 +420,10 @@ static void sync_shadow_pgt(struct pkvm_ptdev *ptdev, struct shadow_pgt_sync_dat
 		ret = pkvm_pgtable_sync_map_range(&ptdev->vpgt, spgt,
 						  sdata->vaddr,
 						  sdata->vaddr_end - sdata->vaddr,
-						  NULL, shadow_pgt_map_leaf);
+						  NULL, shadow_pgt_map_leaf, NULL);
 	else
 		ret = pkvm_pgtable_sync_map(&ptdev->vpgt, spgt,
-					    NULL, shadow_pgt_map_leaf);
+					    NULL, shadow_pgt_map_leaf, NULL);
 	PKVM_ASSERT(ret == 0);
 
 	pkvm_put_host_iommu_spgt(spgt, ptdev->iommu_coherency);
