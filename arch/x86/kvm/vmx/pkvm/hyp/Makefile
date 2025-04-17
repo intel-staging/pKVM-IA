@@ -58,5 +58,5 @@ quiet_cmd_pkvmcopy = PKVMPCOPY $@
 cmd_pkvmcopy = $(NM) $< | awk '!seen[$$NF]++ {print $$NF, $$NF"__pkvm"}' > $<.syms && $(OBJCOPY) --redefine-syms=$<.syms --remove-section=.retpoline_sites --remove-section=.return_sites $< $@ && rm -f $<.syms
 
 # Remove ftrace, Shadow Call Stack, and CFI CFLAGS.
-# This is equivalent to the 'notrace', '__noscs', and '__nocfi' annotations.
-KBUILD_CFLAGS := $(filter-out $(CC_FLAGS_FTRACE) $(CC_FLAGS_SCS) $(CC_FLAGS_CFI), $(KBUILD_CFLAGS))
+# This is equivalent to the 'notrace' and '__noscs' annotations.
+KBUILD_CFLAGS := $(filter-out $(CC_FLAGS_FTRACE) $(CC_FLAGS_SCS), $(KBUILD_CFLAGS))
