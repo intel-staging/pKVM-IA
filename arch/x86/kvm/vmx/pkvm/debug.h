@@ -4,7 +4,7 @@
 
 #ifdef CONFIG_PKVM_INTEL_DEBUG
 
-#define pkvm_debug_sym(sym) __pkvm_##sym
+#define pkvm_debug_sym(sym) sym##__pkvm
 
 void pkvm_debug_sym(__dynamic_pr_debug)(struct _ddebug *descriptor, const char *fmt, ...);
 int pkvm_debug_sym(_printk)(const char *fmt, ...);
