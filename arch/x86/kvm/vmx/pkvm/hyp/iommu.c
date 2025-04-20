@@ -142,6 +142,9 @@ int pkvm_init_iommu(unsigned long mem_base, unsigned long nr_pages)
 
 		INIT_LIST_HEAD(&piommu->ptdev_head);
 
+		INIT_LIST_HEAD(&piommu->domain_node);
+		piommu->domain_refcount = 0;
+
 		pkvm_spin_lock_init(&piommu->lock);
 		piommu->iommu.reg_phys = info->reg_phys;
 		piommu->iommu.reg_size = info->reg_size;

@@ -38,6 +38,13 @@ struct pkvm_iommu {
 	pkvm_spinlock_t qi_lock;
 	u64 piommu_iqa;
 
+	/* domain to which this IOMMU is attached. */
+	struct pkvm_iommu_domain *domain;
+	/* Reference to this IOMMU by domain devices */
+	int domain_refcount;
+	/* list of IOMMUs for attached domain */
+	struct list_head domain_node;
+
 	/* Link ptdev information of this IOMMU */
 	struct list_head ptdev_head;
 };

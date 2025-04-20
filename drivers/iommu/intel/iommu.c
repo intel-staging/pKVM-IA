@@ -1817,21 +1817,28 @@ static void context_present_cache_flush(struct intel_iommu *iommu, u16 did,
 }
 
 #ifdef CONFIG_PKVM_INTEL_PVIOMMU
-static long pv_update_context_entry(struct intel_iommu *iommu,
+static long pv_update_context_entry(struct intel_iommu *iommu, struct dmar_domain *domain,
 		u8 bus, u8 devfn, struct context_entry *context)
 {
+	struct pkvm_update_ce_param param  = { 0 };
 	struct pkvm_root_entry *pv_root = iommu->pv_root_entry;
-	unsigned long rte;
 
 	if (WARN_ON(!pkvm_ia_enabled()))
 		return 0;
 
-	rte = virt_to_phys(pv_root->context_ptr[bus]) | 1;
-	return pkvm_update_context_entry(iommu->reg_phys, PCI_DEVID(bus, devfn), rte,
-			context->hi, context->lo);
+	param.bdf = PCI_DEVID(bus, devfn);
+	param.rte = virt_to_phys(pv_root->context_ptr[bus]) | 1;
+	param.ce_lo = context->lo;
+	param.ce_hi = context->hi;
+	if (domain) {
+		param.domain_agaw = domain->agaw;
+		param.domain_gaw = domain->gaw;
+		param.iommu_superpage = domain->iommu_superpage;
+	}
+	return pkvm_update_context_entry(iommu->reg_phys, &param);
 }
 #else
-static inline long pv_update_context_entry(struct intel_iommu *iommu,
+static inline long pv_update_context_entry(struct intel_iommu *iommu, struct dmar_domain *domain,
 		u8 bus, u8 devfn, struct context_entry *context)
 {
 	return 0;
@@ -1891,7 +1898,7 @@ static int domain_context_mapping_one(struct dmar_domain *domain,
 	context_set_present(context);
 
 	if (IS_ENABLED(CONFIG_PKVM_INTEL_PVIOMMU) && pkvm_ia_enabled()) {
-		ret = pv_update_context_entry(iommu, bus, devfn, context);
+		ret = pv_update_context_entry(iommu, domain, bus, devfn, context);
 		if (ret) {
 			pr_warn("PV call to update context entry failed! ce: %llx:%llx\n",
 				context->hi, context->lo);
@@ -2119,7 +2126,7 @@ static void domain_context_clear_one(struct device_domain_info *info, u8 bus, u8
 	context_clear_entry(context);
 
 	if (IS_ENABLED(CONFIG_PKVM_INTEL_PVIOMMU) && pkvm_ia_enabled()) {
-		if (pv_update_context_entry(iommu, bus, devfn, context)) {
+		if (pv_update_context_entry(iommu, NULL, bus, devfn, context)) {
 			pr_warn("PV call to update context entry failed! ce: %llx:%llx\n",
 				context->hi, context->lo);
 		}
@@ -4749,7 +4756,7 @@ static int context_setup_pass_through(struct device *dev, u8 bus, u8 devfn)
 	context_set_present(context);
 
 	if (IS_ENABLED(CONFIG_PKVM_INTEL_PVIOMMU) && pkvm_ia_enabled()) {
-		ret = pv_update_context_entry(iommu, bus, devfn, context);
+		ret = pv_update_context_entry(iommu, NULL, bus, devfn, context);
 		if (ret) {
 			pr_warn("PV call to update context entry failed! ce: %llx:%llx\n",
 				context->hi, context->lo);

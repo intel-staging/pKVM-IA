@@ -115,16 +115,25 @@ static inline long pkvm_set_iommu_root(unsigned long reg_phys, unsigned long roo
 	return ret;
 }
 
-static inline long pkvm_update_context_entry(unsigned long reg_phys, unsigned long bdf,
-		unsigned long root_entry, unsigned long ce_hi, unsigned long ce_lo)
+/*
+ * Parameters passed by the host for UPDATE_CE hypercall.
+ */
+struct pkvm_update_ce_param {
+	u16 bdf;
+	u16 domain_gaw;
+	u16 domain_agaw;
+	u8 iommu_coherency;
+	u8 iommu_superpage;
+	u64 rte;
+	u64 ce_lo;
+	u64 ce_hi;
+};
+
+static inline long pkvm_update_context_entry(unsigned long reg_phys, struct pkvm_update_ce_param *param)
 {
 	long ret = 0;
 	if (likely(this_cpu_read(pkvm_enabled))) {
-		/*
-		 * Encode bdf in the high 32 bits of ce_hi as it is not used.
-		 */
-		ce_hi |= (bdf << 32);
-		ret = kvm_hypercall4(PKVM_HC_IOMMU_UPDATE_CE, reg_phys, root_entry, ce_hi, ce_lo);
+		ret = kvm_hypercall2(PKVM_HC_IOMMU_UPDATE_CE, reg_phys, (unsigned long)param);
 	}
 
 	return ret;

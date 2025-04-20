@@ -119,7 +119,7 @@ static unsigned long handle_vmcall(struct kvm_vcpu *vcpu)
 		ret = pkvm_iommu_set_rta(a0, a1);
 		break;
 	case PKVM_HC_IOMMU_UPDATE_CE:
-		ret = pkvm_iommu_update_ce(a0, a1, a2, a3);
+		ret = pkvm_iommu_update_ce(vcpu, a0, a1);
 		break;
 #endif
 	case PKVM_HC_TLB_REMOTE_FLUSH_RANGE:

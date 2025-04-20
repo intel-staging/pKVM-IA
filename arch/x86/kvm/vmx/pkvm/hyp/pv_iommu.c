@@ -10,7 +10,6 @@
 #include "memory.h"
 #include "mmu.h"
 #include "ept.h"
-#include "pgtable.h"
 #include "pci.h"
 #include "iommu_internal.h"
 #include "debug.h"
@@ -19,6 +18,7 @@
 #include "iommu_spgt.h"
 #include "bug.h"
 #include "iommu.h"
+#include "iommu_domain.h"
 
 int initialize_iommu_pgt(struct pkvm_iommu *iommu)
 {
@@ -78,32 +78,46 @@ unsigned long pkvm_iommu_set_rta(unsigned long phys, unsigned long rta_phys)
 	return 0;
 }
 
-unsigned long pkvm_iommu_update_ce(unsigned long phys, unsigned long rte,
-		unsigned long ce_hi, unsigned long ce_lo)
+unsigned long pkvm_iommu_update_ce(struct kvm_vcpu *hvcpu, unsigned long phys, unsigned long param_gva)
 {
-	struct context_entry *context = pkvm_phys_to_virt(rte & VTD_PAGE_MASK);
 	struct pkvm_iommu *iommu = find_iommu_by_reg_phys(phys);
-	struct root_entry *root_entry = pkvm_phys_to_virt(iommu->pgt.root_pa);
+	unsigned long old_ce_pgd, new_ce_pgd;
+	struct pkvm_update_ce_param param;
+	struct context_entry *context;
+	struct root_entry *root_entry;
 	struct context_entry *ce;
+	struct x86_exception e;
 	struct root_entry *root;
-	unsigned long old_rte;
-	u16 bdf = (ce_hi >> 32) & 0xFFFF;
-	u8 bus = PCI_BUS_NUM(bdf);
-	u8 devfn = PCI_DEV_FN(bdf);
+	unsigned long ret;
+	u8 bus, devfn;
+	u64 old_rte;
 	u16 did;
 
+	ret = read_gva(hvcpu, param_gva, &param, sizeof(struct pkvm_update_ce_param), &e);
+	if (ret < 0) {
+		pkvm_err("pkvm: %s Failed to read update_ce_param(gva: %lx from host!\n",
+				__func__, param_gva);
+		return ret;
+	}
+
+	root_entry = pkvm_phys_to_virt(iommu->pgt.root_pa);
+	context = pkvm_phys_to_virt(param.rte & VTD_PAGE_MASK);
+	bus = PCI_BUS_NUM(param.bdf);
+	devfn = PCI_DEV_FN(param.bdf);
 	pkvm_spin_lock(&iommu->lock);
 
 	root = &root_entry[bus];
 	ce = &context[devfn];
-	ce_hi &= 0xFFFFFFFF;
 	did = context_domain_id(ce);
-	pkvm_dbg("pkvm: %s: did: %d, old_rte=%llx, new_rte: %lx, old_ce: (%llx:%llx), new_ce: (%lx:%lx)\n",
-			__func__, did, root->lo, rte, ce->hi, ce->lo, ce_hi, ce_lo);
+	pkvm_dbg("pkvm: %s: did: %d, old_rte=%llx, new_rte: %llx, old_ce: (%llx:%llx), new_ce: (%llx:%llx)\n",
+			__func__, did, root->lo, param.rte, ce->hi, ce->lo, param.ce_hi, param.ce_lo);
 	old_rte = root->lo & VTD_PAGE_MASK;
-	root->lo = rte;
-	ce->hi = ce_hi;
-	ce->lo = ce_lo;
+	root->lo = param.rte;
+
+	old_ce_pgd = ce->lo & VTD_PAGE_MASK;
+	new_ce_pgd = param.ce_lo & VTD_PAGE_MASK;
+	ce->hi = param.ce_hi;
+	ce->lo = param.ce_lo;
 
 	/*
 	 * TODO: Revisit the cache flushing and optimize for cases like present to non-present
@@ -113,7 +127,7 @@ unsigned long pkvm_iommu_update_ce(unsigned long phys, unsigned long rte,
 		pkvm_clflush_cache_range(root, sizeof(*root));
 		pkvm_clflush_cache_range(ce, sizeof(*ce));
 	}
-	flush_context_cache(iommu, 0, bdf, DMA_CCMD_MASK_NOBIT, DMA_CCMD_DEVICE_INVL);
+	flush_context_cache(iommu, 0, param.bdf, DMA_CCMD_MASK_NOBIT, DMA_CCMD_DEVICE_INVL);
 	flush_iotlb(iommu, did, 0, 0, DMA_TLB_DSI_FLUSH);
 
 	pkvm_spin_unlock(&iommu->lock);
@@ -122,19 +136,63 @@ unsigned long pkvm_iommu_update_ce(unsigned long phys, unsigned long rte,
 	 * Remove the mapping for the context table page so that host
 	 * will not be able to directly access it.
 	 */
-	rte &= VTD_PAGE_MASK;
-	if (old_rte != rte) {
+	param.rte &= VTD_PAGE_MASK;
+	if (old_rte != param.rte) {
 		if (old_rte) {
-			pkvm_dbg("pkvm: %s: mapping prev context_table page[0x%lx] back to host\n",
+			pkvm_dbg("pkvm: %s: mapping prev context_table page[0x%llx] back to host\n",
 					__func__, old_rte);
 			__pkvm_hyp_donate_host(old_rte, PAGE_SIZE);
 		}
-		if (rte) {
-			pkvm_dbg("pkvm: %s: unmapping context_table page[0x%lx] from host\n",
-				__func__, rte);
-			__pkvm_host_donate_hyp(rte, PAGE_SIZE);
+		if (param.rte) {
+			pkvm_dbg("pkvm: %s: unmapping context_table page[0x%llx] from host\n",
+				__func__, param.rte);
+			__pkvm_host_donate_hyp(param.rte, PAGE_SIZE);
 		}
 	}
 
-	return 0;
+	if (old_ce_pgd != new_ce_pgd) {
+		struct pkvm_iommu_domain *domain;
+		struct pkvm_ptdev *ptdev;
+		if (old_ce_pgd) {
+			domain = pkvm_get_iommu_domain(old_ce_pgd);
+			PKVM_ASSERT(domain);
+			pkvm_dbg("pkvm: %s put iommu domain pgd: %llx\n", __func__, domain->pgd);
+			pkvm_spin_lock(&iommu->lock);
+			ptdev = iommu_find_ptdev(iommu, param.bdf, 0);
+			PKVM_ASSERT(ptdev);
+			iommu_del_ptdev(iommu, ptdev);
+			pkvm_spin_unlock(&iommu->lock);
+			pkvm_domain_detach_iommu(domain, iommu);
+			pkvm_put_iommu_domain(domain);
+		}
+		if (new_ce_pgd) {
+			domain = pkvm_get_iommu_domain(new_ce_pgd);
+			if (domain) {
+				PKVM_ASSERT(domain->iommu_coherency == iommu_coherency(iommu->iommu.ecap));
+				PKVM_ASSERT(domain->iommu_superpage == param.iommu_superpage);
+				PKVM_ASSERT(domain->gaw == param.domain_gaw);
+				PKVM_ASSERT(domain->agaw == param.domain_agaw);
+			} else {
+				domain = pkvm_alloc_iommu_domain(new_ce_pgd);
+				PKVM_ASSERT(domain);
+				/*
+				 * TODO: The following values has to be computed by pkvm
+				 *       instead of being passed from the host.
+				 */
+				domain->iommu_coherency = param.iommu_coherency;
+				domain->iommu_superpage = param.iommu_superpage;
+				domain->gaw = param.domain_gaw;
+				domain->agaw = param.domain_agaw;
+			}
+			pkvm_domain_attach_iommu(domain, iommu);
+			pkvm_spin_lock(&iommu->lock);
+			PKVM_ASSERT(!iommu_find_ptdev(iommu, param.bdf, 0));
+			ptdev = iommu_add_ptdev(iommu, param.bdf, 0);
+			pkvm_setup_ptdev_did(ptdev, did);
+			pkvm_spin_unlock(&iommu->lock);
+			pkvm_dbg("pkvm: %s get iommu domain pgd: %llx\n", __func__, domain->pgd);
+		}
+	}
+
+	return ret;
 }
