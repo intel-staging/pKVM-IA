@@ -2408,3 +2408,24 @@ void pkvm_iommu_flush_iotlb(struct pkvm_pgtable *pgt, unsigned long addr, unsign
 	if (data.desc)
 		iommu_put_page(data.desc);
 }
+
+void pkvm_dump_dmar_tr_struct(void)
+{
+	struct pkvm_iommu *iommu;
+
+	for_each_valid_iommu(iommu) {
+          root_tbl_walk(iommu);
+	}
+}
+
+void pkvm_dump_domain_pgt(unsigned long phys, unsigned long bdf, unsigned long pasid)
+{
+	struct pkvm_iommu *iommu = find_iommu_by_reg_phys(phys);
+
+	if (!iommu) {
+		pkvm_dbg("IOMMU not found!\n");
+		return;
+	}
+
+	domain_translation_struct_show(iommu, bdf, pasid);
+}

@@ -18,6 +18,8 @@
 #include "pkvm_hyp.h"
 #include "iommu_internal.h"
 
+#define PASID_PTE_MASK			0x3F
+
 struct tbl_walk {
 	u16 bus;
 	u16 devfn;
@@ -196,4 +198,137 @@ void root_tbl_walk(struct pkvm_iommu *iommu)
 	 */
 	for (bus = 0; bus < 256; bus++)
 		ctx_tbl_walk(iommu, bus);
+}
+
+static inline unsigned long level_to_directory_size(int level)
+{
+	return BIT_ULL(VTD_PAGE_SHIFT + VTD_STRIDE_SHIFT * (level - 1));
+}
+
+static inline void
+dump_page_info(unsigned long iova, u64 *path)
+{
+	pkvm_dbg("0x%013lx | 0x%016llx 0x%016llx 0x%016llx 0x%016llx 0x%016llx",
+		   iova >> VTD_PAGE_SHIFT, path[5], path[4], path[3], path[2], path[1]);
+}
+static void pgtable_walk_level(struct dma_pte *pde,
+			       int level, unsigned long start,
+			       u64 *path)
+{
+	int i;
+
+	if (level > 5 || level < 1)
+		return;
+
+	for (i = 0; i < BIT_ULL(VTD_STRIDE_SHIFT);
+			i++, pde++, start += level_to_directory_size(level)) {
+		if (!dma_pte_present(pde))
+			continue;
+
+		path[level] = pde->val;
+		if (dma_pte_superpage(pde) || level == 1)
+			dump_page_info(start, path);
+		else
+			pgtable_walk_level(pkvm_phys_to_virt(dma_pte_addr(pde)),
+					   level - 1, start, path);
+		path[level] = 0;
+	}
+}
+
+void domain_translation_struct_show(struct pkvm_iommu *iommu, u16 bdf, u32 pasid)
+{
+	struct viommu_reg *vreg = &iommu->viommu.vreg;
+	struct context_entry *context;
+	u16 devfn, bus;
+	u64 pgd, path[6] = { 0 };
+	u32 agaw;
+	bool scalable;
+
+	bus = (bdf >> 8) & 0xff;
+	devfn = bdf & 0xff;
+
+	if (!(vreg->gsts & DMA_GSTS_TES)) {
+		pkvm_dbg("DMA Remapping is not enabled on %s\n",
+				   iommu->iommu.name);
+		return;
+	}
+
+	if (ecap_smts(iommu->iommu.ecap)) {
+		scalable = true;
+	} else {
+		scalable = false;
+	}
+
+
+	pkvm_spin_lock(&iommu->lock);
+
+	context = context_addr(iommu, bus, devfn);
+	if (!context || !context_present(context))
+		goto iommu_unlock;
+
+	if (scalable) {	/* scalable mode */
+		struct pasid_entry *pasid_tbl, *pasid_tbl_entry;
+		struct pasid_dir_entry *dir_tbl, *dir_entry;
+		u16 dir_idx, tbl_idx, pgtt;
+		u64 pasid_dir_ptr;
+
+		pasid_dir_ptr = context->lo & VTD_PAGE_MASK;
+
+		/* Dump specified device domain mappings with PASID. */
+		dir_idx = pasid >> PASID_PDE_SHIFT;
+		tbl_idx = pasid & PASID_PTE_MASK;
+
+		dir_tbl = pkvm_phys_to_virt(pasid_dir_ptr);
+		dir_entry = &dir_tbl[dir_idx];
+
+		pasid_tbl = get_pasid_table_from_pde(dir_entry);
+		if (!pasid_tbl)
+			goto iommu_unlock;
+
+		pasid_tbl_entry = &pasid_tbl[tbl_idx];
+		if (!pasid_pte_is_present(pasid_tbl_entry))
+			goto iommu_unlock;
+
+		/*
+		 * According to PASID Granular Translation Type(PGTT),
+		 * get the page table pointer.
+		 */
+		pgtt = (u16)(pasid_tbl_entry->val[0] & GENMASK_ULL(8, 6)) >> 6;
+		agaw = (u8)(pasid_tbl_entry->val[0] & GENMASK_ULL(4, 2)) >> 2;
+
+		switch (pgtt) {
+		case PASID_ENTRY_PGTT_FL_ONLY:
+			pgd = pasid_tbl_entry->val[2];
+			break;
+		case PASID_ENTRY_PGTT_SL_ONLY:
+		case PASID_ENTRY_PGTT_NESTED:
+			pgd = pasid_tbl_entry->val[0];
+			break;
+		default:
+			goto iommu_unlock;
+		}
+		pgd &= VTD_PAGE_MASK;
+	} else { /* legacy mode */
+		pgd = context->lo & VTD_PAGE_MASK;
+		agaw = context->hi & 7;
+	}
+
+	pkvm_dbg("Device %04x:%02x:%02x.%x ",
+			   iommu->iommu.segment, bus, PCI_SLOT(devfn), PCI_FUNC(devfn));
+
+	if (scalable)
+		pkvm_dbg("with pasid %x @0x%llx\n", pasid, pgd);
+	else
+		pkvm_dbg("@0x%llx\n", pgd);
+
+	if (!pgd) {
+		pkvm_dbg("Device configured for pass through!\n");
+	} else {
+		pkvm_dbg("%-17s\t%-18s\t%-18s\t%-18s\t%-18s\t%-s\n",
+		   "IOVA_PFN", "PML5E", "PML4E", "PDPE", "PDE", "PTE");
+		pgtable_walk_level(pkvm_phys_to_virt(pgd), agaw + 2, 0, path);
+	}
+
+iommu_unlock:
+	pkvm_spin_unlock(&iommu->lock);
 }

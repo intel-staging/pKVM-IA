@@ -20,6 +20,10 @@
 #define PKVM_HC_SET_MMIO_VE		10
 #define PKVM_HC_ADD_PTDEV		11
 
+#define PKVM_HC_DUMP_DMAR_TR_STRUCT	20
+#define PKVM_HC_DUMP_DOMAIN_PGT		21
+
+
 /*
  * 15bits for PASID, DO NOT change it, based on it,
  * the size of PASID DIR table can kept as one page
@@ -34,6 +38,21 @@ extern bool __read_mostly enable_pkvm;	/* kernel command-line flag */
 #endif
 
 DECLARE_PER_CPU_READ_MOSTLY(bool, pkvm_enabled);
+
+static inline long pkvm_dump_dmar_translation_struct(void)
+{
+	if (likely(this_cpu_read(pkvm_enabled)))
+		return kvm_hypercall0(PKVM_HC_DUMP_DMAR_TR_STRUCT);
+	return 0;
+}
+
+static inline long pkvm_dump_domain_translation_struct(
+		unsigned long phys, unsigned long bdf, unsigned long pasid)
+{
+	if (likely(this_cpu_read(pkvm_enabled)))
+		return kvm_hypercall3(PKVM_HC_DUMP_DOMAIN_PGT, phys, bdf, pasid);
+	return 0;
+}
 
 static inline u64 pkvm_readq(void __iomem *reg, unsigned long reg_phys,
 			     unsigned long offset)

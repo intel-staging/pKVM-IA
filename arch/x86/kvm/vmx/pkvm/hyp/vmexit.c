@@ -13,10 +13,13 @@
 #include "pkvm_hyp.h"
 #include "vmsr.h"
 #include "iommu.h"
+#include "iommu_internal.h"
 #include "lapic.h"
 #include "io_emulate.h"
 #include "debug.h"
 #include "init_finalise.h"
+
+#include <pkvm_debugfs.h>
 
 #define CR4	4
 
@@ -95,6 +98,12 @@ static unsigned long handle_vmcall(struct kvm_vcpu *vcpu)
 		break;
 	case PKVM_HC_DUMP_VMEXIT_TRACE:
 		pkvm_handle_dump_vmexit_trace(a0, a1);
+		break;
+	case PKVM_HC_DUMP_DMAR_TR_STRUCT:
+		pkvm_dump_dmar_tr_struct();
+		break;
+	case PKVM_HC_DUMP_DOMAIN_PGT:
+		pkvm_dump_domain_pgt(a0, a1, a2);
 		break;
 	case PKVM_HC_INIT_FINALISE:
 		__pkvm_init_finalise(vcpu, (struct pkvm_section *)a0, a1);

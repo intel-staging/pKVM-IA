@@ -13,6 +13,7 @@
 #include <linux/pci.h>
 
 #include <asm/irq_remapping.h>
+#include <asm/pkvm.h>
 
 #include "iommu.h"
 #include "pasid.h"
@@ -295,6 +296,7 @@ static int dmar_translation_struct_show(struct seq_file *m, void *unused)
 		}
 		root_tbl_walk(m, iommu);
 		seq_putc(m, '\n');
+		pkvm_dump_dmar_translation_struct();
 	}
 	rcu_read_unlock();
 
@@ -453,6 +455,12 @@ static int domain_translation_struct_show(struct seq_file *m,
 			seq_printf(m, "%-17s\t%-18s\t%-18s\t%-18s\t%-18s\t%-s\n",
 			   "IOVA_PFN", "PML5E", "PML4E", "PDPE", "PDE", "PTE");
 			pgtable_walk_level(m, phys_to_virt(pgd), agaw + 2, 0, path);
+			/*
+			 * If the seq_file buffer  overflowed, we will be called once again.
+			 * Lets not do pkvm print here.
+			 */
+			if (!seq_has_overflowed(m))
+				pkvm_dump_domain_translation_struct(iommu->reg_phys, (bus << 8) | (devfn & 0xff), pasid);
 		}
 
 		found = true;
