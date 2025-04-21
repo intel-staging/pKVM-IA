@@ -14,6 +14,7 @@
 #include "vmsr.h"
 #include "iommu.h"
 #include "iommu_internal.h"
+#include "iommu_domain.h"
 #include "lapic.h"
 #include "io_emulate.h"
 #include "debug.h"
@@ -120,6 +121,15 @@ static unsigned long handle_vmcall(struct kvm_vcpu *vcpu)
 		break;
 	case PKVM_HC_IOMMU_UPDATE_CE:
 		ret = pkvm_iommu_update_ce(vcpu, a0, a1);
+		break;
+	case PKVM_HC_IOMMU_MAP_PAGES:
+		ret = pkvm_iommu_domain_map(vcpu, a0, a1);
+		break;
+	case PKVM_HC_IOMMU_UNMAP_PAGES:
+		ret = pkvm_iommu_domain_unmap(vcpu, a0, a1, a2, a3);
+		break;
+	case PKVM_HC_IOMMU_IOVA2PHYS:
+		ret = pkvm_iommu_domain_iova_to_phys(vcpu, a0);
 		break;
 #endif
 	case PKVM_HC_TLB_REMOTE_FLUSH_RANGE:

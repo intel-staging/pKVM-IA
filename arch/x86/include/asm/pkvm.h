@@ -17,9 +17,12 @@
 #define PKVM_HC_MMIO_ACCESS		7
 #define PKVM_HC_IOMMU_SET_RTA		8
 #define PKVM_HC_IOMMU_UPDATE_CE		9
-#define PKVM_HC_TLB_REMOTE_FLUSH_RANGE	10
-#define PKVM_HC_SET_MMIO_VE		11
-#define PKVM_HC_ADD_PTDEV		12
+#define PKVM_HC_IOMMU_MAP_PAGES		10
+#define PKVM_HC_IOMMU_UNMAP_PAGES	11
+#define PKVM_HC_IOMMU_IOVA2PHYS		12
+#define PKVM_HC_TLB_REMOTE_FLUSH_RANGE	13
+#define PKVM_HC_SET_MMIO_VE		14
+#define PKVM_HC_ADD_PTDEV		15
 
 #define PKVM_HC_DUMP_DMAR_TR_STRUCT	20
 #define PKVM_HC_DUMP_DOMAIN_PGT		21
@@ -136,6 +139,69 @@ static inline long pkvm_update_context_entry(unsigned long reg_phys, struct pkvm
 		ret = kvm_hypercall2(PKVM_HC_IOMMU_UPDATE_CE, reg_phys, (unsigned long)param);
 	}
 
+	return ret;
+}
+
+#define PKVM_MAX_IOMMU_PAGE_DONATION	16
+/*
+ * For managing IOMMU page tables, pkvm would need free pages and host
+ * donates the pages as needed. This avoids static allocation of pages
+ * in pkvm during boot. map and unmap hypercalls use this structure as
+ * a two-way communication mechanism to manage page donation. Host
+ * allocates pages and updates nr_donated for the map hypercall. pkvm
+ * updates nr_returned with the pages not used or freed during map/unmap
+ * hypercalls.
+ */
+struct pkvm_iommu_page_donation {
+	u32 nr_pages;
+	u64 pages[PKVM_MAX_IOMMU_PAGE_DONATION]; /* page gpa */
+};
+
+/*
+ * parameters passed by host for MAP_PAGE hypercall.
+ */
+struct pkvm_iommu_map_param {
+	u64 pgd_gpa;
+	u64 iov_pfn;
+	u64 phys_pfn;
+	u64 nr_pages;
+	u64 prot;
+};
+
+static inline long pkvm_iommu_map_pages(struct pkvm_iommu_map_param *param,
+		struct pkvm_iommu_page_donation *donation)
+{
+	long ret = 0;
+	if (likely(this_cpu_read(pkvm_enabled))) {
+		ret = kvm_hypercall2(PKVM_HC_IOMMU_MAP_PAGES,
+				(unsigned long)param, (unsigned long)donation);
+	}
+	return ret;
+}
+
+static inline long pkvm_iommu_unmap_pages(unsigned long pgd_gpa, unsigned long start_pfn,
+		unsigned long last_pfn, struct pkvm_iommu_page_donation *donation)
+{
+	long ret = 0;
+	if (likely(this_cpu_read(pkvm_enabled))) {
+		ret = kvm_hypercall4(PKVM_HC_IOMMU_UNMAP_PAGES, pgd_gpa, start_pfn, last_pfn,
+				(unsigned long)donation);
+	}
+	return ret;
+}
+
+struct pkvm_iommu_iova2phys_param {
+	u64 pgd_gpa;
+	u64 iova;
+	u64 phys;
+	u64 level;
+};
+static inline long pkvm_iommu_iova_to_phys(struct pkvm_iommu_iova2phys_param *param)
+{
+	long ret = 0;
+	if (likely(this_cpu_read(pkvm_enabled))) {
+		ret = kvm_hypercall1(PKVM_HC_IOMMU_IOVA2PHYS, (unsigned long)param);
+	}
 	return ret;
 }
 
