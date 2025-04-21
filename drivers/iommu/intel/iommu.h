@@ -709,6 +709,14 @@ struct dmar_domain {
 
 	struct iommu_domain domain;	/* generic domain data structure for
 					   iommu core */
+#ifdef CONFIG_PKVM_INTEL_PVIOMMU
+	/*
+	 * We maintain a percpu cache of pages for donating to pkvm to
+	 * create IOMMU page tables.
+	 */
+	struct pkvm_iommu_page_donation __percpu *donation;
+#endif
+
 };
 
 /*
