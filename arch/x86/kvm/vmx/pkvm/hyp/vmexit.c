@@ -131,6 +131,9 @@ static unsigned long handle_vmcall(struct kvm_vcpu *vcpu)
 	case PKVM_HC_IOMMU_IOVA2PHYS:
 		ret = pkvm_iommu_domain_iova_to_phys(vcpu, a0);
 		break;
+	case PKVM_HC_SUBMIT_QI:
+		pkvm_iommu_submit_qi(a0, a1, a2);
+		break;
 #endif
 	case PKVM_HC_TLB_REMOTE_FLUSH_RANGE:
 		pkvm_invalidate_guest_ept(a0, a1, a2);

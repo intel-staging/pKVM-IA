@@ -408,11 +408,17 @@ static inline int sync_shadow_id(struct pkvm_iommu *iommu, unsigned long vaddr,
 {
 	return 0;
 }
+static inline int handle_qi_invalidation(struct pkvm_iommu *iommu, unsigned long val)
+{
+	return 0;
+}
+void pkvm_iommu_submit_qi(unsigned long reg, unsigned long desc_base, int count);
 #else
 int handle_descriptor(struct pkvm_iommu *iommu, struct qi_desc *desc);
 int free_shadow_id(struct pkvm_iommu *iommu, unsigned long vaddr,
 		       unsigned long vaddr_end);
 int sync_shadow_id(struct pkvm_iommu *iommu, unsigned long vaddr,
 		       unsigned long vaddr_end, u16 did);
+int handle_qi_invalidation(struct pkvm_iommu *iommu, unsigned long val);
 #endif
 #endif

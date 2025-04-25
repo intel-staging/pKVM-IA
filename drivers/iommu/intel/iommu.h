@@ -1256,10 +1256,17 @@ void dmar_disable_qi(struct intel_iommu *iommu);
 int dmar_reenable_qi(struct intel_iommu *iommu);
 void qi_global_iec(struct intel_iommu *iommu);
 
+#ifdef CONFIG_PKVM_INTEL_PVIOMMU
+static inline void qi_flush_context(struct intel_iommu *iommu, u16 did,
+			  u16 sid, u8 fm, u64 type) {}
+static inline void qi_flush_iotlb(struct intel_iommu *iommu, u16 did, u64 addr,
+		    unsigned int size_order, u64 type) {}
+#else
 void qi_flush_context(struct intel_iommu *iommu, u16 did,
 		      u16 sid, u8 fm, u64 type);
 void qi_flush_iotlb(struct intel_iommu *iommu, u16 did, u64 addr,
 		    unsigned int size_order, u64 type);
+#endif
 void qi_flush_dev_iotlb(struct intel_iommu *iommu, u16 sid, u16 pfsid,
 			u16 qdep, u64 addr, unsigned mask);
 

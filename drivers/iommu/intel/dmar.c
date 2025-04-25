@@ -1386,7 +1386,7 @@ static int qi_check_fault(struct intel_iommu *iommu, int index, int wait_index)
  * hardware has completed the invalidation before return. Wait descriptors
  * can be part of the submission but it will not be polled for completion.
  */
-int qi_submit_sync(struct intel_iommu *iommu, struct qi_desc *desc,
+static int __qi_submit_sync(struct intel_iommu *iommu, struct qi_desc *desc,
 		   unsigned int count, unsigned long options)
 {
 	struct q_inval *qi = iommu->qi;
@@ -1514,6 +1514,17 @@ restart:
 	return rc;
 }
 
+int qi_submit_sync(struct intel_iommu *iommu, struct qi_desc *desc,
+		unsigned int count, unsigned long options)
+{
+	if (likely(this_cpu_read(pkvm_enabled))) {
+		kvm_hypercall3(PKVM_HC_SUBMIT_QI, iommu->reg_phys, (unsigned long)desc, count);
+		return 0;
+	}
+	else
+		return __qi_submit_sync(iommu, desc, count, options);
+}
+
 /*
  * Flush the global interrupt entry cache.
  */
@@ -1530,6 +1541,7 @@ void qi_global_iec(struct intel_iommu *iommu)
 	qi_submit_sync(iommu, &desc, 1, 0);
 }
 
+#ifndef CONFIG_PKVM_INTEL_PVIOMMU
 void qi_flush_context(struct intel_iommu *iommu, u16 did, u16 sid, u8 fm,
 		      u64 type)
 {
@@ -1552,6 +1564,7 @@ void qi_flush_iotlb(struct intel_iommu *iommu, u16 did, u64 addr,
 	qi_desc_iotlb(iommu, did, addr, size_order, type, &desc);
 	qi_submit_sync(iommu, &desc, 1, 0);
 }
+#endif
 
 void qi_flush_dev_iotlb(struct intel_iommu *iommu, u16 sid, u16 pfsid,
 			u16 qdep, u64 addr, unsigned mask)
