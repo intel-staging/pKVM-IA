@@ -911,7 +911,7 @@ static bool allow_shadow_ept_mapping(struct pkvm_shadow_vm *vm,
 		 */
 		size = host_ept.pgt_ops->pgt_level_to_size(host_ept.level + 1);
 		host_ept_flush_tlb(&host_ept, 0, size);
-		pkvm_iommu_flush_iotlb(&host_ept, 0, size);
+		pkvm_iommu_flush_iotlb(host_ept.root_pa, 0, size);
 
 		vm->need_prepopulation = false;
 	}

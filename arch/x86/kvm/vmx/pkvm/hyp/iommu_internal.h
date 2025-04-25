@@ -377,6 +377,15 @@ void flush_iotlb(struct pkvm_iommu *iommu, u16 did, u64 addr,
 void flush_context_cache(struct pkvm_iommu *iommu, u16 did,
 				u16 sid, u8 fm, u64 type);
 
+struct iotlb_flush_data {
+	unsigned long desired_root_pa;
+	unsigned long addr;
+	int size_order;
+	struct qi_desc *desc;
+	int desc_max_index;
+};
+void iommu_flush_iotlb(struct pkvm_iommu *iommu, struct iotlb_flush_data *data);
+
 #ifdef CONFIG_PKVM_INTEL_PVIOMMU
 static inline int handle_descriptor(struct pkvm_iommu *iommu, struct qi_desc *desc)
 {

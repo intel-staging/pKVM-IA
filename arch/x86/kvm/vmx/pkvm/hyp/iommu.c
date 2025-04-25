@@ -1064,15 +1064,7 @@ bool pkvm_iommu_coherency(u16 bdf, u32 pasid)
 	return iommu_coherency(iommu->iommu.ecap);
 }
 
-struct iotlb_flush_data {
-	unsigned long desired_root_pa;
-	unsigned long addr;
-	int size_order;
-	struct qi_desc *desc;
-	int desc_max_index;
-};
-
-static void iommu_flush_iotlb(struct pkvm_iommu *iommu, struct iotlb_flush_data *data)
+void iommu_flush_iotlb(struct pkvm_iommu *iommu, struct iotlb_flush_data *data)
 {
 	struct pkvm_ptdev *ptdev;
 	struct qi_desc *desc = data->desc;
@@ -1102,8 +1094,10 @@ static void iommu_flush_iotlb(struct pkvm_iommu *iommu, struct iotlb_flush_data 
 		bool did_exist = false;
 		int i;
 
+#ifndef CONFIG_PKVM_INTEL_PVIOMMU
 		if (!ptdev->pgt || ptdev->pgt->root_pa != data->desired_root_pa)
 			continue;
+#endif
 
 		for (i = 0; i < qi_desc_index; i++, tmp++) {
 			/* The same did is already in descriptor page */
@@ -1142,11 +1136,11 @@ out:
 	pkvm_spin_unlock(&iommu->lock);
 }
 
-void pkvm_iommu_flush_iotlb(struct pkvm_pgtable *pgt, unsigned long addr, unsigned long size)
+void pkvm_iommu_flush_iotlb(unsigned long pgd, unsigned long addr, unsigned long size)
 {
 	int size_order = ilog2(__roundup_pow_of_two(size >> VTD_PAGE_SHIFT));
 	struct iotlb_flush_data data = {
-		.desired_root_pa = pgt->root_pa,
+		.desired_root_pa = pgd,
 		.addr = ALIGN_DOWN(addr, (1ULL << (VTD_PAGE_SHIFT + size_order))),
 		.size_order = size_order,
 	};

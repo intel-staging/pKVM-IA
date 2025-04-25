@@ -391,7 +391,7 @@ int __pkvm_host_donate_hyp(u64 hpa, u64 size)
 	 * Also need to flush the IOTLB as host EPT is used
 	 * as second-stage IOMMU page table for some devices.
 	 */
-	pkvm_iommu_flush_iotlb(pkvm_hyp->host_vm.ept, hpa, size);
+	pkvm_iommu_flush_iotlb(pkvm_hyp->host_vm.ept->root_pa, hpa, size);
 
 	return ret;
 }
@@ -459,7 +459,7 @@ int __pkvm_host_donate_guest(u64 hpa, struct pkvm_pgtable *guest_pgt,
 	 * Also need to flush the IOTLB as host EPT is used
 	 * as second-stage IOMMU page table for some devices.
 	 */
-	pkvm_iommu_flush_iotlb(pkvm_hyp->host_vm.ept, hpa, size);
+	pkvm_iommu_flush_iotlb(pkvm_hyp->host_vm.ept->root_pa, hpa, size);
 
 	return ret;
 }
