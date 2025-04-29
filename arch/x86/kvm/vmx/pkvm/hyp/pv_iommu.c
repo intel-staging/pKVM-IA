@@ -120,6 +120,23 @@ unsigned long pkvm_iommu_update_ce(struct kvm_vcpu *hvcpu, unsigned long phys, u
 	ce->lo = param.ce_lo;
 
 	/*
+	 * Always set translation type to MULTI_LEVEL to ensure address
+	 * translation and to disable device TLB for security.
+	 */
+	if (context_lm_get_tt(ce) == CONTEXT_TT_PASS_THROUGH) {
+		unsigned long pgd = pkvm_host_ept_pgd();
+		int level = pkvm_host_ept_level();
+		u8 aw;
+
+		context_lm_set_tt(ce, CONTEXT_TT_MULTI_LEVEL);
+		context_lm_set_slptr(ce, pgd);
+		aw = (level == 3) ? 1 :
+		     (level == 4) ? 2 : 3;
+		context_lm_set_aw(ce, aw);
+	}
+
+
+	/*
 	 * TODO: Revisit the cache flushing and optimize for cases like present to non-present
 	 * and non-present-to-present.
 	 */

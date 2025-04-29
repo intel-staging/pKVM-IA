@@ -60,6 +60,16 @@ static inline bool gpa_range_has_pvmfw(struct pkvm_shadow_vm *vm, u64 gpa_start,
 	return gpa_end > vm->pvmfw_load_addr && gpa_start < pvmfw_load_end;
 }
 
+static inline unsigned long pkvm_host_ept_pgd(void)
+{
+	return pkvm_hyp->host_vm.ept->root_pa;
+}
+
+static inline int pkvm_host_ept_level(void)
+{
+	return pkvm_hyp->host_vm.ept->level;
+}
+
 int pkvm_init_shadow_vm(struct kvm *kvm);
 void pkvm_teardown_shadow_vm(struct kvm *kvm);
 int pkvm_init_shadow_vcpu(struct kvm_vcpu *vcpu);
