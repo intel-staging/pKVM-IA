@@ -66,6 +66,7 @@ static inline struct kvm_cpuid_entry2 *cpuid_entry2_find(
 	struct kvm_cpuid_entry2 *e;
 	int i;
 
+#ifndef __PKVM_HYP__
 	/*
 	 * KVM has a semi-arbitrary rule that querying the guest's CPUID model
 	 * with IRQs disabled is disallowed.  The CPUID model can legitimately
@@ -77,6 +78,7 @@ static inline struct kvm_cpuid_entry2 *cpuid_entry2_find(
 	 * of the hotpath, e.g. by caching information during CPUID updates.
 	 */
 	lockdep_assert_irqs_enabled();
+#endif
 
 	for (i = 0; i < nent; i++) {
 		e = &entries[i];

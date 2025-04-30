@@ -5052,7 +5052,9 @@ void vmx_sync_dirty_debug_regs(struct kvm_vcpu *vcpu)
 
 void vmx_set_dr6(struct kvm_vcpu *vcpu, unsigned long val)
 {
+#ifndef __PKVM_HYP__
 	lockdep_assert_irqs_disabled();
+#endif
 	set_debugreg(vcpu->arch.dr6, 6);
 }
 
