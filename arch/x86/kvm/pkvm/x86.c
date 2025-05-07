@@ -3311,6 +3311,8 @@ unsigned long kvm_vcpu_enter_guest(struct kvm_vcpu *vcpu, bool force_immediate_e
 	for (i = 0; i < KVM_NR_DB_REGS; i++)
 		get_debugreg(hvcpu->arch.db[i], i);
 
+	vcpu->arch.host_debugctl = get_debugctlmsr();
+
 	for (;;) {
 		bool req_immediate_exit = false;
 
