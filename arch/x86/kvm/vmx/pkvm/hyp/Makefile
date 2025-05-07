@@ -16,7 +16,10 @@ pkvm-hyp-y	:= vmx_asm.o vmexit.o memory.o page_alloc.o early_alloc.o pgtable.o m
 
 pkvm		:= ../../../pkvm
 pkvm-hyp-y	+= $(pkvm)/smp.o $(pkvm)/pkvm.o $(pkvm)/x86.o $(pkvm)/vmx/vmx.o $(pkvm)/vmx/vmenter.o \
-		   $(pkvm)/cpuid.o $(pkvm)/lapic.o
+		   $(pkvm)/lapic.o
+
+pkvm-kvm	:=$(pkvm)
+pkvm-hyp-kvm-y	:=$(pkvm-kvm)/cpuid.o
 
 lib-dir		:= lib
 lib2-dir	:= ../../../../../../lib
@@ -31,6 +34,8 @@ pkvm-hyp-$(CONFIG_LIST_HARDENED)	+= $(lib-dir)/list_debug.o
 pkvm-obj 	:= $(patsubst %.o,%.pkvm.o,$(pkvm-hyp-y))
 obj-$(CONFIG_PKVM_INTEL)	+= pkvm.o
 
+pkvm-kvm-obj 	:= $(patsubst %.o,%.pkvm.o,$(pkvm-hyp-kvm-y))
+
 AFLAGS_$(pkvm)/vmx/vmenter.pkvm.o	+= -iquote $(obj)/$(pkvm)
 
 $(obj)/$(pkvm)/vmx/vmenter.pkvm.o: $(obj)/$(pkvm)/kvm-asm-offsets.h
@@ -39,7 +44,7 @@ $(obj)/$(pkvm)/kvm-asm-offsets.s: $(obj)/../../../kvm-asm-offsets.c FORCE
 $(obj)/$(pkvm)/kvm-asm-offsets.h: $(obj)/$(pkvm)/kvm-asm-offsets.s FORCE
 	$(call filechk,offsets,__KVM_ASM_OFFSETS_H__)
 
-targets += $(pkvm-obj) pkvm.tmp.o pkvm.lds
+targets += $(pkvm-obj) $(pkvm-kvm-obj) pkvm.tmp.tmp.o pkvm.tmp.o pkvm.lds
 clean-files += $(pkvm)/kvm-asm-offsets.h
 
 $(obj)/%.pkvm.o: $(src)/%.c FORCE
@@ -50,8 +55,12 @@ $(obj)/%.pkvm.o: $(src)/%.S FORCE
 $(obj)/pkvm.lds: $(src)/pkvm.lds.S FORCE
 	$(call if_changed_dep,cpp_lds_S)
 
+LDFLAGS_pkvm.tmp.tmp.o := -r
+$(obj)/pkvm.tmp.tmp.o: $(addprefix $(obj)/,$(pkvm-obj)) FORCE
+	$(call if_changed,ld)
+
 LDFLAGS_pkvm.tmp.o := -r -T
-$(obj)/pkvm.tmp.o: $(obj)/pkvm.lds $(addprefix $(obj)/,$(pkvm-obj)) FORCE
+$(obj)/pkvm.tmp.o: $(obj)/pkvm.lds $(obj)/pkvm.tmp.tmp.o $(addprefix $(obj)/,$(pkvm-kvm-obj)) FORCE
 	$(call if_changed,ld)
 
 $(obj)/pkvm.o: $(obj)/pkvm.tmp.o FORCE
