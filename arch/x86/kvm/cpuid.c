@@ -86,6 +86,7 @@ static inline struct kvm_cpuid_entry2 *cpuid_entry2_find(
 	struct kvm_cpuid_entry2 *e;
 	int i;
 
+#ifndef __PKVM_HYP__
 	/*
 	 * KVM has a semi-arbitrary rule that querying the guest's CPUID model
 	 * with IRQs disabled is disallowed.  The CPUID model can legitimately
@@ -97,6 +98,7 @@ static inline struct kvm_cpuid_entry2 *cpuid_entry2_find(
 	 * of the hotpath, e.g. by caching information during CPUID updates.
 	 */
 	lockdep_assert_irqs_enabled();
+#endif
 
 	for (i = 0; i < nent; i++) {
 		e = &entries[i];
@@ -164,7 +166,17 @@ static int kvm_check_cpuid(struct kvm_vcpu *vcpu,
 	if (!xfeatures)
 		return 0;
 
+#ifdef __PKVM_HYP__
+	/*
+	 * TODO: The guest fpu xfd feature is enabled by the host when the host
+	 * KVM run its kvm_check_cpuid function before calling the
+	 * vcpu_after_set_cpuid PV interface. Revisit when implements the fpu
+	 * isolation.
+	 */
+	return 0;
+#else
 	return fpu_enable_guest_xfd_features(&vcpu->arch.guest_fpu, xfeatures);
+#endif
 }
 
 /* Check whether the supplied CPUID data is equal to what is already set for the vCPU. */
@@ -325,14 +337,15 @@ static void __kvm_update_cpuid_runtime(struct kvm_vcpu *vcpu, struct kvm_cpuid_e
 void kvm_update_cpuid_runtime(struct kvm_vcpu *vcpu)
 {
 	__kvm_update_cpuid_runtime(vcpu, vcpu->arch.cpuid_entries, vcpu->arch.cpuid_nent);
-
+#ifndef __PKVM_HYP__
 	kvm_x86_call(update_cpuid_runtime)(vcpu);
+#endif
 }
 EXPORT_SYMBOL_GPL(kvm_update_cpuid_runtime);
 
 static bool kvm_cpuid_has_hyperv(struct kvm_cpuid_entry2 *entries, int nent)
 {
-#ifdef CONFIG_KVM_HYPERV
+#if defined(CONFIG_KVM_HYPERV) && !defined(__PKVM_HYP__)
 	struct kvm_cpuid_entry2 *entry;
 
 	entry = cpuid_entry2_find(entries, nent, HYPERV_CPUID_INTERFACE,
@@ -357,8 +370,10 @@ static bool guest_cpuid_is_amd_or_hygon(struct kvm_vcpu *vcpu)
 
 static void kvm_vcpu_after_set_cpuid(struct kvm_vcpu *vcpu)
 {
+#ifndef __PKVM_HYP__
 	struct kvm_lapic *apic = vcpu->arch.apic;
 	struct kvm_cpuid_entry2 *best;
+#endif
 	bool allow_gbpages;
 
 	BUILD_BUG_ON(KVM_NR_GOVERNED_FEATURES > KVM_MAX_NR_GOVERNED_FEATURES);
@@ -381,6 +396,7 @@ static void kvm_vcpu_after_set_cpuid(struct kvm_vcpu *vcpu)
 	if (allow_gbpages)
 		kvm_governed_feature_set(vcpu, X86_FEATURE_GBPAGES);
 
+#ifndef __PKVM_HYP__
 	best = kvm_find_cpuid_entry(vcpu, 1);
 	if (best && apic) {
 		if (cpuid_entry_has(best, X86_FEATURE_TSC_DEADLINE_TIMER))
@@ -390,7 +406,7 @@ static void kvm_vcpu_after_set_cpuid(struct kvm_vcpu *vcpu)
 
 		kvm_apic_set_version(vcpu);
 	}
-
+#endif
 	vcpu->arch.guest_supported_xcr0 =
 		cpuid_get_supported_xcr0(vcpu->arch.cpuid_entries, vcpu->arch.cpuid_nent);
 
@@ -400,21 +416,30 @@ static void kvm_vcpu_after_set_cpuid(struct kvm_vcpu *vcpu)
 	vcpu->arch.maxphyaddr = cpuid_query_maxphyaddr(vcpu);
 	vcpu->arch.reserved_gpa_bits = kvm_vcpu_reserved_gpa_bits_raw(vcpu);
 
+#ifndef __PKVM_HYP__
 	kvm_pmu_refresh(vcpu);
+#endif
 	vcpu->arch.cr4_guest_rsvd_bits =
 	    __cr4_reserved_bits(guest_cpuid_has, vcpu);
 
 	kvm_hv_set_cpuid(vcpu, kvm_cpuid_has_hyperv(vcpu->arch.cpuid_entries,
 						    vcpu->arch.cpuid_nent));
 
+#ifdef __PKVM_HYP__
+	/* Disable the VMX as no nested support in the pkvm hypervisor */
+	guest_cpuid_clear(vcpu, X86_FEATURE_VMX);
+#endif
 	/* Invoke the vendor callback only after the above state is updated. */
 	kvm_x86_call(vcpu_after_set_cpuid)(vcpu);
 
+	/* FIXME: How to do this with PV EPT? */
+#ifndef __PKVM_HYP__
 	/*
 	 * Except for the MMU, which needs to do its thing any vendor specific
 	 * adjustments to the reserved GPA bits.
 	 */
 	kvm_mmu_after_set_cpuid(vcpu);
+#endif
 }
 
 int cpuid_query_maxphyaddr(struct kvm_vcpu *vcpu)
@@ -441,8 +466,10 @@ u64 kvm_vcpu_reserved_gpa_bits_raw(struct kvm_vcpu *vcpu)
 	return rsvd_bits(cpuid_maxphyaddr(vcpu), 63);
 }
 
-static int kvm_set_cpuid(struct kvm_vcpu *vcpu, struct kvm_cpuid_entry2 *e2,
-                        int nent)
+#ifndef __PKVM_HYP__
+static
+#endif
+int kvm_set_cpuid(struct kvm_vcpu *vcpu, struct kvm_cpuid_entry2 *e2, int nent)
 {
 	int r;
 
@@ -464,7 +491,9 @@ static int kvm_set_cpuid(struct kvm_vcpu *vcpu, struct kvm_cpuid_entry2 *e2,
 		if (r)
 			return r;
 
+#ifndef __PKVM_HYP__
 		kvfree(e2);
+#endif
 		return 0;
 	}
 
@@ -480,7 +509,9 @@ static int kvm_set_cpuid(struct kvm_vcpu *vcpu, struct kvm_cpuid_entry2 *e2,
 	if (r)
 		return r;
 
+#ifndef __PKVM_HYP__
 	kvfree(vcpu->arch.cpuid_entries);
+#endif
 	vcpu->arch.cpuid_entries = e2;
 	vcpu->arch.cpuid_nent = nent;
 
@@ -1631,9 +1662,32 @@ bool kvm_cpuid(struct kvm_vcpu *vcpu, u32 *eax, u32 *ebx,
 			    (data & TSX_CTRL_CPUID_CLEAR))
 				*ebx &= ~(F(RTM) | F(HLE));
 		} else if (function == 0x80000007) {
+#ifndef __PKVM_HYP__
 			if (kvm_hv_invtsc_suppressed(vcpu))
 				*edx &= ~SF(CONSTANT_TSC);
+#endif
 		}
+#ifdef __PKVM_HYP__
+		/*
+		 * TODO:
+		 * Overriding the KVM_CPUID_SIGNATURE leaf with
+		 * "PKVMPKVMPKVM" is to make the guest aware that it is running
+		 * with the protection from the pkvm hypervisor so it has to
+		 * enable some enlightenment.
+		 *
+		 * To achieve this, is there any better solution rather than
+		 * changing the KVM_CPUID_SIGNATURE leaf? Probably other leaf
+		 * like 0x21 which is used by TDX guest?
+		 */
+		if ((function == KVM_CPUID_SIGNATURE) &&
+		     pkvm_is_protected_vcpu(vcpu)) {
+			const u32 *sigptr = (const u32 *)"PKVMPKVMPKVM";
+
+			*ebx = sigptr[0];
+			*ecx = sigptr[1];
+			*edx = sigptr[2];
+		}
+#endif
 	} else {
 		*eax = *ebx = *ecx = *edx = 0;
 		/*
