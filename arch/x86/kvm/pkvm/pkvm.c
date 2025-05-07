@@ -3,7 +3,7 @@
 #include <asm/kvm_pkvm.h>
 #include "x86.h"
 #include "pkvm.h"
-#include "cpuid.h"
+#include <cpuid.h>
 #include <asm/pkvm_spinlock.h>
 //FIXME: clean up the header files
 #include <vmx/pkvm/hyp/mem_protect.h>
