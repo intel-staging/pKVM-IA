@@ -47,7 +47,7 @@ $(obj)/$(pkvm)/kvm-asm-offsets.h: $(obj)/$(pkvm)/kvm-asm-offsets.s FORCE
 targets += $(pkvm-obj) $(pkvm-kvm-obj) pkvm.tmp.tmp.o pkvm.tmp.o pkvm.lds
 clean-files += $(pkvm)/kvm-asm-offsets.h
 
-CFLAGS_$(pkvm-kvm)/cpuid.pkvm.o += -ffunction-sections -fdata-sections
+CFLAGS_$(pkvm-kvm)/cpuid.pkvm.o += -ffunction-sections -fdata-sections -Wa,--unique-pushsection
 
 $(obj)/%.pkvm.o: $(src)/%.c FORCE
 	$(call if_changed_rule,cc_o_c)
