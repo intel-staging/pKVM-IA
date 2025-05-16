@@ -253,11 +253,11 @@ struct kvm_async_pf {
 static inline void kvm_clear_async_pf_completion_queue(struct kvm_vcpu *vcpu) {}
 #else
 void kvm_clear_async_pf_completion_queue(struct kvm_vcpu *vcpu);
+#endif
 void kvm_check_async_pf_completion(struct kvm_vcpu *vcpu);
 bool kvm_setup_async_pf(struct kvm_vcpu *vcpu, gpa_t cr2_or_gpa,
 			unsigned long hva, struct kvm_arch_async_pf *arch);
 int kvm_async_pf_wakeup_all(struct kvm_vcpu *vcpu);
-#endif
 #endif
 
 #ifdef CONFIG_KVM_GENERIC_MMU_NOTIFIER
