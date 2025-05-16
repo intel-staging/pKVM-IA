@@ -25,4 +25,17 @@ SECTIONS {
 	PKVM_SECTION(.data)
 	PKVM_SECTION(.init.data)
 	PKVM_SECTION(.bss)
+	__ex_table : { KEEP(*(__ex_table)) }
+	.smp_locks : { KEEP(*(.smp_locks)) }
+	.altinstructions : { KEEP(*(.altinstructions)) }
+	__bug_table : { KEEP(*(__bug_table)) }
+	__jump_table : { KEEP(*(__jump_table)) }
+	.altinstr_replacement : { KEEP(*(.altinstr_replacement)) }
+	.discard.reachable : { KEEP(*(.discard.reachable)) }
+	.discard.unwind_hints : { KEEP(*(.discard.unwind_hints)) }
+	.discard.intra_function_calls : { KEEP(*(.discard.intra_function_calls)) }
+	.discard.noendbr : { KEEP(*(.discard.noendbr)) }
+	.discard.retpoline_safe : { KEEP(*(.discard.retpoline_safe)) }
+	.altinstr_aux : { *(.altinstr_aux*) }
+	.altinstructions : { *(.altinstructions*) }
 }
