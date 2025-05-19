@@ -15,11 +15,11 @@ pkvm-hyp-y	:= vmx_asm.o vmexit.o memory.o page_alloc.o early_alloc.o pgtable.o m
 		   iommu.o iommu_debug.o ptdev.o iommu_spgt.o io_emulate.o pci.o trace.o
 
 pkvm		:= ../../../pkvm
-pkvm-hyp-y	+= $(pkvm)/smp.o $(pkvm)/pkvm.o $(pkvm)/vmx/vmx.o $(pkvm)/vmx/vmenter.o \
+pkvm-hyp-y	+= $(pkvm)/smp.o $(pkvm)/pkvm.o $(pkvm)/vmx/vmenter.o \
 		   $(pkvm)/lapic.o
 
 pkvm-kvm	:=../../../
-pkvm-hyp-kvm-y	:=$(pkvm-kvm)/cpuid.o $(pkvm-kvm)/x86.o
+pkvm-hyp-kvm-y	:=$(pkvm-kvm)/cpuid.o $(pkvm-kvm)/x86.o $(pkvm-kvm)/vmx/vmx.o
 
 lib-dir		:= lib
 lib2-dir	:= ../../../../../../lib
@@ -49,6 +49,7 @@ clean-files += $(pkvm)/kvm-asm-offsets.h
 
 CFLAGS_$(pkvm-kvm)/cpuid.pkvm.o += -ffunction-sections -fdata-sections -Wa,--unique-pushsection
 CFLAGS_$(pkvm-kvm)/x86.pkvm.o += -ffunction-sections -fdata-sections -Wa,--unique-pushsection
+CFLAGS_$(pkvm-kvm)/vmx/vmx.pkvm.o += -ffunction-sections -fdata-sections -Wa,--unique-pushsection
 
 $(obj)/%.pkvm.o: $(src)/%.c FORCE
 	$(call if_changed_rule,cc_o_c)
