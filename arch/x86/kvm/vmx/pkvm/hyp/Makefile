@@ -18,7 +18,7 @@ pkvm		:= ../../../pkvm
 pkvm-hyp-y	+= $(pkvm)/smp.o $(pkvm)/pkvm.o $(pkvm)/x86.o $(pkvm)/vmx/vmx.o $(pkvm)/vmx/vmenter.o \
 		   $(pkvm)/lapic.o
 
-pkvm-kvm	:=$(pkvm)
+pkvm-kvm	:=../../../
 pkvm-hyp-kvm-y	:=$(pkvm-kvm)/cpuid.o
 
 lib-dir		:= lib
