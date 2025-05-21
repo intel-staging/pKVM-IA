@@ -47,14 +47,36 @@ $(obj)/$(pkvm)/kvm-asm-offsets.h: $(obj)/$(pkvm)/kvm-asm-offsets.s FORCE
 targets += $(pkvm-obj) $(pkvm-kvm-obj) pkvm.tmp.tmp.o pkvm.tmp.o pkvm.lds
 clean-files += $(pkvm)/kvm-asm-offsets.h
 
-CFLAGS_$(pkvm-kvm)/cpuid.pkvm.o += -ffunction-sections -fdata-sections -Wa,--unique-pushsection
-CFLAGS_$(pkvm-kvm)/x86.pkvm.o += -ffunction-sections -fdata-sections -Wa,--unique-pushsection
-CFLAGS_$(pkvm-kvm)/vmx/vmx.pkvm.o += -ffunction-sections -fdata-sections -Wa,--unique-pushsection
-
 $(obj)/%.pkvm.o: $(src)/%.c FORCE
 	$(call if_changed_rule,cc_o_c)
 $(obj)/%.pkvm.o: $(src)/%.S FORCE
 	$(call if_changed_rule,as_o_S)
+
+pkvm-kvm-asm 	:= $(patsubst %.o,%.pkvm.kvm.s,$(pkvm-hyp-kvm-y))
+pkvm-kvm-obj 	:= $(patsubst %.o,%.pkvm.kvm.o,$(pkvm-hyp-kvm-y))
+
+targets += $(pkvm-kvm-asm) $(pkvm-kvm-obj)
+
+pkvm-kvm-extra-opt := -ffunction-sections -fdata-sections
+
+ifdef CONFIG_CC_IS_CLANG
+pkvm-kvm-extra-opt += -fno-integrated-as
+endif
+
+CFLAGS_$(pkvm-kvm)/cpuid.pkvm.kvm.o += $(pkvm-kvm-extra-opt)
+CFLAGS_$(pkvm-kvm)/x86.pkvm.kvm.o += $(pkvm-kvm-extra-opt)
+CFLAGS_$(pkvm-kvm)/vmx/vmx.pkvm.kvm.o += $(pkvm-kvm-extra-opt)
+
+# assembler workaround
+$(obj)/%.pkvm.kvm.ss: $(src)/%.c FORCE
+	$(call if_changed,cc_s_c)
+
+$(obj)/%.pkvm.kvm.s: $(obj)/%.pkvm.kvm.ss FORCE
+	awk '{if (match($$0, /.pushsection[[:space:]"]+([[:alnum:]_.]+)/, arr)) {sub(arr[1], arr[1] "." NR, $$0)} print}' $< > $@
+
+#asflags-y += -Wa,--unique-pushsection
+$(obj)/%.pkvm.kvm.o: $(obj)/%.pkvm.kvm.s FORCE
+	$(call if_changed,as_o_S)
 
 $(obj)/pkvm.lds: $(src)/pkvm.lds.S FORCE
 	$(call if_changed_dep,cpp_lds_S)
