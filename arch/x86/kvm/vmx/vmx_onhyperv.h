@@ -14,7 +14,7 @@
 
 #define current_evmcs ((struct hv_enlightened_vmcs *)this_cpu_read(current_vmcs))
 
-#if IS_ENABLED(CONFIG_HYPERV) && !defined(__PKVM_HYP__)
+#if IS_ENABLED(CONFIG_HYPERV)
 
 DECLARE_STATIC_KEY_FALSE(__kvm_is_using_evmcs);
 
