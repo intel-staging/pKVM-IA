@@ -15,8 +15,11 @@ pkvm-hyp-y	:= vmx_asm.o vmexit.o memory.o page_alloc.o early_alloc.o pgtable.o m
 		   iommu.o iommu_debug.o ptdev.o iommu_spgt.o io_emulate.o pci.o trace.o
 
 pkvm		:= ../../../pkvm
-pkvm-hyp-y	+= $(pkvm)/smp.o $(pkvm)/pkvm.o $(pkvm)/x86.o $(pkvm)/vmx/vmx.o $(pkvm)/vmx/vmenter.o \
-		   $(pkvm)/cpuid.o $(pkvm)/lapic.o
+pkvm-hyp-y	+= $(pkvm)/smp.o $(pkvm)/pkvm.o
+
+pkvm-kvm	:=../../../
+pkvm-hyp-y	+=$(pkvm-kvm)/cpuid.o $(pkvm-kvm)/x86.o $(pkvm-kvm)/lapic.o \
+		  $(pkvm-kvm)/vmx/vmx.o $(pkvm-kvm)/vmx/vmenter.o
 
 lib-dir		:= lib
 lib2-dir	:= ../../../../../../lib
@@ -31,9 +34,9 @@ pkvm-hyp-$(CONFIG_LIST_HARDENED)	+= $(lib-dir)/list_debug.o
 pkvm-obj 	:= $(patsubst %.o,%.pkvm.o,$(pkvm-hyp-y))
 obj-$(CONFIG_PKVM_INTEL)	+= pkvm.o
 
-AFLAGS_$(pkvm)/vmx/vmenter.pkvm.o	+= -iquote $(obj)/$(pkvm)
+AFLAGS_$(pkvm-kvm)/vmx/vmenter.pkvm.o	+= -iquote $(obj)/$(pkvm)
 
-$(obj)/$(pkvm)/vmx/vmenter.pkvm.o: $(obj)/$(pkvm)/kvm-asm-offsets.h
+$(obj)/$(pkvm-kvm)/vmx/vmenter.pkvm.o: $(obj)/$(pkvm)/kvm-asm-offsets.h
 $(obj)/$(pkvm)/kvm-asm-offsets.s: $(obj)/../../../kvm-asm-offsets.c FORCE
 	$(call if_changed_dep,cc_s_c)
 $(obj)/$(pkvm)/kvm-asm-offsets.h: $(obj)/$(pkvm)/kvm-asm-offsets.s FORCE
