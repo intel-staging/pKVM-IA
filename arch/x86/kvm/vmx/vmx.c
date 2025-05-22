@@ -239,6 +239,7 @@ int __read_mostly pt_mode = PT_MODE_SYSTEM;
 module_param(pt_mode, int, S_IRUGO);
 #endif
 
+#ifndef __PKVM_HYP__
 struct x86_pmu_lbr __ro_after_init vmx_lbr_caps;
 
 DEFINE_STATIC_KEY_FALSE(vmx_l1d_should_flush);
@@ -388,6 +389,7 @@ static int vmentry_l1d_flush_get(char *s, const struct kernel_param *kp)
 
 	return sysfs_emit(s, "%s\n", vmentry_l1d_param[l1tf_vmx_mitigation].option);
 }
+#endif
 
 static __always_inline void vmx_disable_fb_clear(struct vcpu_vmx *vmx)
 {
@@ -441,11 +443,13 @@ static void vmx_update_fb_clear_dis(struct kvm_vcpu *vcpu, struct vcpu_vmx *vmx)
 		vmx->disable_fb_clear = false;
 }
 
+#ifndef __PKVM_HYP__
 static const struct kernel_param_ops vmentry_l1d_flush_ops = {
 	.set = vmentry_l1d_flush_set,
 	.get = vmentry_l1d_flush_get,
 };
 module_param_cb(vmentry_l1d_flush, &vmentry_l1d_flush_ops, NULL, 0644);
+#endif
 
 static u32 vmx_segment_access_rights(struct kvm_segment *var);
 
@@ -568,7 +572,7 @@ static const struct kvm_vmx_segment_field {
 
 static unsigned long host_idt_base;
 
-#if IS_ENABLED(CONFIG_HYPERV)
+#if IS_ENABLED(CONFIG_HYPERV) && !defined(__PKVM_HYP__)
 static bool __read_mostly enlightened_vmcs = true;
 module_param(enlightened_vmcs, bool, 0444);
 
@@ -768,6 +772,7 @@ static int vmx_set_guest_uret_msr(struct vcpu_vmx *vmx,
 	return ret;
 }
 
+#ifndef __PKVM_HYP__
 /*
  * Disable VMX and clear CR4.VMXE (even if VMXOFF faults)
  *
@@ -813,6 +818,7 @@ void vmx_emergency_disable_virtualization_cpu(void)
 
 	kvm_cpu_vmxoff();
 }
+#endif
 
 static void __loaded_vmcs_clear(void *arg)
 {
@@ -843,6 +849,7 @@ static void __loaded_vmcs_clear(void *arg)
 	loaded_vmcs->launched = 0;
 }
 
+#ifndef __PKVM_HYP__
 void loaded_vmcs_clear(struct loaded_vmcs *loaded_vmcs)
 {
 	int cpu = loaded_vmcs->cpu;
@@ -851,6 +858,7 @@ void loaded_vmcs_clear(struct loaded_vmcs *loaded_vmcs)
 		smp_call_function_single(cpu,
 			 __loaded_vmcs_clear, loaded_vmcs, 1);
 }
+#endif
 
 static bool vmx_segment_cache_test_set(struct vcpu_vmx *vmx, unsigned seg,
 				       unsigned field)
@@ -1191,6 +1199,7 @@ static bool update_transition_efer(struct vcpu_vmx *vmx)
 	return true;
 }
 
+#ifndef __PKVM_HYP__
 #ifdef CONFIG_X86_32
 /*
  * On 32-bit kernels, VM exits still load the FS and GS bases from the
@@ -1231,6 +1240,7 @@ static inline bool pt_output_base_valid(struct kvm_vcpu *vcpu, u64 base)
 	/* The base must be 128-byte aligned and a legal physical address. */
 	return kvm_vcpu_is_legal_aligned_gpa(vcpu, base, 128);
 }
+#endif
 
 static inline void pt_load_msr(struct pt_ctx *ctx, u32 addr_range)
 {
@@ -1744,6 +1754,7 @@ void vmx_set_interrupt_shadow(struct kvm_vcpu *vcpu, int mask)
 		vmcs_write32(GUEST_INTERRUPTIBILITY_INFO, interruptibility);
 }
 
+#ifndef __PKVM_HYP__
 static int vmx_rtit_ctl_check(struct kvm_vcpu *vcpu, u64 data)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
@@ -1832,6 +1843,7 @@ int vmx_check_emulate_instruction(struct kvm_vcpu *vcpu, int emul_type,
 	}
 	return X86EMUL_CONTINUE;
 }
+#endif
 
 static int skip_emulated_instruction(struct kvm_vcpu *vcpu)
 {
@@ -2069,6 +2081,7 @@ static void vmx_setup_uret_msrs(struct vcpu_vmx *vmx)
 	vmx->guest_uret_msrs_loaded = false;
 }
 
+#ifndef __PKVM_HYP__
 u64 vmx_get_l2_tsc_offset(struct kvm_vcpu *vcpu)
 {
 	struct vmcs12 *vmcs12 = get_vmcs12(vcpu);
@@ -2089,6 +2102,7 @@ u64 vmx_get_l2_tsc_multiplier(struct kvm_vcpu *vcpu)
 
 	return kvm_caps.default_tsc_scaling_ratio;
 }
+#endif
 
 void vmx_write_tsc_offset(struct kvm_vcpu *vcpu)
 {
@@ -2138,6 +2152,7 @@ static inline bool is_vmx_feature_control_msr_valid(struct vcpu_vmx *vmx,
 	return !(msr->data & ~valid_bits);
 }
 
+#ifndef __PKVM_HYP__
 int vmx_get_feature_msr(u32 msr, u64 *data)
 {
 	switch (msr) {
@@ -2149,6 +2164,7 @@ int vmx_get_feature_msr(u32 msr, u64 *data)
 		return KVM_MSR_RET_UNSUPPORTED;
 	}
 }
+#endif
 
 /*
  * Reads an msr value (of 'msr_info->index') into 'msr_info->data'.
@@ -2944,6 +2960,7 @@ static int setup_vmcs_config(struct vmcs_config *vmcs_conf,
 	return ret;
 }
 
+#ifndef __PKVM_HYP__
 static bool __kvm_is_vmx_supported(void)
 {
 	int cpu = smp_processor_id();
@@ -2972,6 +2989,7 @@ static bool kvm_is_vmx_supported(void)
 
 	return supported;
 }
+#endif
 
 int vmx_check_processor_compat(void)
 {
@@ -2997,6 +3015,7 @@ int vmx_check_processor_compat(void)
 	return 0;
 }
 
+#ifndef __PKVM_HYP__
 static int kvm_cpu_vmxon(u64 vmxon_pointer)
 {
 	u64 msr;
@@ -3016,6 +3035,7 @@ fault:
 
 	return -EFAULT;
 }
+#endif
 
 int vmx_enable_virtualization_cpu(void)
 {
@@ -3070,6 +3090,7 @@ void vmx_disable_virtualization_cpu(void)
 #endif
 }
 
+#ifndef __PKVM_HYP__
 struct vmcs *alloc_vmcs_cpu(bool shadow, int cpu, gfp_t flags)
 {
 	int node = cpu_to_node(cpu);
@@ -3097,6 +3118,7 @@ void free_vmcs(struct vmcs *vmcs)
 {
 	free_page((unsigned long)vmcs);
 }
+#endif
 
 /*
  * Free a VMCS, but before that VMCLEAR it on the CPU where it was last loaded
@@ -3180,6 +3202,7 @@ out_vmcs:
 	return -ENOMEM;
 }
 
+#ifndef __PKVM_HYP__
 static void free_kvm_area(void)
 {
 	int cpu;
@@ -3189,6 +3212,7 @@ static void free_kvm_area(void)
 		per_cpu(vmxarea, cpu) = NULL;
 	}
 }
+#endif
 
 static __init int alloc_kvm_area(void)
 {
@@ -4088,6 +4112,7 @@ bool __vmx_guest_state_valid(struct kvm_vcpu *vcpu)
 	return true;
 }
 
+#ifndef __PKVM_HYP__
 static int init_rmode_tss(struct kvm *kvm, void __user *ua)
 {
 	const void *zero_page = (const void *) __va(page_to_phys(ZERO_PAGE(0)));
@@ -4150,6 +4175,7 @@ out:
 	mutex_unlock(&kvm->slots_lock);
 	return r;
 }
+#endif
 
 static void seg_setup(int seg)
 {
@@ -4359,6 +4385,7 @@ static void vmx_update_msr_bitmap_x2apic(struct kvm_vcpu *vcpu)
 	}
 }
 
+#ifndef __PKVM_HYP__
 void pt_update_intercept_for_msr(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
@@ -4540,6 +4567,7 @@ void vmx_deliver_interrupt(struct kvm_lapic *apic, int delivery_mode,
 					   trig_mode, vector);
 	}
 }
+#endif
 
 /*
  * Set up the vmcs's constant host-state fields, i.e., host-state fields that
@@ -4933,6 +4961,7 @@ static u32 vmx_secondary_exec_control(struct vcpu_vmx *vmx)
 	return exec_control;
 }
 
+#ifndef __PKVM_HYP__
 static inline int vmx_get_pid_table_order(struct kvm *kvm)
 {
 	return get_order(kvm->arch.max_vcpu_ids * sizeof(*to_kvm_vmx(kvm)->pid_table));
@@ -4962,6 +4991,7 @@ int vmx_vcpu_precreate(struct kvm *kvm)
 {
 	return vmx_alloc_ipiv_pid_table(kvm);
 }
+#endif
 
 #define VMX_XSS_EXIT_BITMAP 0
 
@@ -5374,6 +5404,7 @@ int vmx_interrupt_allowed(struct kvm_vcpu *vcpu, bool for_injection)
 	return !vmx_interrupt_blocked(vcpu);
 }
 
+#ifndef __PKVM_HYP__
 int vmx_set_tss_addr(struct kvm *kvm, unsigned int addr)
 {
 	void __user *ret;
@@ -5455,6 +5486,7 @@ static int handle_rmode_exception(struct kvm_vcpu *vcpu,
 	kvm_queue_exception(vcpu, vec);
 	return 1;
 }
+#endif
 
 static int handle_machine_check(struct kvm_vcpu *vcpu)
 {
@@ -5466,6 +5498,7 @@ static int handle_machine_check(struct kvm_vcpu *vcpu)
 #endif
 }
 
+#ifndef __PKVM_HYP__
 /*
  * If the host has split lock detection disabled, then #AC is
  * unconditionally injected into the guest, which is the pre split lock
@@ -5485,6 +5518,7 @@ bool vmx_guest_inject_ac(struct kvm_vcpu *vcpu)
 	return vmx_get_cpl(vcpu) == 3 && kvm_is_cr0_bit_set(vcpu, X86_CR0_AM) &&
 	       (kvm_get_rflags(vcpu) & X86_EFLAGS_AC);
 }
+#endif
 
 static int handle_exception_nmi(struct kvm_vcpu *vcpu)
 {
@@ -5804,6 +5838,7 @@ static int handle_io(struct kvm_vcpu *vcpu)
 #endif
 }
 
+#ifndef __PKVM_HYP__
 void vmx_patch_hypercall(struct kvm_vcpu *vcpu, unsigned char *hypercall)
 {
 	/*
@@ -5813,6 +5848,7 @@ void vmx_patch_hypercall(struct kvm_vcpu *vcpu, unsigned char *hypercall)
 	hypercall[1] = 0x01;
 	hypercall[2] = 0xc1;
 }
+#endif
 
 /* called to set cr0 as appropriate for a mov-to-cr0 exit. */
 static int handle_set_cr0(struct kvm_vcpu *vcpu, unsigned long val)
@@ -5858,6 +5894,7 @@ static int handle_set_cr4(struct kvm_vcpu *vcpu, unsigned long val)
 		return kvm_set_cr4(vcpu, val);
 }
 
+#ifndef __PKVM_HYP__
 static int handle_desc(struct kvm_vcpu *vcpu)
 {
 	/*
@@ -5869,6 +5906,7 @@ static int handle_desc(struct kvm_vcpu *vcpu)
 	WARN_ON_ONCE(!kvm_is_cr4_bit_set(vcpu, X86_CR4_UMIP));
 	return kvm_emulate_instruction(vcpu, 0);
 }
+#endif
 
 static int handle_cr(struct kvm_vcpu *vcpu)
 {
@@ -6238,6 +6276,7 @@ static int handle_apic_write(struct kvm_vcpu *vcpu)
 #endif
 }
 
+#ifndef __PKVM_HYP__
 static int handle_task_switch(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
@@ -6294,6 +6333,7 @@ static int handle_task_switch(struct kvm_vcpu *vcpu)
 			       type == INTR_TYPE_SOFT_INTR ? idt_index : -1,
 			       reason, has_error_code, error_code);
 }
+#endif
 
 static int handle_ept_violation(struct kvm_vcpu *vcpu)
 {
@@ -7444,6 +7484,7 @@ void vmx_set_virtual_apic_mode(struct kvm_vcpu *vcpu)
 	vmx_update_msr_bitmap_x2apic(vcpu);
 }
 
+#ifndef __PKVM_HYP__
 void vmx_set_apic_access_page_addr(struct kvm_vcpu *vcpu)
 {
 	const gfn_t gfn = APIC_DEFAULT_PHYS_BASE >> PAGE_SHIFT;
@@ -7512,6 +7553,7 @@ out:
 	 */
 	kvm_release_pfn_clean(pfn);
 }
+#endif
 
 void vmx_hwapic_isr_update(struct kvm_vcpu *vcpu, int max_isr)
 {
@@ -7561,6 +7603,7 @@ void vmx_hwapic_irr_update(struct kvm_vcpu *vcpu, int max_irr)
 		vmx_set_rvi(max_irr);
 }
 
+#ifndef __PKVM_HYP__
 int vmx_sync_pir_to_irr(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
@@ -7606,6 +7649,7 @@ int vmx_sync_pir_to_irr(struct kvm_vcpu *vcpu)
 
 	return max_irr;
 }
+#endif
 
 void vmx_load_eoi_exitmap(struct kvm_vcpu *vcpu, u64 *eoi_exit_bitmap)
 {
@@ -7618,6 +7662,7 @@ void vmx_load_eoi_exitmap(struct kvm_vcpu *vcpu, u64 *eoi_exit_bitmap)
 	vmcs_write64(EOI_EXIT_BITMAP3, eoi_exit_bitmap[3]);
 }
 
+#ifndef __PKVM_HYP__
 void vmx_apicv_pre_state_restore(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
@@ -7719,6 +7764,7 @@ bool vmx_has_emulated_msr(struct kvm *kvm, u32 index)
 		return true;
 	}
 }
+#endif
 
 static void vmx_recover_nmi_blocking(struct vcpu_vmx *vmx)
 {
@@ -8412,6 +8458,7 @@ int vmx_vm_init(struct kvm *kvm)
 #endif
 }
 
+#ifndef __PKVM_HYP__
 u8 vmx_get_mt_mask(struct kvm_vcpu *vcpu, gfn_t gfn, bool is_mmio)
 {
 	/*
@@ -8432,6 +8479,7 @@ u8 vmx_get_mt_mask(struct kvm_vcpu *vcpu, gfn_t gfn, bool is_mmio)
 
 	return (MTRR_TYPE_WRBACK << VMX_EPT_MT_EPTE_SHIFT);
 }
+#endif
 
 static void vmcs_set_secondary_exec_control(struct vcpu_vmx *vmx, u32 new_ctl)
 {
@@ -8757,6 +8805,7 @@ static __init void vmx_set_cpu_caps(void)
 		kvm_cpu_cap_check_and_set(X86_FEATURE_WAITPKG);
 }
 
+#ifndef __PKVM_HYP__
 static int vmx_check_intercept_io(struct kvm_vcpu *vcpu,
 				  struct x86_instruction_info *info)
 {
@@ -8942,6 +8991,7 @@ void vmx_update_cpu_dirty_logging(struct kvm_vcpu *vcpu)
 	else
 		secondary_exec_controls_clearbit(vmx, SECONDARY_EXEC_ENABLE_PML);
 }
+#endif
 
 void vmx_setup_mce(struct kvm_vcpu *vcpu)
 {
@@ -8953,6 +9003,7 @@ void vmx_setup_mce(struct kvm_vcpu *vcpu)
 			~FEAT_CTL_LMCE_ENABLED;
 }
 
+#ifndef __PKVM_HYP__
 #ifdef CONFIG_KVM_SMM
 int vmx_smi_allowed(struct kvm_vcpu *vcpu, bool for_injection)
 {
@@ -9034,6 +9085,7 @@ void vmx_hardware_unsetup(void)
 
 	free_kvm_area();
 }
+#endif
 
 void vmx_vm_destroy(struct kvm *kvm)
 {
@@ -9055,6 +9107,7 @@ void vmx_vm_destroy(struct kvm *kvm)
 #endif
 }
 
+#ifndef __PKVM_HYP__
 /*
  * Note, the SDM states that the linear address is masked *after* the modified
  * canonicality check, whereas KVM masks (untags) the address and then performs
@@ -9112,6 +9165,7 @@ static unsigned int vmx_handle_intel_pt_intr(void)
 		  (unsigned long *)&vcpu->arch.pmu.global_status);
 	return 1;
 }
+#endif
 
 static __init void vmx_setup_user_return_msrs(void)
 {
@@ -9158,6 +9212,7 @@ static __init void vmx_setup_user_return_msrs(void)
 #endif
 }
 
+#ifndef __PKVM_HYP__
 static void __init vmx_setup_me_spte_mask(void)
 {
 	u64 me_mask = 0;
@@ -9180,6 +9235,7 @@ static void __init vmx_setup_me_spte_mask(void)
 	 */
 	kvm_mmu_set_me_spte_mask(0, me_mask);
 }
+#endif
 
 __init int vmx_hardware_setup(void)
 {
@@ -9413,6 +9469,7 @@ __init int vmx_hardware_setup(void)
 	return r;
 }
 
+#ifndef __PKVM_HYP__
 static void vmx_cleanup_l1d_flush(void)
 {
 	if (vmx_l1d_flush_pages) {
@@ -9430,7 +9487,6 @@ static void __vmx_exit(void)
 	vmx_cleanup_l1d_flush();
 }
 
-#ifndef __PKVM_HYP__
 static void vmx_exit(void)
 {
 	kvm_exit();
@@ -9520,9 +9576,7 @@ err_l1d_flush:
 	return r;
 }
 module_init(vmx_init);
-#endif
-
-#ifdef __PKVM_HYP__
+#else
 static void vmx_post_set_cr3(struct kvm_vcpu *vcpu, unsigned long cr3)
 {
         vcpu->arch.cr3 = cr3;

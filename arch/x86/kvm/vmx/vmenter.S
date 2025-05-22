@@ -161,8 +161,10 @@ SYM_FUNC_START(__vmx_vcpu_run)
 	/* Load guest RAX.  This kills the @regs pointer! */
 	mov VCPU_RAX(%_ASM_AX), %_ASM_AX
 
+#ifndef __PKVM_HYP__
 	/* Clobbers EFLAGS.ZF */
 	CLEAR_CPU_BUFFERS
+#endif
 
 	/* Check EFLAGS.CF from the VMX_RUN_VMRESUME bit test above. */
 	jnc .Lvmlaunch
@@ -275,7 +277,9 @@ SYM_INNER_LABEL_ALIGN(vmx_vmexit, SYM_L_GLOBAL)
 
 	call vmx_spec_ctrl_restore_host
 
+#ifndef __PKVM_HYP__
 	CLEAR_BRANCH_HISTORY_VMEXIT
+#endif
 
 	/* Put return value in AX */
 	mov %_ASM_BX, %_ASM_AX
@@ -294,9 +298,11 @@ SYM_INNER_LABEL_ALIGN(vmx_vmexit, SYM_L_GLOBAL)
 	RET
 
 .Lfixup:
+#ifndef __PKVM_HYP__
 	cmpb $0, _ASM_RIP(kvm_rebooting)
 	jne .Lvmfail
 	ud2
+#endif
 .Lvmfail:
 	/* VM-Fail: set return value to 1 */
 	mov $1, %_ASM_BX
@@ -304,9 +310,11 @@ SYM_INNER_LABEL_ALIGN(vmx_vmexit, SYM_L_GLOBAL)
 
 SYM_FUNC_END(__vmx_vcpu_run)
 
+#ifndef __PKVM_HYP__
 SYM_FUNC_START(vmx_do_nmi_irqoff)
 	VMX_DO_EVENT_IRQOFF call asm_exc_nmi_kvm_vmx
 SYM_FUNC_END(vmx_do_nmi_irqoff)
+#endif
 
 #ifndef CONFIG_CC_HAS_ASM_GOTO_OUTPUT
 
