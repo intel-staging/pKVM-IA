@@ -730,6 +730,31 @@ static int __guest_unshare_host(unsigned long gpa, unsigned long hpa,
 	return 0;
 }
 
+static bool gpa_range_overlaps_pvmfw(struct kvm *kvm,
+				     unsigned long gpa, unsigned long size,
+				     unsigned long *gpa_offset,
+				     unsigned long *pvmfw_offset,
+				     unsigned long *ovlp_size)
+{
+	struct kvm_pkvm_vm *pkvm = &kvm->arch.pkvm;
+	unsigned long start, end;
+
+	if (!pkvm_vm_has_pvmfw(kvm))
+		return false;
+
+	/* intersection between [gpa, gpa + size) and pvmfw region */
+	start = max(gpa, pkvm->pvmfw_load_addr);
+	end = min(gpa + size, pkvm->pvmfw_load_addr + pvmfw_size);
+
+	if (end <= start)
+		return false;
+
+	*gpa_offset = start - gpa;
+	*pvmfw_offset = start - pkvm->pvmfw_load_addr;
+	*ovlp_size = end - start;
+	return true;
+}
+
 static bool is_valid_addr_range(unsigned long addr, unsigned long size, bool page_aligned)
 {
 	if (!size || addr + size < addr || PAGE_ALIGN(addr + size) < (addr + size))
@@ -1274,6 +1299,7 @@ int pkvm_host_donate_guest(struct kvm_vcpu *vcpu, unsigned long gpa,
 {
 	u64 prot = guest_mmu_pte_prot(vcpu, gpa, true, PKVM_PAGE_OWNED);
 	struct pkvm_vm *pkvm_vm = to_pkvm_vcpu(vcpu)->pkvm_vm;
+	unsigned long gpa_offset, pvmfw_offset, load_size;
 	int ret;
 
 	if (!is_valid_addr_range(gpa, size, true) ||
@@ -1281,6 +1307,10 @@ int pkvm_host_donate_guest(struct kvm_vcpu *vcpu, unsigned long gpa,
 		return -EINVAL;
 
 	if (WARN_ON_ONCE(!pkvm_is_protected_vcpu(vcpu)))
+		return -EPERM;
+
+	/* If the VM is not finalized yet, we don't know if we need to load pvmfw. */
+	if (!smp_load_acquire(&pkvm_vm->kvm.arch.pkvm.finalized))
 		return -EPERM;
 
 	pkvm_host_mmu_lock();
@@ -1303,6 +1333,26 @@ int pkvm_host_donate_guest(struct kvm_vcpu *vcpu, unsigned long gpa,
 	BUG_ON(ret);
 
 	set_host_mem_pgstate(hpa, size, PKVM_PAGE_NONE);
+
+	if (gpa_range_overlaps_pvmfw(&pkvm_vm->kvm, gpa, size, &gpa_offset,
+				     &pvmfw_offset, &load_size)) {
+		/*
+		 * Make sure pvmfw is loaded into the guest memory pages after
+		 * enabling protection of these pages from the host, not before.
+		 */
+		smp_wmb();
+
+		memcpy(__pkvm_va(hpa + gpa_offset),
+		       __pkvm_va(pvmfw_base + pvmfw_offset),
+		       load_size);
+
+		/*
+		 * Make sure pvmfw is loaded into the guest memory pages before
+		 * mapping these pages for the guest, not after, to prevent the
+		 * guest from seeing old contents of these pages on another CPU.
+		 */
+		smp_wmb();
+	}
 
 	ret = pkvm_pgtable_map(&pkvm_vm->mmu, gpa, hpa, size, prot,
 			       &vcpu->arch.pkvm.guest_mmu_memcache);
