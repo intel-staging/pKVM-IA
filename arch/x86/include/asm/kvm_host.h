@@ -1302,6 +1302,7 @@ enum kvm_apicv_inhibit {
 	__APICV_INHIBIT_REASON(SEV),			\
 	__APICV_INHIBIT_REASON(LOGICAL_ID_ALIASED)
 
+#if IS_ENABLED(CONFIG_PKVM_INTEL)
 struct pkvm_memcache {
 	phys_addr_t head;
 	unsigned long nr_pages;
@@ -1339,6 +1340,11 @@ static inline void __free_pkvm_memcache(struct pkvm_memcache *mc,
 		free_fn(pop_pkvm_memcache(mc, to_va), arg);
 }
 
+struct kvm_pinned_page {
+	struct list_head list;
+	struct page *page;
+};
+
 struct kvm_protected_vm {
 	int pkvm_vm_handle;
 
@@ -1350,6 +1356,7 @@ struct kvm_protected_vm {
 	bool finalized;
 	struct mutex finalized_lock;
 };
+#endif /* CONFIG_PKVM_INTEL */
 
 struct kvm_arch {
 	unsigned long n_used_mmu_pages;
@@ -1593,7 +1600,9 @@ struct kvm_arch {
 #define SPLIT_DESC_CACHE_MIN_NR_OBJECTS (SPTE_ENT_PER_PAGE + 1)
 	struct kvm_mmu_memory_cache split_desc_cache;
 
+#if IS_ENABLED(CONFIG_PKVM_INTEL)
 	struct kvm_protected_vm pkvm;
+#endif
 };
 
 struct kvm_vm_stat {
@@ -1934,11 +1943,6 @@ struct kvm_arch_async_pf {
 	unsigned long cr3;
 	bool direct_map;
 	u64 error_code;
-};
-
-struct kvm_pinned_page {
-	struct list_head list;
-	struct page *page;
 };
 
 extern u32 __read_mostly kvm_nr_uret_msrs;
