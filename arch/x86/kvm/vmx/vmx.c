@@ -8710,6 +8710,10 @@ static int __init vmx_init(void)
 	if (!kvm_is_vmx_supported())
 		return -EOPNOTSUPP;
 
+#ifdef CONFIG_PKVM_INTEL
+	if (vmx_pkvm_init())
+		return -EOPNOTSUPP;
+#endif
 	/*
 	 * Note, hv_init_evmcs() touches only VMX knobs, i.e. there's nothing
 	 * to unwind if a later step fails.
