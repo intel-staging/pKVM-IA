@@ -38,3 +38,11 @@ int setup_pkvm_per_cpu(int cpu, unsigned long base)
 }
 
 void warn_thunk_thunk(void) {}
+
+unsigned long pkvm_per_cpu_offset(int cpu)
+{
+	if (cpu < 0 || cpu >= ARRAY_SIZE(__per_cpu_offset))
+		return 0;
+
+	return __per_cpu_offset[cpu];
+}

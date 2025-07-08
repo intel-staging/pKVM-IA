@@ -5,5 +5,6 @@
 unsigned int pkvm_per_cpu_nr_pages(void);
 int setup_pkvm_per_cpu(int cpu, unsigned long base);
 void warn_thunk_thunk(void);
+unsigned long pkvm_per_cpu_offset(int cpu);
 
 #endif
