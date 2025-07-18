@@ -428,9 +428,20 @@ static __init int pkvm_init_mmu(struct pkvm_hyp *pkvm)
 static __init int pkvm_setup_pcpu(struct pkvm_hyp *pkvm, int cpu)
 {
 	struct pkvm_pcpu *pcpu;
+	int nr_pages;
 
 	if (cpu >= CONFIG_NR_CPUS)
 		return -ENOMEM;
+
+	nr_pages = pkvm_sym(pkvm_per_cpu_nr_pages)();
+	if (nr_pages) {
+		void *per_cpu_base = pkvm_sym(pkvm_early_alloc_contig)(nr_pages);
+
+		if (!per_cpu_base || pkvm_sym(setup_pkvm_per_cpu)(cpu, __pa(per_cpu_base))) {
+			pr_err("%s: No page for pKVM per cpu data\n", __func__);
+			return -ENOMEM;
+		}
+	}
 
 	pcpu = pkvm_sym(pkvm_early_alloc_contig)(PKVM_PCPU_PAGES);
 	if (!pcpu)

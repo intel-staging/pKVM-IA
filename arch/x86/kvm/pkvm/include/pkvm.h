@@ -48,12 +48,14 @@ static inline unsigned long get_host_stack_top(struct pkvm_pcpu *pcpu)
 #define PKVM_HOST_VCPU_PAGES (ALIGN(sizeof(struct pkvm_host_vcpu), PAGE_SIZE) >> PAGE_SHIFT)
 #define PKVM_HOST_VCPU_VMCS_PAGES 3 /*vmxarea+vmcs+msr_bitmap*/
 #define PKVM_PERCPU_PAGES (PKVM_PCPU_PAGES + PKVM_HOST_VCPU_PAGES + \
-			   PKVM_HOST_VCPU_VMCS_PAGES)
+			   PKVM_HOST_VCPU_VMCS_PAGES + pkvm_sym(pkvm_per_cpu_nr_pages)())
 
 PKVM_DECLARE(void *, pkvm_early_alloc_contig, (unsigned int nr_pages));
 PKVM_DECLARE(void *, pkvm_early_alloc_page, (void));
 PKVM_DECLARE(void, pkvm_early_alloc_init, (void *virt, unsigned long size));
 PKVM_DECLARE(void, pkvm_host_vmexit_entry, (void));
+PKVM_DECLARE(unsigned int, pkvm_per_cpu_nr_pages, (void));
+PKVM_DECLARE(int, setup_pkvm_per_cpu, (int cpu, unsigned long base));
 
 extern struct vmx_capability pkvm_sym(vmx_capability);
 #ifdef CONFIG_DYNAMIC_MEMORY_LAYOUT
