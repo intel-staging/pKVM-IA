@@ -56,5 +56,9 @@ PKVM_DECLARE(void, pkvm_early_alloc_init, (void *virt, unsigned long size));
 PKVM_DECLARE(void, pkvm_host_vmexit_entry, (void));
 
 extern struct vmx_capability pkvm_sym(vmx_capability);
+#ifdef CONFIG_DYNAMIC_MEMORY_LAYOUT
+extern unsigned long pkvm_sym(page_offset_base);
+#endif
+extern unsigned long pkvm_sym(phys_base);
 
 #endif

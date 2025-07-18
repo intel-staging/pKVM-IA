@@ -411,6 +411,20 @@ static __init int setup_pkvm_host_vmcs_config(struct pkvm_hyp *pkvm)
 	return ret;
 }
 
+static __init int pkvm_init_mmu(struct pkvm_hyp *pkvm)
+{
+	/*
+	 * page_offset_base/phys_base stores the offset for pkvm to translate
+	 * between VA and PA.
+	 */
+#ifdef CONFIG_DYNAMIC_MEMORY_LAYOUT
+	pkvm_sym(page_offset_base) = page_offset_base;
+#endif
+	pkvm_sym(phys_base) = phys_base;
+
+	return 0;
+}
+
 static __init int pkvm_setup_pcpu(struct pkvm_hyp *pkvm, int cpu)
 {
 	struct pkvm_pcpu *pcpu;
@@ -617,6 +631,10 @@ int __init vmx_pkvm_init(void)
 	pkvm->num_cpus = num_possible_cpus();
 
 	ret = setup_pkvm_host_vmcs_config(pkvm);
+	if (ret)
+		goto out;
+
+	ret = pkvm_init_mmu(pkvm);
 	if (ret)
 		goto out;
 
