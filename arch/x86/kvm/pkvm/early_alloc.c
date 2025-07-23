@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
+#include <asm/pkvm_spinlock.h>
 #include <asm/kvm_pkvm.h>
 #include <asm/string.h>
 #include <vdso/page.h>
@@ -8,6 +9,8 @@ static unsigned long base;
 static unsigned long end;
 static unsigned long cur;
 
+static pkvm_spinlock_t early_lock = __PKVM_SPINLOCK_UNLOCKED;
+
 void *pkvm_early_alloc_contig(unsigned int nr_pages)
 {
 	unsigned long size = (nr_pages << PAGE_SHIFT);
@@ -16,11 +19,15 @@ void *pkvm_early_alloc_contig(unsigned int nr_pages)
 	if (!nr_pages)
 		return NULL;
 
-	if (end - cur < size)
+	pkvm_spin_lock(&early_lock);
+	if (end - cur < size) {
+		pkvm_spin_unlock(&early_lock);
 		return NULL;
+	}
 
 	ret = (void *)cur;
 	cur += size;
+	pkvm_spin_unlock(&early_lock);
 
 	memset(ret, 0, size);
 
