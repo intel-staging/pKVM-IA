@@ -73,5 +73,6 @@ extern struct vmx_capability pkvm_sym(vmx_capability);
 extern unsigned long pkvm_sym(page_offset_base);
 #endif
 extern unsigned long pkvm_sym(phys_base);
+extern struct pkvm_hyp *pkvm_sym(pkvm_hyp);
 
 #endif

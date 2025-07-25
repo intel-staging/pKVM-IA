@@ -672,7 +672,7 @@ int __init vmx_pkvm_init(void)
 					  num_possible_cpus());
 	pkvm_sym(pkvm_early_alloc_init)(__va(hyp_mem_base), nr_pages << PAGE_SHIFT);
 
-	pkvm = pkvm_sym(pkvm_early_alloc_contig)(PKVM_PAGES);
+	pkvm = pkvm_sym(pkvm_hyp) = pkvm_sym(pkvm_early_alloc_contig)(PKVM_PAGES);
 	if (!pkvm) {
 		pr_err("pkvm: cannot alloc pkvm_hyp\n");
 		ret = -ENOMEM;
@@ -712,6 +712,7 @@ int __init vmx_pkvm_init(void)
 	return 1;
 out:
 	/* TODO: Re-privilege the deprivileged CPUs */
+	pkvm_sym(pkvm_hyp) = NULL;
 	pkvm_init = false;
 	return ret;
 }
