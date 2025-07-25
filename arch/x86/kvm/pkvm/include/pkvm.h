@@ -9,8 +9,15 @@
 /* Size of reserved space for private parameter in pkvm stack */
 #define PKVM_STACK_TOP_RESV	16
 
+struct idt_page {
+	gate_desc idt[IDT_ENTRIES];
+} __aligned(PAGE_SIZE);
+
 struct pkvm_pcpu {
 	u8 stack[PKVM_STACK_SIZE] __aligned(16);
+	struct gdt_page gdt_page;
+	struct idt_page idt_page;
+	struct tss_struct tss;
 };
 
 struct pkvm_host_vcpu {
@@ -57,6 +64,9 @@ PKVM_DECLARE(void, pkvm_host_vmexit_entry, (void));
 PKVM_DECLARE(unsigned int, pkvm_per_cpu_nr_pages, (void));
 PKVM_DECLARE(int, setup_pkvm_per_cpu, (int cpu, unsigned long base));
 PKVM_DECLARE(unsigned long, pkvm_per_cpu_offset, (int cpu));
+#define GEN(x, ...) PKVM_DECLARE(void, handle_exception_##x, (void));
+#include "GEN-for-each-exc.h"
+#undef GEN
 
 extern struct vmx_capability pkvm_sym(vmx_capability);
 #ifdef CONFIG_DYNAMIC_MEMORY_LAYOUT

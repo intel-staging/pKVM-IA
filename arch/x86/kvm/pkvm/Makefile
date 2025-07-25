@@ -7,11 +7,13 @@ ccflags-y += -D__PKVM_HYP__
 ccflags-y += -include $(srctree)/arch/x86/kvm/pkvm/def.h
 
 asflags-y += -D__PKVM_HYP__
+asflags-y += -I $(srctree)/arch/x86/kvm/pkvm/include
 asflags-y += -include $(srctree)/arch/x86/kvm/pkvm/def.h
 
 cmd_deps			:= $(src)/compiling_cmds.sh
 
-pkvm-hyp-y			:= early_alloc.o pkvm.o memory.o cpu.o
+pkvm-hyp-y			:= early_alloc.o pkvm.o memory.o cpu.o \
+				   idt.o irq.o
 pkvm-hyp-y			+= vmx/vmx_asm.o vmx/vmexit.o vmx/vmsr.o
 kernel-x86-lib			:= ../../lib
 pkvm-hyp-y			+= $(kernel-x86-lib)/memset_64.o
