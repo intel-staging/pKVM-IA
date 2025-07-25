@@ -776,6 +776,9 @@ static inline void vmx_segment_cache_clear(struct vcpu_vmx *vmx)
 	vmx->segment_cache.bitmask = 0;
 }
 
+int kvm_cpu_vmxon(u64 vmxon_pointer);
+int kvm_cpu_vmxoff(void);
+
 #ifdef CONFIG_PKVM_INTEL
 int __init vmx_pkvm_init(void);
 #endif

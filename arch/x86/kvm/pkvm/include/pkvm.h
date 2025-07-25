@@ -38,6 +38,7 @@ struct pkvm_hyp {
 			   PKVM_HOST_VCPU_VMCS_PAGES)
 
 void *pkvm_early_alloc_contig(unsigned int nr_pages);
+void *pkvm_early_alloc_page(void);
 void pkvm_early_alloc_init(void *virt, unsigned long size);
 
 #endif
