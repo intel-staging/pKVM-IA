@@ -85,6 +85,39 @@ static __init int pkvm_setup_pcpu(struct pkvm_hyp *pkvm, int cpu)
 	return 0;
 }
 
+static __init int pkvm_host_setup_vcpu(struct pkvm_hyp *pkvm, int cpu)
+{
+	struct pkvm_host_vcpu *hvcpu;
+
+	if (cpu >= CONFIG_NR_CPUS)
+		return -ENOMEM;
+
+	hvcpu = pkvm_early_alloc_contig(PKVM_HOST_VCPU_PAGES);
+	if (!hvcpu)
+		return -ENOMEM;
+
+	hvcpu->pcpu = pkvm->pcpus[cpu];
+	hvcpu->vmx.vcpu.cpu = cpu;
+
+	pkvm->host_vm.host_vcpus[cpu] = hvcpu;
+
+	return 0;
+}
+
+static __init int pkvm_init_io_emulation(struct pkvm_hyp *pkvm)
+{
+	pkvm->host_vm.io_bitmap = pkvm_early_alloc_contig(2);
+
+	if (!pkvm->host_vm.io_bitmap) {
+		pr_err("pkvm: no memory page for io_bitmap\n");
+		return -ENOMEM;
+	}
+
+	memset(pkvm->host_vm.io_bitmap, 0, 2 * PAGE_SIZE);
+
+	return 0;
+}
+
 int __init vmx_pkvm_init(void)
 {
 	unsigned long nr_pages;
@@ -124,7 +157,14 @@ int __init vmx_pkvm_init(void)
 		ret = pkvm_setup_pcpu(pkvm, cpu);
 		if (ret)
 			goto out;
+		ret = pkvm_host_setup_vcpu(pkvm, cpu);
+		if (ret)
+			goto out;
 	}
+
+	ret = pkvm_init_io_emulation(pkvm);
+	if (ret)
+		goto out;
 
 	/* FIXME: Should return 0 once pvVMCS is supported */
 	return 1;
