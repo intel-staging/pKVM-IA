@@ -69,11 +69,27 @@ static __init int setup_pkvm_host_vmcs_config(struct pkvm_hyp *pkvm)
 	return ret;
 }
 
+static __init int pkvm_setup_pcpu(struct pkvm_hyp *pkvm, int cpu)
+{
+	struct pkvm_pcpu *pcpu;
+
+	if (cpu >= CONFIG_NR_CPUS)
+		return -ENOMEM;
+
+	pcpu = pkvm_early_alloc_contig(PKVM_PCPU_PAGES);
+	if (!pcpu)
+		return -ENOMEM;
+
+	pkvm->pcpus[cpu] = pcpu;
+
+	return 0;
+}
+
 int __init vmx_pkvm_init(void)
 {
 	unsigned long nr_pages;
 	struct pkvm_hyp *pkvm;
-	int ret;
+	int ret, cpu;
 
 	if (cmpxchg(&pkvm_init, 0, 1) != 0) {
 		pr_err("pkvm: init is already started\n");
@@ -103,6 +119,12 @@ int __init vmx_pkvm_init(void)
 	ret = setup_pkvm_host_vmcs_config(pkvm);
 	if (ret)
 		goto out;
+
+	for_each_possible_cpu(cpu) {
+		ret = pkvm_setup_pcpu(pkvm, cpu);
+		if (ret)
+			goto out;
+	}
 
 	/* FIXME: Should return 0 once pvVMCS is supported */
 	return 1;
