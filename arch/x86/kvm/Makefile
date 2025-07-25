@@ -50,7 +50,7 @@ ccflags-y		+= -I $(srctree)/arch/x86/kvm/pkvm/include
 endif
 pkvm-host-y		:= pkvm.o vmx/pkvm_init.o
 
-obj-$(CONFIG_PKVM_INTEL) += pkvm-host.o
+obj-$(CONFIG_PKVM_INTEL) += pkvm-host.o pkvm/
 
 targets += kvm-asm-offsets.s
 clean-files += kvm-asm-offsets.h
