@@ -2,8 +2,11 @@
 #ifndef __PKVM_H_
 #define __PKVM_H_
 
+#include <vmx/vmx.h>
+
 struct pkvm_hyp {
 	int num_cpus;
+	struct vmcs_config vmcs_config;
 };
 
 #define PKVM_PAGES (ALIGN(sizeof(struct pkvm_hyp), PAGE_SIZE) >> PAGE_SHIFT)
