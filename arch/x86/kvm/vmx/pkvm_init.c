@@ -7,6 +7,14 @@
 
 MODULE_LICENSE("GPL");
 
+bool __read_mostly enable_pkvm;
+
+static int __init early_pkvm_parse_cmdline(char *buf)
+{
+	return kstrtobool(buf, &enable_pkvm);
+}
+early_param("kvm-intel.pkvm", early_pkvm_parse_cmdline);
+
 static bool pkvm_init;
 
 struct pkvm_deprivilege_param {
@@ -578,6 +586,9 @@ int __init vmx_pkvm_init(void)
 	unsigned long nr_pages;
 	struct pkvm_hyp *pkvm;
 	int ret, cpu;
+
+	if (!enable_pkvm)
+		return 0;
 
 	if (cmpxchg(&pkvm_init, 0, 1) != 0) {
 		pr_err("pkvm: init is already started\n");

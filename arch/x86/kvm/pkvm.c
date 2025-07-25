@@ -3,6 +3,7 @@
 #include <linux/memblock.h>
 #include <linux/sort.h>
 #include <asm/kvm_pkvm.h>
+#include <asm/pkvm.h>
 
 static struct memblock_region hyp_memory[HYP_MEMBLOCK_REGIONS];
 static unsigned int hyp_memblock_nr;
@@ -46,6 +47,9 @@ static int __init register_memblock_regions(void)
 void __init kvm_hyp_reserve(void)
 {
 	int ret;
+
+	if (!enable_pkvm)
+		return;
 
 	ret = register_memblock_regions();
 	if (ret) {

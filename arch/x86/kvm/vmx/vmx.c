@@ -49,6 +49,7 @@
 #include <asm/mwait.h>
 #include <asm/spec-ctrl.h>
 #include <asm/vmx.h>
+#include <asm/pkvm.h>
 
 #include <trace/events/ipi.h>
 
@@ -8732,8 +8733,10 @@ static int __init vmx_init(void)
 		return -EOPNOTSUPP;
 
 #ifdef CONFIG_PKVM_INTEL
-	if (vmx_pkvm_init())
+	if (vmx_pkvm_init()) {
+		enable_pkvm = false;
 		return -EOPNOTSUPP;
+	}
 #endif
 	/*
 	 * Note, hv_init_evmcs() touches only VMX knobs, i.e. there's nothing
