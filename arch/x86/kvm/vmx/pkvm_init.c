@@ -635,6 +635,8 @@ static __init int pkvm_host_deprivilege_cpus(struct pkvm_hyp *pkvm)
 	};
 	int cpu, ret = 0;
 
+	pkvm_sym(pkvm_vmx_register_excp_handlers)();
+
 	for_each_possible_cpu(cpu) {
 		ret = smp_call_function_single(cpu, pkvm_host_deprivilege_cpu, &p, 1);
 		if (ret || p.ret) {

@@ -2,6 +2,7 @@
 #include <linux/memblock.h>
 #include <asm/kvm_pkvm.h>
 #include <vmx/vmx.h>
+#include <pkvm.h>
 #include "vmexit.h"
 #include "vmsr.h"
 
@@ -74,6 +75,26 @@ static void handle_xsetbv(struct kvm_vcpu *vcpu)
 			: : "a" (eax), "d" (edx), "c" (ecx));
 }
 
+static void handle_irq_window(struct kvm_vcpu *vcpu)
+{
+	struct vcpu_vmx *vmx = to_vmx(vcpu);
+	u32 cpu_based_exec_ctrl = exec_controls_get(vmx);
+
+	exec_controls_set(vmx, cpu_based_exec_ctrl & ~CPU_BASED_INTR_WINDOW_EXITING);
+}
+
+static void handle_pending_events(struct kvm_vcpu *vcpu)
+{
+	struct pkvm_host_vcpu *hvcpu = vmx_to_host_vcpu(to_vmx(vcpu));
+
+	if (!is_guest_mode(vcpu) && hvcpu->pending_nmi) {
+		/* Inject if NMI is not blocked */
+		vmcs_write32(VM_ENTRY_INTR_INFO_FIELD,
+			     INTR_TYPE_NMI_INTR | INTR_INFO_VALID_MASK | NMI_VECTOR);
+		hvcpu->pending_nmi = false;
+	}
+}
+
 static inline void set_vcpu_mode(struct kvm_vcpu *vcpu, int mode)
 {
 	vcpu->mode = mode;
@@ -120,14 +141,22 @@ void pkvm_vmexit_main(struct vcpu_vmx *vmx)
 		handle_xsetbv(vcpu);
 		skip_instruction = true;
 		break;
+	case EXIT_REASON_INTERRUPT_WINDOW:
+		handle_irq_window(vcpu);
+		break;
 	default:
 		break;
 	}
 
 	if (skip_instruction)
 		skip_emulated_instruction();
+handle_events:
+	handle_pending_events(vcpu);
 
 	set_vcpu_mode(vcpu, IN_GUEST_MODE);
+
+	if (vcpu->mode == EXITING_GUEST_MODE || kvm_request_pending(vcpu))
+		goto handle_events;
 
 	native_write_cr2(vcpu->arch.cr2);
 }

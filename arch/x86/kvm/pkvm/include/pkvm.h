@@ -24,6 +24,8 @@ struct pkvm_host_vcpu {
 	struct vcpu_vmx vmx;
 	struct pkvm_pcpu *pcpu;
 	struct vmcs *vmxarea;
+
+	bool pending_nmi;
 };
 
 struct pkvm_host_vm {
@@ -67,6 +69,7 @@ PKVM_DECLARE(unsigned long, pkvm_per_cpu_offset, (int cpu));
 #define GEN(x, ...) PKVM_DECLARE(void, handle_exception_##x, (void));
 #include "GEN-for-each-exc.h"
 #undef GEN
+PKVM_DECLARE(void, pkvm_vmx_register_excp_handlers, (void));
 
 extern struct vmx_capability pkvm_sym(vmx_capability);
 #ifdef CONFIG_DYNAMIC_MEMORY_LAYOUT

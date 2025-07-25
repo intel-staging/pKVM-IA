@@ -14,7 +14,8 @@ cmd_deps			:= $(src)/compiling_cmds.sh
 
 pkvm-hyp-y			:= early_alloc.o pkvm.o memory.o cpu.o \
 				   idt.o irq.o
-pkvm-hyp-y			+= vmx/vmx_asm.o vmx/vmexit.o vmx/vmsr.o
+pkvm-hyp-y			+= vmx/vmx_asm.o vmx/vmexit.o vmx/vmsr.o \
+				   vmx/irq.o
 kernel-x86-lib			:= ../../lib
 pkvm-hyp-y			+= $(kernel-x86-lib)/memset_64.o
 
