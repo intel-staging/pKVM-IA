@@ -86,6 +86,8 @@
 #include <asm/sgx.h>
 #include <clocksource/hyperv_timer.h>
 
+#ifndef __PKVM_HYP__
+
 #define CREATE_TRACE_POINTS
 #include "trace.h"
 
@@ -666,6 +668,7 @@ static void drop_user_return_notifiers(void)
 		kvm_on_user_return(&msrs->urn);
 }
 
+#endif
 /*
  * Handle a fault on a hardware virtualization (VMX or SVM) instruction.
  *
@@ -679,6 +682,8 @@ noinstr void kvm_spurious_fault(void)
 	BUG_ON(!kvm_rebooting);
 }
 EXPORT_SYMBOL_GPL(kvm_spurious_fault);
+
+#ifndef __PKVM_HYP__
 
 #define EXCPT_BENIGN		0
 #define EXCPT_CONTRIBUTORY	1
@@ -14056,3 +14061,4 @@ static void __exit kvm_x86_exit(void)
 	WARN_ON_ONCE(static_branch_unlikely(&kvm_has_noapic_vcpu));
 }
 module_exit(kvm_x86_exit);
+#endif

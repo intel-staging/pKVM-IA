@@ -2,6 +2,16 @@
 #ifndef _ASM_X86_PKVM_IMAGE_H
 #define _ASM_X86_PKVM_IMAGE_H
 
+#if defined(__PKVM_HYP__)
+/* No suffix will be added */
+#define PKVM_DECLARE(type, f, params)	type f params
+#define pkvm_sym(sym)			sym
+#else
+/* suffix is added by Makefile */
+#define PKVM_DECLARE(type, f, params)	type f##__pkvm params
+#define pkvm_sym(sym)			sym##__pkvm
+#endif
+
 #ifdef LINKER_SCRIPT
 
 #define __PKVM_CONCAT(a, b)	a ## b

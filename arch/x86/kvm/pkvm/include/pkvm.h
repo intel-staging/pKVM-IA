@@ -2,6 +2,7 @@
 #ifndef __PKVM_H_
 #define __PKVM_H_
 
+#include <asm/pkvm_image.h>
 #include <vmx/vmx.h>
 
 #define PKVM_STACK_SIZE		SZ_16K
@@ -49,9 +50,11 @@ static inline unsigned long get_host_stack_top(struct pkvm_pcpu *pcpu)
 #define PKVM_PERCPU_PAGES (PKVM_PCPU_PAGES + PKVM_HOST_VCPU_PAGES + \
 			   PKVM_HOST_VCPU_VMCS_PAGES)
 
-void *pkvm_early_alloc_contig(unsigned int nr_pages);
-void *pkvm_early_alloc_page(void);
-void pkvm_early_alloc_init(void *virt, unsigned long size);
-void pkvm_host_vmexit_entry(void);
+PKVM_DECLARE(void *, pkvm_early_alloc_contig, (unsigned int nr_pages));
+PKVM_DECLARE(void *, pkvm_early_alloc_page, (void));
+PKVM_DECLARE(void, pkvm_early_alloc_init, (void *virt, unsigned long size));
+PKVM_DECLARE(void, pkvm_host_vmexit_entry, (void));
+
+extern struct vmx_capability pkvm_sym(vmx_capability);
 
 #endif

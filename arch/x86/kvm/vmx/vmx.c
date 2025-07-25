@@ -78,6 +78,8 @@ MODULE_AUTHOR("Qumranet");
 MODULE_DESCRIPTION("KVM support for VMX (Intel VT-x) extensions");
 MODULE_LICENSE("GPL");
 
+#ifndef __PKVM_HYP__
+
 #ifdef MODULE
 static const struct x86_cpu_id vmx_cpu_id[] = {
 	X86_MATCH_FEATURE(X86_FEATURE_VMX, NULL),
@@ -435,6 +437,7 @@ module_param_cb(vmentry_l1d_flush, &vmentry_l1d_flush_ops, NULL, 0644);
 static u32 vmx_segment_access_rights(struct kvm_segment *var);
 
 void vmx_vmexit(void);
+#endif
 
 #define vmx_insn_failed(fmt...)		\
 do {					\
@@ -489,6 +492,7 @@ noinline void invept_error(unsigned long ext, u64 eptp)
 	vmx_insn_failed("invept failed: ext=0x%lx eptp=%llx\n", ext, eptp);
 }
 
+#ifndef __PKVM_HYP__
 static DEFINE_PER_CPU(struct vmcs *, vmxarea);
 DEFINE_PER_CPU(struct vmcs *, current_vmcs);
 /*
@@ -501,8 +505,10 @@ static DECLARE_BITMAP(vmx_vpid_bitmap, VMX_NR_VPIDS);
 static DEFINE_SPINLOCK(vmx_vpid_lock);
 
 struct vmcs_config vmcs_config __ro_after_init;
+#endif
 struct vmx_capability vmx_capability __ro_after_init;
 
+#ifndef __PKVM_HYP__
 #define VMX_SEGMENT_FIELD(seg)					\
 	[VCPU_SREG_##seg] = {                                   \
 		.selector = GUEST_##seg##_SELECTOR,		\
@@ -8793,3 +8799,4 @@ err_l1d_flush:
 	return r;
 }
 module_init(vmx_init);
+#endif

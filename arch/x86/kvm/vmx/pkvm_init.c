@@ -2,6 +2,7 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <asm/kvm_pkvm.h>
+#include <asm/pkvm_image.h>
 #include <pkvm.h>
 #include "vmx.h"
 
@@ -34,7 +35,7 @@ static struct vmcs *pkvm_alloc_vmcs(struct vmcs_config *vmcs_config_ptr)
 	struct vmcs *vmcs;
 	int pages = ALIGN(vmx_basic_vmcs_size(vmcs_config_ptr->basic), PAGE_SIZE) >> PAGE_SHIFT;
 
-	vmcs = pkvm_early_alloc_contig(pages);
+	vmcs = pkvm_sym(pkvm_early_alloc_contig)(pages);
 	if (!vmcs)
 		return NULL;
 
@@ -58,7 +59,7 @@ static __init int pkvm_host_setup_vmxarea(struct pkvm_host_vcpu *hvcpu)
 {
 	u64 phys_addr;
 
-	hvcpu->vmxarea = pkvm_early_alloc_page();
+	hvcpu->vmxarea = pkvm_sym(pkvm_early_alloc_page)();
 	if (!hvcpu->vmxarea)
 		return -ENOMEM;
 
@@ -262,7 +263,7 @@ static __init void init_host_state_area(struct vcpu_vmx *vmx)
 	*((struct vcpu_vmx **) (host_rsp + 8)) = vmx;
 	*((unsigned long **) host_rsp) = vmx->vcpu.arch.regs;
 
-	vmcs_writel(HOST_RIP, (unsigned long)pkvm_host_vmexit_entry);
+	vmcs_writel(HOST_RIP, (unsigned long)pkvm_sym(pkvm_host_vmexit_entry));
 }
 
 static __init void init_execution_control(struct vcpu_vmx *vmx, struct pkvm_hyp *pkvm)
@@ -339,7 +340,7 @@ static __init int pkvm_host_init_vmx(struct vcpu_vmx *vmx, struct pkvm_hyp *pkvm
 	if (!vmx->vmcs01.vmcs)
 		return -ENOMEM;
 
-	vmx->vmcs01.msr_bitmap = pkvm_early_alloc_page();
+	vmx->vmcs01.msr_bitmap = pkvm_sym(pkvm_early_alloc_page)();
 	if (!vmx->vmcs01.msr_bitmap) {
 		pr_err("pkvm: no memory page for msr_bitmap\n");
 		return -ENOMEM;
@@ -360,7 +361,7 @@ static __init int pkvm_host_init_vmx(struct vcpu_vmx *vmx, struct pkvm_hyp *pkvm
 static __init int setup_pkvm_host_vmcs_config(struct pkvm_hyp *pkvm)
 {
 	struct vmcs_config *vmcs_config = &pkvm->vmcs_config;
-	struct vmx_capability *vmx_cap = &vmx_capability;
+	struct vmx_capability *vmx_cap = &pkvm_sym(vmx_capability);
 	int ret = 0;
 	struct vmcs_config_setting setting = {
 		.cpu_based_vm_exec_ctrl_req =
@@ -417,7 +418,7 @@ static __init int pkvm_setup_pcpu(struct pkvm_hyp *pkvm, int cpu)
 	if (cpu >= CONFIG_NR_CPUS)
 		return -ENOMEM;
 
-	pcpu = pkvm_early_alloc_contig(PKVM_PCPU_PAGES);
+	pcpu = pkvm_sym(pkvm_early_alloc_contig)(PKVM_PCPU_PAGES);
 	if (!pcpu)
 		return -ENOMEM;
 
@@ -433,7 +434,7 @@ static __init int pkvm_host_setup_vcpu(struct pkvm_hyp *pkvm, int cpu)
 	if (cpu >= CONFIG_NR_CPUS)
 		return -ENOMEM;
 
-	hvcpu = pkvm_early_alloc_contig(PKVM_HOST_VCPU_PAGES);
+	hvcpu = pkvm_sym(pkvm_early_alloc_contig)(PKVM_HOST_VCPU_PAGES);
 	if (!hvcpu)
 		return -ENOMEM;
 
@@ -447,7 +448,7 @@ static __init int pkvm_host_setup_vcpu(struct pkvm_hyp *pkvm, int cpu)
 
 static __init int pkvm_init_io_emulation(struct pkvm_hyp *pkvm)
 {
-	pkvm->host_vm.io_bitmap = pkvm_early_alloc_contig(2);
+	pkvm->host_vm.io_bitmap = pkvm_sym(pkvm_early_alloc_contig)(2);
 
 	if (!pkvm->host_vm.io_bitmap) {
 		pr_err("pkvm: no memory page for io_bitmap\n");
@@ -604,9 +605,9 @@ int __init vmx_pkvm_init(void)
 	nr_pages = pkvm_data_struct_pages(PKVM_GLOBAL_PAGES,
 					  PKVM_PERCPU_PAGES,
 					  num_possible_cpus());
-	pkvm_early_alloc_init(__va(hyp_mem_base), nr_pages << PAGE_SHIFT);
+	pkvm_sym(pkvm_early_alloc_init)(__va(hyp_mem_base), nr_pages << PAGE_SHIFT);
 
-	pkvm = pkvm_early_alloc_contig(PKVM_PAGES);
+	pkvm = pkvm_sym(pkvm_early_alloc_contig)(PKVM_PAGES);
 	if (!pkvm) {
 		pr_err("pkvm: cannot alloc pkvm_hyp\n");
 		ret = -ENOMEM;

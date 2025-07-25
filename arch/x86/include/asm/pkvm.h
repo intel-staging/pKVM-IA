@@ -5,7 +5,11 @@
 #include <linux/init.h>
 
 #ifdef CONFIG_PKVM_INTEL
+
+#ifndef __PKVM_HYP__
 extern bool __read_mostly enable_pkvm;	/* kernel command-line flag */
+#endif
+
 #endif
 
 #endif
