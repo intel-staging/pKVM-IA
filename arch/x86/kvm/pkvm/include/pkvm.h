@@ -6,4 +6,7 @@ struct pkvm_hyp {
 	int num_cpus;
 };
 
+#define PKVM_GLOBAL_PAGES (ALIGN(sizeof(struct pkvm_hyp), PAGE_SIZE) >> PAGE_SHIFT)
+#define PKVM_PERCPU_PAGES 0
+
 #endif

@@ -44,6 +44,7 @@
 #include <asm/io_apic.h>
 #include <asm/kasan.h>
 #include <asm/kaslr.h>
+#include <asm/kvm_pkvm.h>
 #include <asm/mce.h>
 #include <asm/memtype.h>
 #include <asm/mtrr.h>
@@ -1252,6 +1253,8 @@ void __init setup_arch(char **cmdline_p)
 #endif
 
 	unwind_init();
+
+	kvm_hyp_reserve();
 }
 
 #ifdef CONFIG_X86_32

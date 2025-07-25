@@ -48,7 +48,7 @@ $(obj)/kvm-asm-offsets.h: $(obj)/kvm-asm-offsets.s FORCE
 ifdef CONFIG_PKVM_INTEL
 ccflags-y		+= -I $(srctree)/arch/x86/kvm/pkvm/include
 endif
-pkvm-host-y		:= vmx/pkvm_init.o
+pkvm-host-y		:= pkvm.o vmx/pkvm_init.o
 
 obj-$(CONFIG_PKVM_INTEL) += pkvm-host.o
 
