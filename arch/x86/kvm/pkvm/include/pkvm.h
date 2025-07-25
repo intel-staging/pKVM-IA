@@ -5,6 +5,8 @@
 #include <vmx/vmx.h>
 
 #define PKVM_STACK_SIZE		SZ_16K
+/* Size of reserved space for private parameter in pkvm stack */
+#define PKVM_STACK_TOP_RESV	16
 
 struct pkvm_pcpu {
 	u8 stack[PKVM_STACK_SIZE] __aligned(16);
@@ -28,6 +30,16 @@ struct pkvm_hyp {
 	struct pkvm_host_vm host_vm;
 };
 
+static inline struct pkvm_host_vcpu *vmx_to_host_vcpu(struct vcpu_vmx *vmx)
+{
+	return container_of(vmx, struct pkvm_host_vcpu, vmx);
+}
+
+static inline unsigned long get_host_stack_top(struct pkvm_pcpu *pcpu)
+{
+	return (unsigned long) &pcpu->stack[sizeof(pcpu->stack)];
+}
+
 #define PKVM_PAGES (ALIGN(sizeof(struct pkvm_hyp), PAGE_SIZE) >> PAGE_SHIFT)
 #define PKVM_EXTRA_PAGES 2 /*io_bitmap(A + B) */
 #define PKVM_GLOBAL_PAGES (PKVM_PAGES + PKVM_EXTRA_PAGES)
@@ -40,5 +52,6 @@ struct pkvm_hyp {
 void *pkvm_early_alloc_contig(unsigned int nr_pages);
 void *pkvm_early_alloc_page(void);
 void pkvm_early_alloc_init(void *virt, unsigned long size);
+void pkvm_host_vmexit_entry(void);
 
 #endif
