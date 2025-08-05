@@ -449,8 +449,30 @@ static __init int pkvm_host_init_vmx(struct vcpu_vmx *vmx, struct pkvm_hyp *pkvm
 
 static noinline int local_deprivilege_cpu(void)
 {
-	/* TODO */
-	return -EINVAL;
+	int ret;
+
+	asm volatile(
+		"pushfq\n"
+		"popq %%rax\n"
+		"movq %3, %%rdx\n"
+		"vmwrite %%rax, %%rdx\n"
+		"movq %%rsp, %%rax\n"
+		"movq %4, %%rdx\n"
+		"vmwrite %%rax, %%rdx\n"
+		"movq $host_vm_entry_point, %%rax\n"
+		"movq %1, %%rdx\n"
+		"vmwrite %%rax, %%rdx\n"
+		"movl $0, %0\n"
+		"vmlaunch\n"
+		/* vmlaunch failed */
+		"movl %2, %0\n"
+		/* successfully deprivileged */
+		"host_vm_entry_point: nop\n"
+		: "=m"(ret)
+		: "i"(GUEST_RIP), "i"(-EINVAL), "i"(GUEST_RFLAGS), "i"(GUEST_RSP)
+		: "rax", "rdx", "memory");
+
+	return ret;
 }
 
 static __init void pkvm_host_deprivilege_cpu(void *data)
@@ -567,7 +589,13 @@ int __init vmx_pkvm_init(void)
 	}
 
 	pr_info("All cpus are in guest mode!\n");
-	return 0;
+	/*
+	 * TODO: Return -EFAULT to abort KVM init if the host has been
+	 * successfully deprivileged to prevent the host using vmx
+	 * instructions which are not supported by the pkvm hypervisor
+	 * until the pvVMCS is added.
+	 */
+	return -EFAULT;
 out:
 	/*
 	 * As the reserved memory at the pkvm_mem_base will not be
