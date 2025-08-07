@@ -141,23 +141,11 @@ PHDRS {
 	. = ALIGN(PAGE_SIZE);						\
 	__pkvm_data_end = .;
 
-#define PKVM_PERCPU							\
-	PKVM_SECTION_NAME(.data..percpu) :				\
-	AT(ADDR(PKVM_SECTION_NAME(.data..percpu)) -			\
-	   LOAD_OFFSET) {						\
-		. = ALIGN(PAGE_SIZE);					\
-		pkvm_sym(__per_cpu_start) = .;				\
-		*(PKVM_SECTION_NAME(.data..percpu))			\
-		. = ALIGN(PAGE_SIZE);					\
-		pkvm_sym(__per_cpu_end) = .;				\
-	}
-
 #else
 
 #define PKVM_TEXT
 #define PKVM_BSS
 #define PKVM_DATA
-#define PKVM_PERCPU
 
 #endif
 
@@ -380,8 +368,6 @@ SECTIONS
 
 	PERCPU_SECTION(L1_CACHE_BYTES)
 	ASSERT(__per_cpu_hot_end - __per_cpu_hot_start <= 64, "percpu cache hot data too large")
-
-	PKVM_PERCPU
 
 	RUNTIME_CONST_VARIABLES
 	RUNTIME_CONST(ptr, USER_PTR_MAX)
