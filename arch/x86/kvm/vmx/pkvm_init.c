@@ -276,11 +276,11 @@ static __init void init_guest_state_area(void)
 	vmcs_write64(VMCS_LINK_POINTER, -1ull);
 }
 
-static __init void init_host_state_area(void)
+static __init void init_host_state_area(struct vcpu_vmx *vmx, struct pkvm_hyp *pkvm)
 {
 	int cpu = smp_processor_id();
+	unsigned long host_rsp, msrl;
 	struct desc_ptr dt;
-	unsigned long msrl;
 	u16 selector;
 
 	vmcs_writel(HOST_CR0, read_cr0() & ~X86_CR0_TS);
@@ -331,6 +331,31 @@ static __init void init_host_state_area(void)
 
 	rdmsrl(MSR_IA32_CR_PAT, msrl);
 	vmcs_write64(HOST_IA32_PAT, msrl);
+
+	/*
+	 * [pcpu->stack, pcpu->stack + PKVM_STACK_SIZE) is per cpu stack.
+	 * It is used as stack when the pcpu enters pKVM, i.e. HOST stack from
+	 * VMX point of view.
+	 *
+	 * Within the top of stack, a small region starting from stack_resv
+	 * is reserved  to store private paremeters,
+	 *
+	 * ------------ Stack layout ----------
+	 * stack_top:
+	 * stack_resv + 8:	struct vcpu_vmx *vmx
+	 * stack_resv + 0:	pointer to vcpu->arch.regs
+	 * stack_resv:		(stack_top - PKVM_STACK_TOP_RESV) = VMCS.HOST_RSP for PCPU
+	 *			.........
+	 *			.........
+	 * stack_bottom:
+	 */
+	host_rsp = get_host_stack_top(pkvm->pcpus[cpu]) - PKVM_STACK_TOP_RESV;
+
+	vmcs_writel(HOST_RSP, host_rsp);
+	*((struct vcpu_vmx **) (host_rsp + 8)) = vmx;
+	*((unsigned long **) host_rsp) = vmx->vcpu.arch.regs;
+
+	vmcs_writel(HOST_RIP, (unsigned long)pkvm_host_vmexit_entry);
 }
 
 static __init void init_execution_control(struct vcpu_vmx *vmx)
@@ -396,13 +421,13 @@ static __init void init_vmentry_control(struct vcpu_vmx *vmx)
 	vmcs_write32(VM_ENTRY_INTR_INFO_FIELD, 0);
 }
 
-static __init int pkvm_host_init_vmx(struct vcpu_vmx *vmx)
+static __init int pkvm_host_init_vmx(struct vcpu_vmx *vmx, struct pkvm_hyp *pkvm)
 {
 	vmx->loaded_vmcs = &vmx->vmcs01;
 	vmcs_load(vmx->loaded_vmcs->vmcs);
 
 	init_guest_state_area();
-	init_host_state_area();
+	init_host_state_area(vmx, pkvm);
 	init_execution_control(vmx);
 	init_vmexit_control(vmx);
 	init_vmentry_control(vmx);
@@ -433,7 +458,7 @@ static __init void pkvm_host_deprivilege_cpu(void *data)
 		goto done;
 	}
 
-	ret = pkvm_host_init_vmx(to_vmx(vcpu));
+	ret = pkvm_host_init_vmx(to_vmx(vcpu), p->pkvm);
 	if (ret) {
 		pr_err("CPU%d init vmx failed, ret %d\n", cpu, ret);
 		goto vmxoff;
