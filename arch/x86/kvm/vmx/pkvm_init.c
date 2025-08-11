@@ -25,6 +25,20 @@ u64 pkvm_total_reserve_pages(void)
 	return pkvm_vmx_data_pages();
 }
 
+static __init void pkvm_setup_syms(void)
+{
+	/*
+	 * The pkvm hypervisor has defined the same symbol page_offset_base
+	 * and phys_base with the linux kernel. Initialize with the same value
+	 * used by the linux kernel before deprivilege. With this, the pkvm
+	 * hypervisor code can use __va and __pa to translate between VA and PA.
+	 */
+#ifdef CONFIG_DYNAMIC_MEMORY_LAYOUT
+	pkvm_sym(page_offset_base) = page_offset_base;
+#endif
+	pkvm_sym(phys_base) = phys_base;
+}
+
 static __init int pkvm_setup_host_vmcs_config(void)
 {
 	struct vmcs_config *vmcs_config = &host_vmcs_config;
@@ -561,6 +575,8 @@ int __init vmx_pkvm_init(void)
 		ret = -ENOMEM;
 		goto out;
 	}
+
+	pkvm_setup_syms();
 
 	ret = pkvm_setup_host_vmcs_config();
 	if (ret) {
