@@ -4,6 +4,7 @@
 
 #ifdef CONFIG_PKVM_X86
 #include <linux/mm.h>
+#include <asm/pkvm_image.h>
 
 #define PKVM_MEMBLOCK_REGIONS		128
 #define PKVM_STACK_SIZE			SZ_16K
@@ -25,9 +26,9 @@ struct pkvm_hyp {
 #define PKVM_PCPU_PAGES		(PAGE_ALIGN(sizeof(struct pkvm_pcpu)) >> PAGE_SHIFT)
 
 u64 pkvm_total_reserve_pages(void);
-void *pkvm_early_alloc_page(void);
-void *pkvm_early_alloc_contig(unsigned int nr_pages);
-void pkvm_early_alloc_init(void *virt, unsigned long size);
+PKVM_DECLARE(void *, pkvm_early_alloc_page, (void));
+PKVM_DECLARE(void *, pkvm_early_alloc_contig, (unsigned int nr_pages));
+PKVM_DECLARE(void, pkvm_early_alloc_init, (void *virt, unsigned long size));
 
 static inline unsigned long pkvm_data_pages(unsigned long extra_global,
 					    unsigned long extra_percpu)

@@ -28,7 +28,7 @@ struct pt_regs;
 
 #endif	/* __CHECKER__ */
 
-#ifdef CONFIG_GENERIC_BUG
+#if defined(CONFIG_GENERIC_BUG) && !defined(__PKVM_HYP__)
 #include <asm-generic/bug.h>
 
 static inline int is_warning_bug(const struct bug_entry *bug)

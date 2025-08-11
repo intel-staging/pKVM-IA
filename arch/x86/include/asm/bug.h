@@ -34,7 +34,7 @@
 #define BUG_UDB			0xffd6
 #define BUG_LOCK		0xfff0
 
-#ifdef CONFIG_GENERIC_BUG
+#if defined(CONFIG_GENERIC_BUG) && !defined(__PKVM_HYP__)
 
 #ifdef CONFIG_X86_32
 # define __BUG_REL(val)	".long " val
