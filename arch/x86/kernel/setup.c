@@ -59,6 +59,7 @@
 #if defined(CONFIG_X86_LOCAL_APIC)
 #include <asm/nmi.h>
 #endif
+#include <asm/kvm_host.h>
 
 /*
  * max_low_pfn_mapped: highest directly mapped pfn < 4 GB
@@ -1252,6 +1253,8 @@ void __init setup_arch(char **cmdline_p)
 #endif
 
 	unwind_init();
+
+	pkvm_reserve();
 }
 
 #ifdef CONFIG_X86_32
