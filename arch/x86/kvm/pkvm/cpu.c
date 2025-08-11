@@ -7,6 +7,7 @@
 #include <asm/percpu.h>
 #include <asm/page.h>
 #include "pkvm.h"
+#include "cpu.h"
 
 unsigned long __per_cpu_offset[NR_CPUS];
 DEFINE_PER_CPU_CACHE_HOT(unsigned long, this_cpu_off);
@@ -54,3 +55,5 @@ unsigned long pkvm_per_cpu_offset(int cpu)
 
 	return __per_cpu_offset[cpu];
 }
+
+void warn_thunk_thunk(void) {}

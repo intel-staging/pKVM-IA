@@ -12,5 +12,6 @@
 #undef CONFIG_PRINTK
 #undef CONFIG_BUG
 #undef CONFIG_GENERIC_BUG
+#undef CONFIG_CALL_THUNKS_DEBUG
 
 #endif /* __PKVM_X86_UNDEF_H */

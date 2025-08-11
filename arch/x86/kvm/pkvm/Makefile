@@ -8,6 +8,7 @@ ccflags-y += -D__PKVM_HYP__
 ccflags-y += -include $(srctree)/arch/x86/kvm/pkvm/undef.h
 
 asflags-y += -D__PKVM_HYP__
+asflags-y += -include $(srctree)/arch/x86/kvm/pkvm/undef.h
 
 cmd_deps			:= $(src)/compiling_cmds.sh
 
@@ -16,6 +17,14 @@ pkvm-hyp-y			:= early_alloc.o pkvm.o memory.o cpu.o \
 
 kernel-x86-lib			:= ../../lib
 pkvm-hyp-y			+= $(kernel-x86-lib)/memset_64.o
+
+pkvm-hyp-$(CONFIG_MITIGATION_RETPOLINE)	+= retpoline.o
+$(obj)/retpoline.pkvm.o: $(obj)/retpoline.pkvm.S FORCE
+	$(call if_changed_rule,as_o_S)
+$(obj)/retpoline.pkvm.S: $(srctree)/arch/x86/lib/retpoline.S $(cmd_deps) FORCE
+	$(call if_changed,patch_retpoline)
+quiet_cmd_patch_retpoline = PATCH_RETPOLINE $@
+      cmd_patch_retpoline = $(BASH) $(src)/compiling_cmds.sh patch_retpoline $< $@
 
 kvm				:= ..
 pkvm-hyp-y			+= $(kvm)/x86.o
@@ -26,7 +35,8 @@ pkvm-hyp-$(CONFIG_PKVM_INTEL)	+= vmx/host_vmentry.o vmx/host_vmx.o \
 pkvm-obj 			:= $(patsubst %.o,%.pkvm.o,$(pkvm-hyp-y))
 obj-$(CONFIG_PKVM_X86)		+= pkvm.o
 
-targets += $(pkvm-obj) pkvm.tmp.o pkvm.lds
+targets += $(pkvm-obj) pkvm.tmp.o pkvm.lds retpoline.pkvm.S
+clean-files += retpoline.pkvm.S
 
 $(obj)/%.pkvm.o: $(src)/%.c FORCE
 	$(call if_changed_rule,cc_o_c)
