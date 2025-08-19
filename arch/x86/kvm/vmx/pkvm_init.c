@@ -51,6 +51,7 @@ static __init int pkvm_setup_host_vmcs_config(void)
 	struct vmx_capability *vmx_cap = &pkvm_sym(vmx_capability);
 	struct vmcs_config_setting setting = {
 		.cpu_based_vm_exec_ctrl_req =
+			CPU_BASED_INTR_WINDOW_EXITING |
 			CPU_BASED_USE_MSR_BITMAPS |
 			CPU_BASED_ACTIVATE_SECONDARY_CONTROLS,
 		.cpu_based_vm_exec_ctrl_opt = 0,
@@ -63,7 +64,8 @@ static __init int pkvm_setup_host_vmcs_config(void)
 			SECONDARY_EXEC_ENABLE_RDTSCP |
 			SECONDARY_EXEC_ENABLE_USR_WAIT_PAUSE,
 		.tertiary_vm_exec_ctrl_opt = 0,
-		.pin_based_vm_exec_ctrl_req = 0,
+		.pin_based_vm_exec_ctrl_req =
+			PIN_BASED_VMX_PREEMPTION_TIMER,
 		.pin_based_vm_exec_ctrl_opt = 0,
 		.vmexit_ctrl_req =
 			VM_EXIT_HOST_ADDR_SPACE_SIZE |
@@ -451,16 +453,20 @@ static __init void init_host_state_area(struct vcpu_vmx *vmx, struct pkvm_hyp *p
 
 static __init void init_execution_control(struct vcpu_vmx *vmx)
 {
-	pin_controls_set(vmx, host_vmcs_config.pin_based_exec_ctrl);
+	/* Preemption timer is toggled dynamically */
+	pin_controls_set(vmx, host_vmcs_config.pin_based_exec_ctrl &
+			      ~PIN_BASED_VMX_PREEMPTION_TIMER);
 
 	/*
 	 * CR3 LOAD/STORE EXITING are always read as 1 from the
 	 * MSR_IA32_VMX_PROCBASED_CTLS. Clear these two bits as the CR3 will be
 	 * passthrough to the host VM.
+	 * INTR WINDOW EXITING is toggled dynamically.
 	 */
 	exec_controls_set(vmx, host_vmcs_config.cpu_based_exec_ctrl &
 			       ~(CPU_BASED_CR3_LOAD_EXITING |
-				 CPU_BASED_CR3_STORE_EXITING));
+				 CPU_BASED_CR3_STORE_EXITING |
+				 CPU_BASED_INTR_WINDOW_EXITING));
 
 	/* Disable EPT/VPID first, enable after EPT pgtable created */
 	secondary_exec_controls_set(vmx, host_vmcs_config.cpu_based_2nd_exec_ctrl &
@@ -603,6 +609,8 @@ static __init int pkvm_host_deprivilege_cpus(struct pkvm_hyp *pkvm)
 		.ret = 0,
 	};
 	int cpu, ret = 0;
+
+	pkvm_sym(pkvm_vmx_register_excp_handlers)();
 
 	for_each_possible_cpu(cpu) {
 		ret = smp_call_function_single(cpu, pkvm_host_deprivilege_cpu, &p, 1);
