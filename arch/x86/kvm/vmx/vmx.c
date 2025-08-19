@@ -1824,7 +1824,7 @@ int vmx_skip_emulated_instruction(struct kvm_vcpu *vcpu)
 }
 #endif /* !defined(__PKVM_HYP__) */
 
-static void vmx_clear_hlt(struct kvm_vcpu *vcpu)
+void vmx_clear_hlt(struct kvm_vcpu *vcpu)
 {
 	/*
 	 * Ensure that we clear the HLT state in the VMCS.  We don't need to
@@ -4984,12 +4984,14 @@ void vmx_vcpu_reset(struct kvm_vcpu *vcpu, bool init_event)
 
 	vmx_update_fb_clear_dis(vcpu, vmx);
 }
+#endif /* !defined(__PKVM_HYP__) */
 
 void vmx_enable_irq_window(struct kvm_vcpu *vcpu)
 {
 	exec_controls_setbit(to_vmx(vcpu), CPU_BASED_INTR_WINDOW_EXITING);
 }
 
+#ifndef __PKVM_HYP__
 void vmx_enable_nmi_window(struct kvm_vcpu *vcpu)
 {
 	if (!enable_vnmi ||

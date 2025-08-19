@@ -779,6 +779,7 @@ static inline void vmx_segment_cache_clear(struct vcpu_vmx *vmx)
 
 int kvm_cpu_vmxon(u64 vmxon_pointer);
 int kvm_cpu_vmxoff(void);
+void vmx_clear_hlt(struct kvm_vcpu *vcpu);
 
 #ifdef CONFIG_PKVM_INTEL
 
@@ -794,6 +795,7 @@ static inline unsigned long pkvm_vmx_data_pages(void)
 
 int __init vmx_pkvm_init(void);
 PKVM_DECLARE(void, pkvm_host_vmexit_entry, (void));
+PKVM_DECLARE(void, pkvm_vmx_register_excp_handlers, (void));
 extern struct vmx_capability pkvm_sym(vmx_capability);
 
 #endif /* CONFIG_PKVM_INTEL */
