@@ -5,6 +5,7 @@
 #include <mmu/spte.h>
 #include <vmx/vmx.h>
 #include <vmx/vmx_ops.h>
+#include "debug.h"
 #include "ept.h"
 #include "gfp.h"
 #include "pkvm/mmu.h"
@@ -297,8 +298,10 @@ void pkvm_handle_host_ept_violation(struct kvm_vcpu *vcpu)
 	 * EPT when initialize, except for the MMIO in the high-end address.
 	 * Handle the MMIO only.
 	 */
-	if (pkvm_find_addr_range(gpa, &range))
+	if (pkvm_find_addr_range(gpa, &range)) {
+		pkvm_err_ratelimited("Host access to protected memory at 0x%lx\n", gpa);
 		goto failed;
+	}
 
 	pkvm_host_mmu_lock();
 
@@ -340,6 +343,9 @@ void pkvm_handle_host_ept_violation(struct kvm_vcpu *vcpu)
 			break;
 		}
 	}
+
+	if (ret)
+		pkvm_err("No valid range found to map host GPA 0x%lx, err %d\n", gpa, ret);
 
 	pkvm_host_mmu_unlock();
 

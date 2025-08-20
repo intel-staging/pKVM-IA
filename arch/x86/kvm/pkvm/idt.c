@@ -6,6 +6,7 @@
 #include <asm/extable.h>
 #include <asm/pkvm_image.h>
 #include <asm/trapnr.h>
+#include "debug.h"
 #include "idt.h"
 
 static const int pt_regoff[] = {
@@ -110,6 +111,13 @@ static bool pkvm_fixup_exception(struct pt_regs *regs)
 static void default_exception_handler(struct pt_regs *regs,
 				      int vector, bool has_error_code)
 {
+	if (has_error_code)
+		pkvm_err("Exception %d @ip %pS (0x%px), err code 0x%lx\n",
+			 vector, (void *)regs->ip, (void *)regs->ip, regs->orig_ax);
+	else
+		pkvm_err("Exception %d @ip %pS (0x%px), no err code\n",
+			 vector, (void *)regs->ip, (void *)regs->ip);
+
 	asm volatile("hlt" : : : "memory");
 }
 
