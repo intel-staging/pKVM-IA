@@ -8,5 +8,6 @@ int pkvm_host_ept_init(struct pkvm_pgtable *pgt, void *pool_base,
 		       unsigned long pool_pages);
 int pkvm_host_ept_finalize(struct pkvm_pgtable *pgt);
 void pkvm_handle_host_ept_violation(struct kvm_vcpu *vcpu);
+void pkvm_flush_host_ept(void);
 
 #endif /* __PKVM_VMX_EPT_H */
