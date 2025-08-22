@@ -328,6 +328,9 @@ static void handle_pending_events(struct kvm_vcpu *vcpu, bool *req_immediate_exi
 				*req_immediate_exit = true;
 		}
 	}
+
+	if (kvm_check_request(KVM_REQ_TLB_FLUSH_CURRENT, vcpu))
+		pkvm_flush_host_ept();
 }
 
 static void fixup_host_vmx(struct vcpu_vmx *vmx)
