@@ -11,6 +11,8 @@
 #define CR4			4
 #define MOV_TO_CR		0
 
+struct vmcs_config host_vmcs_config;
+
 static struct pkvm_init_ops vmx_init_ops;
 void *pkvm_vmx_init_ops = &vmx_init_ops;
 
