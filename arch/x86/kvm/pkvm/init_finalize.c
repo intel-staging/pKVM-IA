@@ -7,6 +7,7 @@
 #include "mmu.h"
 
 static void *hyp_pgt_base;
+static void *host_pgt_base;
 static void *pkvm_vmemmap_base;
 
 static int divide_memory_pool(phys_addr_t phys, unsigned long size)
@@ -18,6 +19,11 @@ static int divide_memory_pool(phys_addr_t phys, unsigned long size)
 	nr_pages = pkvm_hyp_pgtable_pages();
 	hyp_pgt_base = pkvm_early_alloc_contig(nr_pages);
 	if (!hyp_pgt_base)
+		return -ENOMEM;
+
+	nr_pages = pkvm_host_pgtable_pages();
+	host_pgt_base = pkvm_early_alloc_contig(nr_pages);
+	if (!host_pgt_base)
 		return -ENOMEM;
 
 	nr_pages = pkvm_vmemmap_pages(sizeof(struct pkvm_page));
@@ -133,8 +139,10 @@ static int create_hyp_mmu(const struct pkvm_mem_info infos[], int nr_infos)
 	return pkvm_hyp_mmu_switch_to_buddy(hyp_pgt_base, nr_pages);
 }
 
-static int finalize_global(struct pkvm_mem_info infos[], int nr_infos)
+static int finalize_global(struct pkvm_mem_info infos[], int nr_infos,
+			   struct pkvm_init_ops *init_ops)
 {
+	host_mmu_init_fn_t host_mmu_init_fn = init_ops ? init_ops->host_mmu_init : NULL;
 	phys_addr_t mem_base = INVALID_PAGE;
 	unsigned long mem_size = 0;
 	int i, ret;
@@ -157,7 +165,12 @@ static int finalize_global(struct pkvm_mem_info infos[], int nr_infos)
 	if (ret)
 		return ret;
 
-	return create_hyp_mmu(infos, nr_infos);
+	ret = create_hyp_mmu(infos, nr_infos);
+	if (ret)
+		return ret;
+
+	return pkvm_host_mmu_init(host_pgt_base, pkvm_host_pgtable_pages(),
+				  host_mmu_init_fn);
 }
 
 int pkvm_init_finalize(struct pkvm_mem_info infos[], int nr_infos,
@@ -168,7 +181,7 @@ int pkvm_init_finalize(struct pkvm_mem_info infos[], int nr_infos,
 	static bool global_finalized;
 
 	if (!global_finalized) {
-		int ret = finalize_global(infos, nr_infos);
+		int ret = finalize_global(infos, nr_infos, init_ops);
 
 		if (ret)
 			return ret;
