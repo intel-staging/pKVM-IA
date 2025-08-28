@@ -234,11 +234,13 @@ int pkvm_init_finalize(struct pkvm_mem_info infos[], int nr_infos,
 {
 	hyp_mmu_finalize_fn_t hyp_mmu_finalize_fn = init_ops ? init_ops->hyp_mmu_finalize :
 							       NULL;
+	host_mmu_finalize_fn_t host_mmu_finalize_fn = init_ops ? init_ops->host_mmu_finalize :
+								 NULL;
 	static bool global_finalized;
+	int ret;
 
 	if (!global_finalized) {
-		int ret = finalize_global(infos, nr_infos, init_ops);
-
+		ret = finalize_global(infos, nr_infos, init_ops);
 		if (ret)
 			return ret;
 
@@ -252,5 +254,9 @@ int pkvm_init_finalize(struct pkvm_mem_info infos[], int nr_infos,
 		pkvm_hyp_mmu_load();
 	}
 
-	return pkvm_hyp_mmu_finalize(hyp_mmu_finalize_fn);
+	ret = pkvm_hyp_mmu_finalize(hyp_mmu_finalize_fn);
+	if (ret)
+		return ret;
+
+	return pkvm_host_mmu_finalize(host_mmu_finalize_fn);
 }
