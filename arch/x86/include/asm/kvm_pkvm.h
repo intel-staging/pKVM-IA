@@ -88,6 +88,7 @@ extern struct pkvm_hyp *pkvm_sym(pkvm_hyp);
 extern u64 pkvm_sym(x86_pred_cmd);
 extern struct memblock_region pkvm_sym(pkvm_memory)[];
 extern unsigned int pkvm_sym(pkvm_memblock_nr);
+extern struct cpuinfo_x86 pkvm_sym(boot_cpu_data);
 
 PKVM_DECLARE(void *, pkvm_early_alloc_page, (void));
 PKVM_DECLARE(void *, pkvm_early_alloc_contig, (unsigned int nr_pages));
