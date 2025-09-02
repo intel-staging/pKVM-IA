@@ -5,6 +5,8 @@
 #include "memory.h"
 #include "pgtable.h"
 
+#define PGTABLE_WALK_DONE      1
+
 static void *pgtable_alloc_page(const struct pkvm_pgtable_mm_ops *mm_ops)
 {
 	return mm_ops->zalloc_page();
@@ -312,6 +314,22 @@ static int unmap_walker(struct pkvm_pgtable_visit_ctx *ctx, unsigned long walk_f
 	return 0;
 }
 
+struct pgt_lookup_data {
+	u64 pte;
+	int level;
+};
+
+static int lookup_walker(struct pkvm_pgtable_visit_ctx *ctx, unsigned long walk_flags,
+			 void *const arg)
+{
+	struct pgt_lookup_data *data = arg;
+
+	data->pte = ctx->pgt->pgt_ops->pte_get(ctx->ptep);
+	data->level = ctx->level;
+
+	return PGTABLE_WALK_DONE;
+}
+
 struct pgt_walk_data {
 	struct pkvm_pgtable *pgt;
 	unsigned long addr;
@@ -548,4 +566,47 @@ int pkvm_pgtable_unmap(struct pkvm_pgtable *pgt, unsigned long vaddr,
 	};
 
 	return pkvm_pgtable_walk(pgt, vaddr, size, &walker);
+}
+
+/*
+ * pkvm_pgtable_lookup() - Lookup the mapping information of a virtual address
+ *			   in a page table.
+ * @pgt:	The page table to lookup.
+ * @vaddr:	The virtual address of the lookup mapping.
+ * @pte:	To return raw value of the leaf entry.
+ * @level:	To return page table level of the leaf entry.
+ *
+ * @vaddr is aligned down to the PAGE_SIZE, and the lookup size is PAGE_SIZE.
+ *
+ * The page table is walked based on @vaddr to look up for the leaf entry.
+ * Regardless of whether the leaf entry is present or non-present, the entry
+ * value is returned via @pte and the entry level in the page table is returned
+ * via @level.
+ *
+ * Return: 0 on success, negative value on failure.
+ */
+int pkvm_pgtable_lookup(struct pkvm_pgtable *pgt, unsigned long vaddr,
+			u64 *pte, int *level)
+{
+	struct pgt_lookup_data data;
+	struct pkvm_pgtable_walker walker = {
+		.cb = lookup_walker,
+		.arg = &data,
+		.walk_flags = PKVM_PGTABLE_WALK_LEAF,
+	};
+	int ret;
+
+	ret = pkvm_pgtable_walk(pgt, ALIGN_DOWN(vaddr, PAGE_SIZE), PAGE_SIZE,
+				&walker);
+	if (ret != PGTABLE_WALK_DONE) {
+		BUG_ON(!ret);
+		return ret;
+	}
+
+	if (pte)
+		*pte = data.pte;
+	if (level)
+		*level = data.level;
+
+	return 0;
 }
