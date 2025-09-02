@@ -127,5 +127,7 @@ int pkvm_pgtable_map(struct pkvm_pgtable *pgt, unsigned long vaddr,
 		     unsigned long phys, unsigned long size, u64 prot);
 int pkvm_pgtable_unmap(struct pkvm_pgtable *pgt, unsigned long vaddr,
 		       unsigned long phys, unsigned long size);
+void pkvm_pgtable_lookup(struct pkvm_pgtable *pgt, unsigned long vaddr,
+			 unsigned long *phys, u64 *prot, int *level);
 
 #endif /* __PKVM_X86_PGTABLE_H */
