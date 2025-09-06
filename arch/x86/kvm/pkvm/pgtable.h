@@ -78,6 +78,7 @@ struct pkvm_pgtable_cap {
 	 * hyp_mmu.
 	 */
 	bool coalesce_on_map;
+	bool flush_tlb_lazy;
 };
 
 struct pkvm_pgtable {
@@ -94,6 +95,7 @@ struct pkvm_pgtable_visit_ctx {
 	unsigned long addr;
 	int level;
 	void *ptep;
+	bool flush_tlb;
 };
 
 typedef int (*pgtable_visit_fn_t)(struct pkvm_pgtable_visit_ctx *ctx,
