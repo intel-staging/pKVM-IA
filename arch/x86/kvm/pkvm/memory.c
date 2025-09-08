@@ -60,3 +60,9 @@ bool pkvm_find_addr_range(unsigned long phys, struct range *range)
 
 	return false;
 }
+
+/*
+ * Ensure that __kcfi_typeid_ symbols are emitted for functions that may
+ * not be indirectly called with all configurations.
+ */
+__ADDRESSABLE(__memcpy)
