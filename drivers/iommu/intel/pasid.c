@@ -19,6 +19,7 @@
 #include <linux/spinlock.h>
 
 #include "iommu.h"
+#include "iommu_pkvm.h"
 #include "pasid.h"
 #include "../iommu-pages.h"
 
@@ -667,6 +668,20 @@ int intel_pasid_setup_nested(struct intel_iommu *iommu, struct device *dev,
 	return 0;
 }
 
+static void pv_pasid_table_teardown(struct device_domain_info *info, u8 bus, u8 devfn)
+{
+	struct pkvm_clear_translation_param param = {
+		.phys = info->iommu->reg_phys,
+		.bdf = PCI_DEVID(bus, devfn),
+		.ats_qdep = info->ats_qdep,
+	};
+	int ret = pkvm_hc_iommu_clear_ce(&param);
+
+	if (ret)
+		pr_warn("%s: pkvm failed to clear sm context entry for device[%x] (err=%d)\n",
+			__func__, param.bdf, ret);
+}
+
 /*
  * Interfaces to setup or teardown a pasid table to the scalable-mode
  * context table entry:
@@ -678,6 +693,11 @@ static void device_pasid_table_teardown(struct device *dev, u8 bus, u8 devfn)
 	struct intel_iommu *iommu = info->iommu;
 	struct context_entry *context;
 	u16 did;
+
+	if (pkvm_pviommu_enabled()) {
+		pv_pasid_table_teardown(info, bus, devfn);
+		return;
+	}
 
 	spin_lock(&iommu->lock);
 	context = iommu_context_addr(iommu, bus, devfn, false);
@@ -758,11 +778,50 @@ static int context_entry_set_pasid_table(struct context_entry *context,
 	return 0;
 }
 
+static int pv_device_pasid_table_setup(struct device_domain_info *info)
+{
+	struct intel_iommu *iommu = info->iommu;
+	struct context_entry *context;
+	struct pkvm_sm_context_param param = {
+		.phys = iommu->reg_phys,
+		.bdf = PCI_DEVID(info->bus, info->devfn),
+		.pasid_dir_gpa = virt_to_phys(info->pasid_table->table),
+		.ats_supported = info->ats_supported,
+		.max_pasid = info->pasid_table->max_pasid,
+	};
+	int ret;
+
+	spin_lock(&iommu->lock);
+	ret = pkvm_hc_iommu_set_sm_ce(&param);
+	if (ret == -ENOMEM) {
+		context = iommu_alloc_page_node(iommu->node, GFP_ATOMIC);
+		if (!context) {
+			spin_unlock(&iommu->lock);
+			pr_err("%s: failed to allocate context page for iommu: %d\n",
+			       __func__, iommu->seq_id);
+			return -ENOMEM;
+		}
+
+		param.context_gpa = virt_to_phys(context);
+		ret = pkvm_hc_iommu_set_sm_ce(&param);
+
+		/* Free the page if pkvm did not use it. */
+		if (param.context_gpa)
+			iommu_free_page(context);
+	}
+	spin_unlock(&iommu->lock);
+
+	return ret;
+}
+
 static int device_pasid_table_setup(struct device *dev, u8 bus, u8 devfn)
 {
 	struct device_domain_info *info = dev_iommu_priv_get(dev);
 	struct intel_iommu *iommu = info->iommu;
 	struct context_entry *context;
+
+	if (pkvm_pviommu_enabled())
+		return pv_device_pasid_table_setup(info);
 
 	spin_lock(&iommu->lock);
 	context = iommu_context_addr(iommu, bus, devfn, true);
