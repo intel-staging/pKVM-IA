@@ -55,8 +55,21 @@ enum sm_level {
 	IOMMU_SM_LEVEL_NUM,
 };
 
+/*
+ * Simple wrapper to get devfn from bdf.
+ * This is not the appropriate place to park.
+ * Temporarily parking it here as it is used
+ * only by iommu code.
+ */
+#define PCI_DEV_FN(x) ((x) & 0xff)
+
 extern const struct pkvm_mm_ops iommu_pw_coherency_mm_ops;
 extern const struct pkvm_mm_ops iommu_pw_noncoherency_mm_ops;
+
+static inline u16 level_to_agaw(int level)
+{
+	return (level == 3) ? 1 : (level == 4) ? 2 : 3;
+}
 
 #define LAST_LEVEL(level)	\
 	(((level) == 1) ? true : false)
@@ -134,6 +147,13 @@ do {									\
 #define QI_DESC_IOTLB_DID(qw)		(((qw) & GENMASK_ULL(31, 16)) >> 16)
 #define QI_DESC_IOTLB_ADDR(qw)		((qw) & VTD_PAGE_MASK)
 #define QI_DESC_IOTLB_AM(qw)		((qw) & GENMASK_ULL(5, 0))
+
+/*
+ * Domain ID reserved for pasid entries programmed for first-level
+ * only and pass-through transfer modes.
+ * (copied from drivers/iommu/intel/pasid.h)
+ */
+#define FLPT_DEFAULT_DID		1
 
 #define pgt_to_pkvm_iommu(_pgt) container_of(_pgt, struct pkvm_iommu, pgt)
 
@@ -343,6 +363,16 @@ static inline bool pasid_copy_entry(struct pasid_entry *to, struct pasid_entry *
 	return updated;
 }
 
+/*
+ * Copied from drivers/iommu/intel/iommu.h:__iommu_flush_cache()
+ */
+static inline void __pkvm_iommu_flush_cache(
+	struct intel_iommu *iommu, void *addr, int size)
+{
+	if (!ecap_coherent(iommu->ecap))
+		pkvm_clflush_cache_range(addr, size);
+}
+
 static inline bool iommu_coherency(struct intel_iommu *iommu)
 {
 	return sm_supported(iommu) ?
@@ -353,8 +383,19 @@ extern void root_tbl_walk(struct pkvm_iommu *iommu);
 
 bool is_dev_in_satc(u16 bdf);
 
+void flush_context_cache(struct pkvm_iommu *iommu, u16 did,
+				u16 sid, u8 fm, u64 type);
+void flush_iotlb(struct pkvm_iommu *iommu, u16 did, u64 addr,
+			unsigned int size_order, u64 type);
+void flush_dev_iotlb(struct pkvm_iommu *iommu, u16 sid, u16 pfsid,
+			u16 qdep, u64 addr, unsigned int mask);
+
+struct pkvm_iommu *find_iommu_by_reg_phys(unsigned long phys);
+
 #ifdef CONFIG_PKVM_INTEL_PVIOMMU
 int pkvm_iommu_iec_flush(u64 phys, bool global, u64 index, u64 mask);
+int pkvm_iommu_clear_ce(u64 param_va);
+int pkvm_iommu_set_lm_ce(u64 param_va);
 #else
 int initialize_iommu_pgt(struct pkvm_iommu *iommu);
 int handle_descriptor(struct pkvm_iommu *iommu, struct qi_desc *desc);

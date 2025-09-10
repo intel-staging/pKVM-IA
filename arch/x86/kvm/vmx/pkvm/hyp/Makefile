@@ -35,7 +35,9 @@ pkvm-hyp-y	+= $(lib2-dir)/ctype.o $(lib2-dir)/string.o
 pkvm-hyp-$(CONFIG_MITIGATION_RETPOLINE)	+= $(lib-dir)/retpoline.o
 pkvm-hyp-$(CONFIG_LIST_HARDENED)	+= $(lib-dir)/list_debug.o
 
-ifndef CONFIG_PKVM_INTEL_PVIOMMU
+ifdef CONFIG_PKVM_INTEL_PVIOMMU
+pkvm-hyp-y += pv_iommu.o
+else
 pkvm-hyp-y += shadow_iommu.o
 endif
 

@@ -36,6 +36,16 @@ static inline bool shadow_vm_is_protected(struct pkvm_shadow_vm *vm)
 	return vm->vm_type == KVM_X86_PKVM_PROTECTED_VM;
 }
 
+static inline unsigned long pkvm_host_ept_pgd(void)
+{
+	return pkvm_hyp->host_vm.ept->root_pa;
+}
+
+static inline int pkvm_host_ept_level(void)
+{
+	return pkvm_hyp->host_vm.ept->level;
+}
+
 int pkvm_init_shadow_vm(struct kvm *kvm);
 void pkvm_teardown_shadow_vm(struct kvm *kvm);
 int pkvm_init_shadow_vcpu(struct kvm_vcpu *vcpu);

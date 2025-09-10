@@ -87,6 +87,36 @@ static inline unsigned long __pkvm_hypercall(unsigned long nr, unsigned long p1,
 
 #ifdef CONFIG_PKVM_INTEL
 
+/* pviommu Hypercall structures */
+/*
+ * With pviommu, iommu driver do not have full control over the iommu hardware and
+ * access is mostly through hypercalls. Following are structure definitions for
+ * passing information via the pviommu hypercalls.
+ *
+ * Most structures will have a `u64 phys` which denotes the base physical address
+ * of iommu's mmio region. pkvm uses this to identify the iommu.
+ */
+
+/*
+ * Generic hypercall parameter for clearing legacy
+ * and scalable mode context entries and pasid table
+ * entries.
+ */
+struct pkvm_clear_translation_param {
+	u64 phys;
+	u16 bdf;
+	u8 ats_qdep;
+};
+
+struct pkvm_lm_context_param {
+	u64 phys;
+	u16 bdf;
+	u16 did;
+	u16 ats_supported;
+	u64 domain_pgd_gpa;
+	u64 context_gpa;
+};
+
 #ifndef __PKVM_HYP__
 
 extern bool __read_mostly enable_pkvm;	/* kernel command-line flag */
