@@ -40,4 +40,19 @@ static inline long pkvm_hc_iommu_set_sm_ce(struct pkvm_sm_context_param *param)
 {
 	return pkvm_iommu_hypercall(iommu_set_sm_ce, sm_context_param, param);
 }
+
+static inline long pkvm_hc_iommu_clear_pasid_entry(struct pkvm_clear_translation_param *param)
+{
+	return pkvm_iommu_hypercall(iommu_clear_pasid_entry, clear_translation_param, param);
+}
+
+static inline long pkvm_hc_iommu_set_pasid_fl(struct pkvm_pasid_table_param *param)
+{
+	return pkvm_iommu_hypercall(iommu_set_pasid_fl, pasid_table_param, param);
+}
+
+static inline long pkvm_hc_iommu_set_pasid_sl(struct pkvm_pasid_table_param *param)
+{
+	return pkvm_iommu_hypercall(iommu_set_pasid_sl, pasid_table_param, param);
+}
 #endif

@@ -237,11 +237,32 @@ devtlb_invalidation_with_pasid(struct intel_iommu *iommu,
 		qi_flush_dev_iotlb_pasid(iommu, sid, pfsid, pasid, qdep, 0, 64 - VTD_PAGE_SHIFT);
 }
 
+static void pv_pasid_tear_down_entry(struct intel_iommu *iommu, struct device *dev, u32 pasid)
+{
+	struct device_domain_info *info = dev_iommu_priv_get(dev);
+	struct pkvm_clear_translation_param param = {
+		.phys = iommu->reg_phys,
+		.bdf = PCI_DEVID(info->bus, info->devfn),
+		.pasid = pasid,
+		.ats_qdep = info->ats_qdep,
+	};
+	int ret = pkvm_hc_iommu_clear_pasid_entry(&param);
+
+	if (ret)
+		pr_warn("%s: pkvm failed to clear pasid entry for device[%x] (err=%d)\n",
+			__func__, param.bdf, ret);
+}
+
 void intel_pasid_tear_down_entry(struct intel_iommu *iommu, struct device *dev,
 				 u32 pasid, bool fault_ignore)
 {
 	struct pasid_entry *pte;
 	u16 did, pgtt;
+
+	if (pkvm_pviommu_enabled()) {
+		pv_pasid_tear_down_entry(iommu, dev, pasid);
+		return;
+	}
 
 	spin_lock(&iommu->lock);
 	pte = intel_pasid_get_entry(dev, pasid);
@@ -287,6 +308,43 @@ static void pasid_flush_caches(struct intel_iommu *iommu,
 	}
 }
 
+static int pv_pasid_setup_first_level(struct intel_iommu *iommu,
+				      struct device *dev, pgd_t *pgd,
+				      u32 pasid, u16 did)
+{
+	struct device_domain_info *info = dev_iommu_priv_get(dev);
+	struct pkvm_pasid_table_param param = {
+		.phys = iommu->reg_phys,
+		.bdf = PCI_DEVID(info->bus, info->devfn),
+		.pasid = pasid,
+		.did = did,
+		.domain_pgd_gpa = virt_to_phys(pgd),
+		.pasid_dir_gpa = virt_to_phys(info->pasid_table->table),
+		.max_pasid = info->pasid_table->max_pasid,
+	};
+	int ret;
+
+	spin_lock(&iommu->lock);
+	ret = pkvm_hc_iommu_set_pasid_fl(&param);
+	if (ret == -ENOMEM) {
+		void *pasid_table = iommu_alloc_page_node(iommu->node, GFP_ATOMIC);
+
+		if (!pasid_table) {
+			spin_unlock(&iommu->lock);
+			pr_err("%s: failed to allocate pasid table page!\n", __func__);
+			return -ENOMEM;
+		}
+		param.pasid_table_gpa = virt_to_phys(pasid_table);
+		ret = pkvm_hc_iommu_set_pasid_fl(&param);
+
+		/* Free the page if pkvm did not use it */
+		if (param.pasid_table_gpa)
+			iommu_free_page(pasid_table);
+	}
+	spin_unlock(&iommu->lock);
+	return ret;
+}
+
 /*
  * Set up the scalable mode pasid table entry for first only
  * translation type.
@@ -308,6 +366,9 @@ int intel_pasid_setup_first_level(struct intel_iommu *iommu,
 		       iommu->name);
 		return -EINVAL;
 	}
+
+	if (pkvm_pviommu_enabled())
+		return pv_pasid_setup_first_level(iommu, dev, pgd, pasid, did);
 
 	spin_lock(&iommu->lock);
 	pte = intel_pasid_get_entry(dev, pasid);
@@ -344,6 +405,44 @@ int intel_pasid_setup_first_level(struct intel_iommu *iommu,
 	pasid_flush_caches(iommu, pte, pasid, did);
 
 	return 0;
+}
+
+static int pv_pasid_setup_second_level(struct intel_iommu *iommu,
+				       struct dmar_domain *domain,
+				       struct device *dev, u32 pasid)
+{
+	struct device_domain_info *info = dev_iommu_priv_get(dev);
+	struct pkvm_pasid_table_param param = {
+		.phys = iommu->reg_phys,
+		.bdf = PCI_DEVID(info->bus, info->devfn),
+		.pasid = pasid,
+		.did = domain_id_iommu(domain, iommu),
+		.domain_pgd_gpa = virt_to_phys(domain->pgd),
+		.pasid_dir_gpa = virt_to_phys(info->pasid_table->table),
+		.max_pasid = info->pasid_table->max_pasid,
+		.dirty_tracking = domain->dirty_tracking,
+	};
+	int ret;
+
+	spin_lock(&iommu->lock);
+	ret = pkvm_hc_iommu_set_pasid_sl(&param);
+	if (ret == -ENOMEM) {
+		void *pasid_table = iommu_alloc_page_node(iommu->node, GFP_ATOMIC);
+
+		if (!pasid_table) {
+			spin_unlock(&iommu->lock);
+			pr_err("%s: failed to allocate pasid table page!\n", __func__);
+			return -ENOMEM;
+		}
+		param.pasid_table_gpa = virt_to_phys(pasid_table);
+		ret = pkvm_hc_iommu_set_pasid_sl(&param);
+
+		/* Free the page if pkvm did not use it */
+		if (param.pasid_table_gpa)
+			iommu_free_page(pasid_table);
+	}
+	spin_unlock(&iommu->lock);
+	return ret;
 }
 
 /*
@@ -387,6 +486,9 @@ int intel_pasid_setup_second_level(struct intel_iommu *iommu,
 		       iommu->name);
 		return -EINVAL;
 	}
+
+	if (pkvm_pviommu_enabled())
+		return pv_pasid_setup_second_level(iommu, domain, dev, pasid);
 
 	pgd = domain->pgd;
 	agaw = iommu_skip_agaw(domain, iommu, &pgd);
@@ -497,6 +599,42 @@ int intel_pasid_setup_dirty_tracking(struct intel_iommu *iommu,
 	return 0;
 }
 
+static int pv_pasid_setup_pass_through(struct intel_iommu *iommu,
+				       struct device *dev,
+				       u32 pasid)
+{
+	struct device_domain_info *info = dev_iommu_priv_get(dev);
+	struct pkvm_pasid_table_param param = {
+		.phys = iommu->reg_phys,
+		.bdf = PCI_DEVID(info->bus, info->devfn),
+		.pasid = pasid,
+		.did = FLPT_DEFAULT_DID,
+		.pasid_dir_gpa = virt_to_phys(info->pasid_table->table),
+		.max_pasid = info->pasid_table->max_pasid,
+	};
+	int ret;
+
+	spin_lock(&iommu->lock);
+	ret = pkvm_hc_iommu_set_pasid_sl(&param);
+	if (ret == -ENOMEM) {
+		void *pasid_table = iommu_alloc_page_node(iommu->node, GFP_ATOMIC);
+
+		if (!pasid_table) {
+			spin_unlock(&iommu->lock);
+			pr_err("%s: failed to allocate pasid table page!\n", __func__);
+			return -ENOMEM;
+		}
+		param.pasid_table_gpa = virt_to_phys(pasid_table);
+		ret = pkvm_hc_iommu_set_pasid_sl(&param);
+
+		/* Free the page if pkvm did not use it */
+		if (param.pasid_table_gpa)
+			iommu_free_page(pasid_table);
+	}
+	spin_unlock(&iommu->lock);
+	return ret;
+}
+
 /*
  * Set up the scalable mode pasid entry for passthrough translation type.
  */
@@ -505,6 +643,9 @@ int intel_pasid_setup_pass_through(struct intel_iommu *iommu,
 {
 	u16 did = FLPT_DEFAULT_DID;
 	struct pasid_entry *pte;
+
+	if (pkvm_pviommu_enabled())
+		return pv_pasid_setup_pass_through(iommu, dev, pasid);
 
 	spin_lock(&iommu->lock);
 	pte = intel_pasid_get_entry(dev, pasid);
