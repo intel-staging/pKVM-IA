@@ -12,6 +12,7 @@
 #include "ept.h"
 #include "iommu.h"
 #include "memory.h"
+#include "debug.h"
 #include <pkvm/vmx/vmx.h>
 
 DEFINE_PER_CPU(struct pkvm_vm *, __current_vm);
@@ -1158,7 +1159,7 @@ int __pkvm_guest_unshare_host(struct pkvm_pgtable *guest_pgt,
 	return ret;
 }
 
-int __pkvm_host_share_hyp(u64 phys, u64 size)
+static int __pkvm_host_share_hyp_prot_locked(u64 phys, u64 size, u64 prot)
 {
 	u64 start = PAGE_ALIGN_DOWN(phys);
 	u64 end = PAGE_ALIGN(phys + size);
@@ -1169,7 +1170,7 @@ int __pkvm_host_share_hyp(u64 phys, u64 size)
 			.host = {
 				.addr	= start,
 			},
-			.prot	= HOST_EPT_DEF_MEM_PROT,
+			.prot	= prot,
 		},
 		.completer	= {
 			.id	= PKVM_ID_HYP,
@@ -1178,18 +1179,11 @@ int __pkvm_host_share_hyp(u64 phys, u64 size)
 			},
 		},
 	};
-	int ret;
 
-	host_ept_lock();
-
-	ret = do_share(&share, NULL);
-
-	host_ept_unlock();
-
-	return ret;
+	return do_share(&share, NULL);
 }
 
-int __pkvm_host_unshare_hyp(u64 phys, u64 size)
+static int __pkvm_host_unshare_hyp_prot_locked(u64 phys, u64 size, u64 prot)
 {
 	u64 start = PAGE_ALIGN_DOWN(phys);
 	u64 end = PAGE_ALIGN(phys + size);
@@ -1200,7 +1194,7 @@ int __pkvm_host_unshare_hyp(u64 phys, u64 size)
 			.host = {
 				.addr	= start,
 			},
-			.prot	= HOST_EPT_DEF_MEM_PROT,
+			.prot	= prot,
 		},
 		.completer	= {
 			.id	= PKVM_ID_HYP,
@@ -1209,12 +1203,26 @@ int __pkvm_host_unshare_hyp(u64 phys, u64 size)
 			},
 		},
 	};
+	return do_unshare(&unshare);
+}
+
+int __pkvm_host_share_hyp(u64 phys, u64 size)
+{
 	int ret;
 
 	host_ept_lock();
+	ret = __pkvm_host_share_hyp_prot_locked(phys, size, HOST_EPT_DEF_MEM_PROT);
+	host_ept_unlock();
 
-	ret = do_unshare(&unshare);
+	return ret;
+}
 
+int __pkvm_host_unshare_hyp(u64 phys, u64 size)
+{
+	int ret;
+
+	host_ept_lock();
+	ret = __pkvm_host_unshare_hyp_prot_locked(phys, size, HOST_EPT_DEF_MEM_PROT);
 	host_ept_unlock();
 
 	return ret;
@@ -1236,4 +1244,37 @@ void __pkvm_unpin_shared_mem(u64 phys, u64 size)
 	host_ept_lock();
 	WARN_ON(pin_unpin_shared_mem_range(phys, size, false));
 	host_ept_unlock();
+}
+
+int __pkvm_host_donate_hyp_share_ro(u64 phys, u64 size)
+{
+	int ret;
+
+	host_ept_lock();
+	ret = __pkvm_host_share_hyp_prot_locked(phys, size, HOST_EPT_RO_MEM_PROT);
+	if (ret)
+		goto out;
+
+	ret = pin_unpin_shared_mem_range(phys, size, true);
+	if (ret)
+		__pkvm_host_unshare_hyp_prot_locked(phys, size, HOST_EPT_DEF_MEM_PROT);
+
+out:
+	host_ept_unlock();
+
+	return ret;
+}
+
+int __pkvm_hyp_donate_host_unshare_ro(u64 phys, u64 size)
+{
+	int ret;
+
+	host_ept_lock();
+	ret = WARN_ON(pin_unpin_shared_mem_range(phys, size, false));
+	if (!ret)
+		ret = __pkvm_host_unshare_hyp_prot_locked(
+				phys, size, HOST_EPT_DEF_MEM_PROT);
+	host_ept_unlock();
+
+	return ret;
 }

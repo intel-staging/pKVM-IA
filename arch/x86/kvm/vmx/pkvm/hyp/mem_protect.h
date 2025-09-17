@@ -272,4 +272,39 @@ int __pkvm_pin_shared_mem(u64 phys, u64 size);
  */
 void __pkvm_unpin_shared_mem(u64 phys, u64 size);
 
+/**
+ * __pkvm_host_donate_hyp_share_ro() - Donate host pages to pKVM hypervisor,
+ * and share them with host as readonly.
+ *
+ * @phys:	Start physical address of donated pages, must be continuous.
+ * @size:	The size of memory to be shared.
+ *
+ * The donated range is the minimum PAGE_SIZE-aligned range covering [@phys,
+ * @phys + @size). The host page state will be modified from PAGE_OWNED to
+ * PAGE_SHARED_OWNED. The page state should ideally be PAGE_SHARED_BORROWED,
+ * but to keep the implementation simple by re-using existing implementation
+ * of share, the page state is PAGE_SHARED_OWNED.
+ * The pages will be pinned so that host will not be able to unshare the pages.
+ *
+ * On success, the host will be able to access the pages as read only.
+ *
+ * Return: 0 on success, negative value on failure.
+ */
+int __pkvm_host_donate_hyp_share_ro(u64 phys, u64 size);
+
+/**
+ * __pkvm_hyp_donate_host_unshare_ro() - Unshare the readonly pages donated by
+ * __pkvm_host_donate_hyp_share_ro() and donate it back to the host.
+ *
+ * @phys:	Start physical address of pages to be donated back
+ *              to host, must be continuous.
+ * @size:	The size of memory to be donated back to host.
+ *
+ * The range is the minimum PAGE_SIZE-aligned range covering [@phys, * @phys + @size).
+ * The host page state will be modified from PAGE_SHARED_OWNED to PAGE_OWNED.
+ * On success, the pages will be PAGE_OWNED by the host with default permissions.
+ * Return: 0 on success, negative value on failure.
+ */
+int __pkvm_hyp_donate_host_unshare_ro(u64 phys, u64 size);
+
 #endif
