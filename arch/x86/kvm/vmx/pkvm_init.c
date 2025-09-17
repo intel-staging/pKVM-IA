@@ -184,6 +184,32 @@ static __init int pkvm_setup_host_vcpu(struct kvm *kvm, int cpu)
 	return 0;
 }
 
+static __init int pkvm_setup_per_cpu(int cpu)
+{
+	struct pkvm_pcpu *pcpu = per_cpu(pkvm_pcpu, cpu);
+	struct kvm_vcpu *vcpu = per_cpu(host_vcpu, cpu);
+	unsigned int nr_pages;
+	void *per_cpu_base;
+
+	if (cpu >= CONFIG_NR_CPUS) {
+		pr_err("setup_percpu: invalid CPU number %d\n", cpu);
+		return -EINVAL;
+	}
+
+	nr_pages = pkvm_sym(pkvm_per_cpu_nr_pages)();
+	if (!nr_pages)
+		return 0;
+
+	per_cpu_base = pkvm_sym(pkvm_early_alloc_contig)(nr_pages);
+	if (!per_cpu_base || pkvm_sym(pkvm_setup_per_cpu)(cpu, __pa(per_cpu_base),
+				      __pa(pcpu), __pa(vcpu))) {
+		pr_err("no percpu page for CPU%d\n", cpu);
+		return -ENOMEM;
+	}
+
+	return 0;
+}
+
 static inline u32 get_ar(u16 sel)
 {
 	u32 access_rights;
@@ -550,6 +576,10 @@ int __init vmx_pkvm_init(void)
 			goto out;
 
 		ret = pkvm_setup_host_vcpu(pkvm->host_kvm, cpu);
+		if (ret)
+			goto out;
+
+		ret = pkvm_setup_per_cpu(cpu);
 		if (ret)
 			goto out;
 
