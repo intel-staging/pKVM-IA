@@ -455,6 +455,18 @@ defined(CONFIG_AUTOFDO_CLANG) || defined(CONFIG_PROPELLER_CLANG)
 #endif
 #endif
 
+#ifdef CONFIG_PKVM_X86
+#include <asm/pkvm_image.h>
+#define PERCPU_PKVM_SECTION						\
+	. = ALIGN(PAGE_SIZE);						\
+	pkvm_sym(__per_cpu_start) = .;					\
+	*(PKVM_SECTION_NAME(.data..percpu))				\
+	. = ALIGN(PAGE_SIZE);						\
+	pkvm_sym(__per_cpu_end) = .;
+#else
+#define PERCPU_PKVM_SECTION
+#endif
+
 /*
  * Read only Data
  */
@@ -1056,6 +1068,20 @@ defined(CONFIG_AUTOFDO_CLANG) || defined(CONFIG_PROPELLER_CLANG)
 	COMMON_DISCARDS							\
 	}
 
+#define PERCPU_ALL_SECTIONS(cacheline)					\
+	. = ALIGN(PAGE_SIZE);						\
+	*(.data..percpu..page_aligned)					\
+	. = ALIGN(cacheline);						\
+	__per_cpu_hot_start = .;					\
+	*(SORT_BY_ALIGNMENT(.data..percpu..hot.*))			\
+	__per_cpu_hot_end = .;						\
+	. = ALIGN(cacheline);						\
+	*(.data..percpu..read_mostly)					\
+	. = ALIGN(cacheline);						\
+	*(.data..percpu)						\
+	*(.data..percpu..shared_aligned)				\
+	PERCPU_DECRYPTED_SECTION
+
 /**
  * PERCPU_INPUT - the percpu input sections
  * @cacheline: cacheline size
@@ -1068,18 +1094,8 @@ defined(CONFIG_AUTOFDO_CLANG) || defined(CONFIG_PROPELLER_CLANG)
  */
 #define PERCPU_INPUT(cacheline)						\
 	__per_cpu_start = .;						\
-	. = ALIGN(PAGE_SIZE);						\
-	*(.data..percpu..page_aligned)					\
-	. = ALIGN(cacheline);						\
-	__per_cpu_hot_start = .;					\
-	*(SORT_BY_ALIGNMENT(.data..percpu..hot.*))			\
-	__per_cpu_hot_end = .;						\
-	. = ALIGN(cacheline);						\
-	*(.data..percpu..read_mostly)					\
-	. = ALIGN(cacheline);						\
-	*(.data..percpu)						\
-	*(.data..percpu..shared_aligned)				\
-	PERCPU_DECRYPTED_SECTION					\
+	PERCPU_ALL_SECTIONS(cacheline)					\
+	PERCPU_PKVM_SECTION						\
 	__per_cpu_end = .;
 
 /**
