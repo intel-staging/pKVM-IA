@@ -70,4 +70,21 @@ enum pkvm_page_state {
 
 #define PKVM_PAGE_STATE_BITS		bits_per(NR_PKVM_PAGE_STATES - 1)
 
+/**
+ * enum pkvm_owner_id - Id to indicate the page owner.
+ * @PKVM_ID_HOST:	Host VM.
+ * @PKVM_ID_HYP:	pKVM hypervisor.
+ *
+ * The owner ID is used to indicate the page owner. The owner ID for memory
+ * pages are saved in struct pkvm_page, and the owner ID for MMIO pages which
+ * have no struct pkvm_page are saved in the host MMU non-present leaf PTE.
+ */
+enum pkvm_owner_id {
+	PKVM_ID_HOST,
+	PKVM_ID_HYP,
+	PKVM_MAX_ID,
+};
+
+#define PKVM_OWNER_ID_BITS		bits_per(PKVM_MAX_ID - 1)
+
 #endif /* __PKVM_X86_MEM_PROTECT_H */

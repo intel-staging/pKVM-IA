@@ -19,14 +19,18 @@ struct pkvm_page {
 	u8 order;
 
 	/* Store host memory page state. */
-	enum pkvm_page_state host_state: 8;
+	enum pkvm_page_state host_state: 4;
+	/* Store page owner id. */
+	enum pkvm_owner_id owner: 4;
 };
 
 /*
  * Make sure pkvm_page->host_state is large enough to store enum
- * pkvm_page_state.
+ * pkvm_page_state, and pkvm_page->owner is large enough to store
+ * enum pkvm_owner_id.
  */
-static_assert(PKVM_PAGE_STATE_BITS <= 8);
+static_assert(PKVM_PAGE_STATE_BITS <= 4);
+static_assert(PKVM_OWNER_ID_BITS <= 4);
 
 extern u64 __pkvm_vmemmap;
 #define pkvm_vmemmap ((struct pkvm_page *)__pkvm_vmemmap)
