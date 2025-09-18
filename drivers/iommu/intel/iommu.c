@@ -1526,6 +1526,16 @@ static void domain_exit(struct dmar_domain *domain)
 
 		domain_unmap(domain, 0, DOMAIN_MAX_PFN(domain->gaw), &freelist);
 		iommu_put_pages_list(&freelist);
+
+		if (pkvm_pviommu_enabled()) {
+			int ret = pkvm_hc_iommu_domain_free(virt_to_phys(domain->pgd));
+
+			if (ret)
+				pr_warn("%s: pkvm failed to free domain[pgd=%p] (err=%d)\n",
+					__func__, domain->pgd, ret);
+			else
+				iommu_free_page(domain->pgd);
+		}
 	}
 
 	if (WARN_ON(!list_empty(&domain->devices)))
@@ -3455,6 +3465,28 @@ static int iommu_superpage_capability(struct intel_iommu *iommu, bool first_stag
 	return fls(cap_super_page_val(iommu->cap));
 }
 
+static int pv_paging_domain_alloc(struct device_domain_info *info, struct dmar_domain *domain)
+{
+	struct pkvm_domain_param param = {
+		.phys = info->iommu->reg_phys,
+		.bdf = PCI_DEVID(info->bus, info->devfn),
+		.use_first_level = domain->use_first_level,
+		.pgd_gpa = virt_to_phys(domain->pgd),
+		.gaw = domain->gaw,
+		.agaw = domain->agaw,
+		.max_addr = domain->max_addr,
+		.iommu_coherency = domain->iommu_coherency,
+		.iommu_superpage = domain->iommu_superpage,
+	};
+	int ret = pkvm_hc_iommu_domain_alloc(&param);
+
+	if (ret)
+		pr_err("%s: pkvm failed to alloc domain for device[%x:%x.%x] (err=%d)\n", __func__,
+		       info->bus, PCI_SLOT(info->devfn), PCI_FUNC(info->devfn), ret);
+
+	return ret;
+}
+
 static struct dmar_domain *paging_domain_alloc(struct device *dev, bool first_stage)
 {
 	struct device_domain_info *info = dev_iommu_priv_get(dev);
@@ -3511,7 +3543,18 @@ static struct dmar_domain *paging_domain_alloc(struct device *dev, bool first_st
 		kfree(domain);
 		return ERR_PTR(-ENOMEM);
 	}
-	domain_flush_cache(domain, domain->pgd, PAGE_SIZE);
+
+	if (pkvm_pviommu_enabled()) {
+		int ret = pv_paging_domain_alloc(info, domain);
+
+		if (ret) {
+			iommu_free_page(domain->pgd);
+			kfree(domain);
+			domain = ERR_PTR(ret);
+		}
+	} else {
+		domain_flush_cache(domain, domain->pgd, PAGE_SIZE);
+	}
 
 	return domain;
 }

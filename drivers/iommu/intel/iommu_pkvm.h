@@ -55,4 +55,15 @@ static inline long pkvm_hc_iommu_set_pasid_sl(struct pkvm_pasid_table_param *par
 {
 	return pkvm_iommu_hypercall(iommu_set_pasid_sl, pasid_table_param, param);
 }
+
+static inline long pkvm_hc_iommu_domain_alloc(struct pkvm_domain_param *param)
+{
+	return pkvm_iommu_hypercall(iommu_domain_alloc, domain_param, param);
+}
+
+static inline long pkvm_hc_iommu_domain_free(u64 pgd_gpa)
+{
+	return pkvm_hypercall(iommu_domain_free, pgd_gpa);
+
+}
 #endif
