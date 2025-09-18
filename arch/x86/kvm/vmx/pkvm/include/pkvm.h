@@ -144,6 +144,7 @@ extern struct fpu_state_config pkvm_sym(fpu_kernel_cfg);
 extern struct fpu_state_config pkvm_sym(fpu_user_cfg);
 
 extern int pkvm_sym(intel_iommu_sm);
+extern int pkvm_sym(intel_iommu_superpage);
 
 #ifdef CONFIG_X86_64
 DECLARE_STATIC_KEY_FALSE(pkvm_sym(__fpu_state_size_dynamic));

@@ -24,6 +24,11 @@
  */
 int intel_iommu_sm;
 
+/*
+ * pkvm copy of superpage support.
+ */
+int intel_iommu_superpage;
+
 #define for_each_valid_iommu(p)						\
 	for ((p) = iommus; (p) < iommus + PKVM_MAX_IOMMU_NUM; (p)++)	\
 		if (!(p) || !(p)->iommu.reg_phys) {			\

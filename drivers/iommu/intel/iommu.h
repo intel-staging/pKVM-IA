@@ -1329,6 +1329,7 @@ extern const struct iommu_ops intel_iommu_ops;
 
 #ifdef CONFIG_INTEL_IOMMU
 extern int intel_iommu_sm;
+extern int intel_iommu_superpage;
 
 /*
  * Calculate the Supported Adjusted Guest Address Widths of an IOMMU.
@@ -1407,6 +1408,7 @@ static inline int iommu_calculate_max_sagaw(struct intel_iommu *iommu)
 #define dmar_disabled	(1)
 #define intel_iommu_enabled (0)
 #define intel_iommu_sm (0)
+#define intel_iommu_superpage (0)
 #endif
 
 static inline const char *decode_prq_descriptor(char *str, size_t size,
