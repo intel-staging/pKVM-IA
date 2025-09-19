@@ -405,8 +405,7 @@ void pkvm_handle_host_ept_violation(struct kvm_vcpu *vcpu)
 			 * handled by unmaping some other MMIO mapped for the
 			 * host VM to reclaim some mmu pages and try again.
 			 */
-			ret = pkvm_host_mmu_map(cur.start, size, true, true,
-						true, true);
+			ret = pkvm_hyp_donate_host_mmio_locked(cur.start, size);
 			break;
 		}
 	}
