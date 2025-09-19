@@ -180,6 +180,18 @@ static int fix_hyp_mmu_page_refcnt(void)
 	return pkvm_pgtable_walk(&hyp_mmu, 0, size, &walker);
 }
 
+static void set_host_mem_pgstate(unsigned long phys, unsigned long size,
+				 enum pkvm_page_state pgstate)
+{
+	unsigned long end = PAGE_ALIGN(phys + size);
+	struct pkvm_page *page;
+
+	for (phys = PAGE_ALIGN_DOWN(phys); phys < end; phys += PAGE_SIZE) {
+		page = pkvm_phys_to_page(phys);
+		page->host_state = pgstate;
+	}
+}
+
 int pkvm_hyp_mmu_init(void *pool_base, unsigned long pool_pages)
 {
 	struct pkvm_pgtable_cap cap = {
@@ -278,6 +290,10 @@ int pkvm_host_mmu_init(void *pool_base, unsigned long pool_pages, host_mmu_init_
 					true, true, true, false);
 		if (ret)
 			return ret;
+
+		set_host_mem_pgstate((unsigned long)reg->base,
+				     (unsigned long)reg->size,
+				     PKVM_PAGE_OWNED);
 	}
 
 	/* Map holes between memblocks as MMIO with RWX permissions */
