@@ -1803,6 +1803,20 @@ void pkvm_init_debugfs(void);
 static inline void __init pkvm_reserve(void) {}
 #endif
 
+#ifdef __PKVM_HYP__
+/*
+ * TODO: Enable the static call mechanism in the pKVM hypervisor.
+ *
+ * Until the static call mechanism is available, just use indirect
+ * calls. In particular, assume that any ops that are used by pKVM
+ * hypervisor code are non-NULL.
+ */
+#define kvm_x86_call(func)				\
+({							\
+	BUG_ON(!kvm_x86_ops.func);			\
+	(kvm_x86_ops.func);				\
+})
+#else /* __PKVM_HYP__ */
 #define kvm_x86_call(func) static_call(kvm_x86_##func)
 
 #define KVM_X86_OP(func) \
@@ -1810,6 +1824,7 @@ static inline void __init pkvm_reserve(void) {}
 #define KVM_X86_OP_OPTIONAL KVM_X86_OP
 #define KVM_X86_OP_OPTIONAL_RET0 KVM_X86_OP
 #include <asm/kvm-x86-ops.h>
+#endif /* __PKVM_HYP__ */
 
 #define kvm_nested_call(func) static_call(kvm_x86_nested_##func)
 
