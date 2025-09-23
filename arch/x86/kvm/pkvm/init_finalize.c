@@ -197,6 +197,7 @@ static int finalize_global(struct pkvm_mem_info infos[], int nr_infos,
 			   struct pkvm_init_ops *init_ops)
 {
 	host_mmu_init_fn_t host_mmu_init_fn = init_ops ? init_ops->host_mmu_init : NULL;
+	hyp_g_finalize_fn_t hyp_g_finalize = init_ops ? init_ops->hyp_g_finalize : NULL;
 	struct pkvm_mem_info tmp_infos[TMP_NR_INFOS];
 	phys_addr_t mem_base = INVALID_PAGE;
 	unsigned long mem_size = 0;
@@ -244,7 +245,11 @@ static int finalize_global(struct pkvm_mem_info infos[], int nr_infos,
 	if (ret)
 		return ret;
 
-	return create_host_mmu(tmp_infos, nr_infos, host_mmu_init_fn);
+	ret = create_host_mmu(tmp_infos, nr_infos, host_mmu_init_fn);
+	if (ret)
+		return ret;
+
+	return hyp_g_finalize ? hyp_g_finalize() : 0;
 }
 
 int pkvm_init_finalize(struct pkvm_mem_info infos[], int nr_infos,
