@@ -47,7 +47,7 @@ $(obj)/kvm-asm-offsets.h: $(obj)/kvm-asm-offsets.s FORCE
 
 obj-$(CONFIG_PKVM_X86)	+= pkvm.o pkvm_debugfs.o pkvm/
 
-pkvm-intel-y		+= vmx/pkvm_init.o
+pkvm-intel-y		+= vmx/pkvm_init.o vmx/pkvm_host.o
 
 $(obj)/pkvm.o: $(obj)/pkvm_constants.h
 $(obj)/pkvm-constants.s: $(src)/pkvm/pkvm_constants.c FORCE
