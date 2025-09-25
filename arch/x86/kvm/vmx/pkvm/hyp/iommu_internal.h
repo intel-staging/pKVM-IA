@@ -11,6 +11,7 @@
 #include "pgtable.h"
 #include "pkvm_iommu_types.h"
 #include "pv_pasid.h"
+#include "iommu_domain.h"
 
 struct viommu_reg {
 	u64 cap;
@@ -47,6 +48,18 @@ struct pkvm_iommu {
 	 * in pass-through mode from the host perspective
 	 */
 	atomic_t pt_cnt;
+};
+
+struct pkvm_cache_tag {
+	struct list_head node;
+	enum cache_tag_type type;
+	struct pkvm_iommu *iommu;
+	u8 bus;
+	u8 devfn;
+	u16 pfsid;
+	u8 ats_qdep;
+	u16 domain_id;
+	ioasid_t pasid;
 };
 
 enum lm_level {
@@ -217,6 +230,29 @@ static inline bool iommu_coherency(struct intel_iommu *iommu)
 		ecap_smpwc(iommu->ecap) : ecap_coherent(iommu->ecap);
 }
 
+/*
+ * TODO: Add support for IH.
+ */
+static inline void setup_iotlb_qi_desc(struct pkvm_iommu *iommu,
+				       struct qi_desc *desc, u16 did,
+				       u64 addr, unsigned int size_order,
+				       u64 type)
+{
+	u8 dw = 0, dr = 0;
+
+	if (cap_write_drain(iommu->iommu.cap))
+		dw = 1;
+
+	if (cap_read_drain(iommu->iommu.cap))
+		dr = 1;
+
+	desc->qw0 = QI_IOTLB_DID(did) | QI_IOTLB_DR(dr) | QI_IOTLB_DW(dw) |
+		    QI_IOTLB_GRAN(type) | QI_IOTLB_TYPE;
+	desc->qw1 = QI_IOTLB_ADDR(addr) | QI_IOTLB_AM(size_order);
+	desc->qw2 = 0;
+	desc->qw3 = 0;
+}
+
 extern void root_tbl_walk(struct pkvm_iommu *iommu);
 
 bool is_dev_in_satc(u16 bdf);
@@ -233,6 +269,12 @@ void flush_piotlb(struct pkvm_iommu *iommu, u16 did, u32 pasid, u64 addr,
 		  unsigned long npages, bool ih);
 void flush_pasid_cache(struct pkvm_iommu *iommu, u16 did,
 		       u64 granu, u32 pasid);
+
+void submit_qi(struct pkvm_iommu *iommu, struct qi_desc *base, int count);
+void pkvm_cache_tag_flush_range(struct pkvm_iommu_domain *domain, unsigned long start,
+				unsigned long end, int ih);
+void pkvm_cache_tag_flush_range_np(struct pkvm_iommu_domain *domain, unsigned long start,
+				   unsigned long end);
 
 struct pkvm_iommu *find_iommu_by_reg_phys(unsigned long phys);
 

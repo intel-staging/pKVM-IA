@@ -20,6 +20,9 @@ struct pkvm_iommu_domain {
 	u8 use_first_level: 1;
 	u16 gaw;
 	u8 agaw;
+	struct qi_batch qi_batch;
+	pkvm_spinlock_t cache_lock;	/* Protect the cache tag list */
+	struct list_head cache_tags;	/* Cache tag list */
 
 	/*
 	 * Lock to protect the mapping operations
