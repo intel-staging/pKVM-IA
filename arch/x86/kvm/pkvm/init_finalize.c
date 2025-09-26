@@ -9,6 +9,7 @@
 static void *hyp_pgt_base;
 static void *host_pgt_base;
 static void *pkvm_vmemmap_base;
+static DEFINE_PER_CPU(bool, cpu_finalized);
 
 static int divide_memory_pool(phys_addr_t phys, unsigned long size)
 {
@@ -239,6 +240,9 @@ int pkvm_init_finalize(struct pkvm_mem_info infos[], int nr_infos,
 	static bool global_finalized;
 	int ret;
 
+	if (this_cpu_read(cpu_finalized))
+		return -EBUSY;
+
 	if (!global_finalized) {
 		ret = finalize_global(infos, nr_infos, init_ops);
 		if (ret)
@@ -258,5 +262,10 @@ int pkvm_init_finalize(struct pkvm_mem_info infos[], int nr_infos,
 	if (ret)
 		return ret;
 
-	return pkvm_host_mmu_finalize(host_mmu_finalize_fn);
+	ret = pkvm_host_mmu_finalize(host_mmu_finalize_fn);
+	if (ret)
+		return ret;
+
+	this_cpu_write(cpu_finalized, true);
+	return 0;
 }
