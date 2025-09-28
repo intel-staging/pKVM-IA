@@ -111,6 +111,24 @@ static inline bool is_pkvm_text_range(unsigned long phys, unsigned long size)
 	return phys >= start && phys + size <= end;
 }
 
+/*
+ * !is_memory_range doesn't mean the range is mmio as it is possible to overlap
+ * with memory, e.g., a memory-mmio mixed range.
+ */
+static inline bool is_mmio_range(unsigned long phys, unsigned long size)
+{
+	struct range target = {
+		.start = PAGE_ALIGN_DOWN(phys),
+		.end = PAGE_ALIGN(phys + size) - 1,
+	};
+	struct range range;
+
+	if (pkvm_find_addr_range(phys, &range))
+		return false;
+
+	return range_contains(&range, &target);
+}
+
 void clflush_cache_range(void *vaddr, unsigned int size);
 
 static inline void pkvm_clear_memory(void *va, size_t size)
