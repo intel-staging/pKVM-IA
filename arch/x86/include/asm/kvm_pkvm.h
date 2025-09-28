@@ -3,6 +3,7 @@
 #define _ASM_X86_KVM_PKVM_H
 
 #ifdef CONFIG_PKVM_X86
+#include <linux/kvm_host.h>
 #include <linux/memblock.h>
 #include <linux/mm.h>
 #include <asm/desc.h>
@@ -217,6 +218,21 @@ static inline unsigned long pkvm_host_pgtable_pages(void)
 	return __pkvm_pgtable_total_pages() +
 	       __pkvm_pgtable_max_pages(SZ_2G >> PAGE_SHIFT);
 }
+
+static inline bool pkvm_is_protected_vm(struct kvm *kvm)
+{
+	return kvm->arch.vm_type == KVM_X86_PKVM_PROTECTED_VM;
+}
+
+static inline bool pkvm_is_protected_vcpu(struct kvm_vcpu *vcpu)
+{
+	return pkvm_is_protected_vm(vcpu->kvm);
+}
+
+#else /* !CONFIG_PKVM_X86 */
+
+static inline bool pkvm_is_protected_vm(struct kvm *kvm) { return false; }
+static inline bool pkvm_is_protected_vcpu(struct kvm_vcpu *vcpu) { return false; }
 
 #endif /* CONFIG_PKVM_X86 */
 
