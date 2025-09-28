@@ -111,4 +111,6 @@ static inline bool is_pkvm_text_range(unsigned long phys, unsigned long size)
 	return phys >= start && phys + size <= end;
 }
 
+void clflush_cache_range(void *vaddr, unsigned int size);
+
 #endif /* __PKVM_X86_MEMORY_H */
