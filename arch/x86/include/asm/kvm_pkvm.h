@@ -9,6 +9,7 @@
 #include <asm/desc.h>
 #include <asm/kvm_para.h>
 #include <asm/pkvm_image.h>
+#include <asm/pkvm_redef.h>
 
 #define PKVM_MEMBLOCK_REGIONS		128
 #define PKVM_STACK_SIZE			SZ_16K
@@ -249,6 +250,45 @@ static inline bool pkvm_is_protected_vm(struct kvm *kvm)
 static inline bool pkvm_is_protected_vcpu(struct kvm_vcpu *vcpu)
 {
 	return pkvm_is_protected_vm(vcpu->kvm);
+}
+
+static inline void push_pkvm_memcache(struct pkvm_memcache *mc,
+				      void *addr, size_t size,
+				      phys_addr_t (*to_pa)(void *virt))
+{
+	struct pkvm_page_range *head = addr;
+
+	if (WARN_ON_ONCE(!PAGE_ALIGNED(addr) || !size || !PAGE_ALIGNED(size)))
+		return;
+
+	*head = mc->head;
+	mc->head.addr = to_pa(addr);
+	mc->head.nr_pages = size >> PAGE_SHIFT;
+
+	mc->count++;
+}
+
+static inline struct pkvm_page_range
+pop_pkvm_memcache(struct pkvm_memcache *mc, void *(*to_va)(phys_addr_t phys))
+{
+	struct pkvm_page_range head = { 0 };
+
+	if (!mc->count)
+		return head;
+
+	/*
+	 * The popped memory should be at least one page which contains the
+	 * next head.
+	 */
+	if (WARN_ON_ONCE(!mc->head.nr_pages))
+		return head;
+
+	head = mc->head;
+	mc->head = *(struct pkvm_page_range *)to_va(head.addr);
+
+	mc->count--;
+
+	return head;
 }
 
 #else /* !CONFIG_PKVM_X86 */
