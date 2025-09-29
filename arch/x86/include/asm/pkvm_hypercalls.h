@@ -12,5 +12,6 @@ PKVM_HC(dump_vmexit_trace)
 
 /* KVM ops */
 PKVM_HC(check_processor_compatibility)
+PKVM_HC(enable_virtualization_cpu)
 
 #undef PKVM_HC
