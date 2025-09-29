@@ -782,10 +782,18 @@ enum kvm_only_cpuid_leafs {
 };
 
 #ifdef CONFIG_PKVM_X86
+struct pkvm_memcache {
+	struct pkvm_page_range {
+		phys_addr_t addr;
+		u64 nr_pages;
+	} head;
+	unsigned long count;
+};
+
 struct kvm_pkvm_vm {
 	int handle;
 };
-#endif
+#endif /* CONFIG_PKVM_X86 */
 
 struct kvm_vcpu_arch {
 	/*
