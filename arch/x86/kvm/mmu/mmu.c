@@ -1645,7 +1645,7 @@ static bool __kvm_rmap_zap_gfn_range(struct kvm *kvm,
 				 start, end - 1, can_yield, true, flush);
 }
 #ifdef CONFIG_PKVM_X86
-static bool pkvm_unmap_gfn_range(struct kvm *kvm, struct kvm_gfn_range *range)
+static bool __pkvm_unmap_gfn_range(struct kvm *kvm, gfn_t start, gfn_t end)
 {
 	struct pkvm_mapping *m;
 
@@ -1654,7 +1654,7 @@ static bool pkvm_unmap_gfn_range(struct kvm *kvm, struct kvm_gfn_range *range)
 	if (pkvm_is_protected_vm(kvm))
 		return false;
 
-	for_each_pkvm_mapping(kvm, range->start, range->end, m) {
+	for_each_pkvm_mapping(kvm, start, end, m) {
 		int err = pkvm_hypercall(vm_mmu_unmap, kvm->arch.pkvm.handle,
 					 m->gfn << PAGE_SHIFT,
 					 m->nr_pages << PAGE_SHIFT);
@@ -1667,6 +1667,11 @@ static bool pkvm_unmap_gfn_range(struct kvm *kvm, struct kvm_gfn_range *range)
 
 	/* pKVM itself always flushes TLB on unmap */
 	return false;
+}
+
+static bool pkvm_unmap_gfn_range(struct kvm *kvm, struct kvm_gfn_range *range)
+{
+	return __pkvm_unmap_gfn_range(kvm, range->start, range->end);
 }
 
 static bool pkvm_age_gfn_range(struct kvm *kvm, struct kvm_gfn_range *range,
@@ -7487,6 +7492,15 @@ static void kvm_mmu_zap_all(struct kvm *kvm)
 	struct kvm_mmu_page *sp, *node;
 	LIST_HEAD(invalid_list);
 	int ign;
+
+#ifdef CONFIG_PKVM_X86
+	if (enable_pkvm) {
+		write_lock(&kvm->mmu_lock);
+		__pkvm_unmap_gfn_range(kvm, 0, U64_MAX);
+		write_unlock(&kvm->mmu_lock);
+		return;
+	}
+#endif
 
 	write_lock(&kvm->mmu_lock);
 restart:
