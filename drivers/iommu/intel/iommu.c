@@ -696,6 +696,17 @@ void dmar_fault_dump_ptes(struct intel_iommu *iommu, u16 source_id,
 
 	/* legacy mode does not require PASID entries */
 	if (!sm_supported(iommu)) {
+		if (pkvm_pviommu_enabled() &&
+		    context_domain_id(ctx_entry) == FLPT_DEFAULT_DID) {
+			/*
+			 * Do not try to walk the page table with pviommu if
+			 * device is identity mapped. pkvm converts identity
+			 * to DMA mapping and uses host ept which the host
+			 * does not have read access.
+			 */
+			pr_info("legacy mode page table is host EPT, protected by pkvm\n");
+			return;
+		}
 		level = agaw_to_level(ctx_entry->hi & 7);
 		pgtable = phys_to_virt(ctx_entry->lo & VTD_PAGE_MASK);
 		goto pgtable_walk;
@@ -725,6 +736,16 @@ void dmar_fault_dump_ptes(struct intel_iommu *iommu, u16 source_id,
 	pte = &entries[index];
 	for (i = 0; i < ARRAY_SIZE(pte->val); i++)
 		pr_info("pasid table entry[%d]: 0x%016llx\n", i, pte->val[i]);
+
+	if (pkvm_pviommu_enabled() && pasid_get_domain_id(pte) == FLPT_DEFAULT_DID) {
+		/*
+		 * Do not try to walk the page table with pviommu if device is
+		 * identity mapped. pkvm converts identity to DMA mapping and
+		 * uses host ept which the host does not have read access.
+		 */
+		pr_info("scalable mode page table is host EPT, protected by pkvm\n");
+		return;
+	}
 
 	if (pasid_pte_get_pgtt(pte) == PASID_ENTRY_PGTT_FL_ONLY) {
 		level = pte->val[2] & BIT_ULL(2) ? 5 : 4;

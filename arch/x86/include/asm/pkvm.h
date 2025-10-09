@@ -98,6 +98,18 @@ static inline bool pkvm_enabled(void)
 	return static_branch_likely(&pkvm_enabled_key);
 }
 
+#ifdef CONFIG_PKVM_INTEL_PVIOMMU
+static inline bool pkvm_pviommu_enabled(void)
+{
+	return pkvm_enabled();
+}
+#else
+static inline bool pkvm_pviommu_enabled(void)
+{
+	return false;
+}
+#endif
+
 int pkvm_iommu_register_driver(const struct pkvm_iommu_driver *kern_ops);
 
 static inline u64 pkvm_readq(void __iomem *reg, unsigned long reg_phys,
@@ -216,6 +228,11 @@ static inline void pkvm_update_iommu_virtual_caps(u64 *cap, u64 *ecap)
 #define enable_pkvm false
 
 static inline bool pkvm_enabled(void)
+{
+	return false;
+}
+
+static inline bool pkvm_pviommu_enabled(void)
 {
 	return false;
 }
