@@ -2161,6 +2161,11 @@ int pkvm_start_secondary_vcpu(struct pkvm_vm *pkvm_vm, u32 apic_id,
 			break;
 		}
 
+		if (vcpu->arch.mp_state != KVM_MP_STATE_UNINITIALIZED) {
+			ret = -EBUSY;
+			break;
+		}
+
 		pkvm_vcpu->sipi_vector = start_ip >> 12;
 		/*
 		 * Update sipi_vector before updating mp_state. Paired with
