@@ -169,6 +169,8 @@ static int pkvm_vm_init(phys_addr_t host_kvm_pa, phys_addr_t pkvm_vm_pa)
 	 */
 	kvm->arch.disabled_quirks = kvm_caps.inapplicable_quirks &
 				    kvm_caps.supported_quirks;
+	/* As kvm_arch_init_vm(), allow the guest to read MSR_PLATFORM_INFO. */
+	kvm->arch.guest_can_read_msr_platform_info = true;
 
 	ret = kvm_x86_call(vm_init)(kvm);
 	if (ret)

@@ -1926,7 +1926,6 @@ int kvm_set_msr_common(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_set_msr_common);
 
-#ifndef __PKVM_HYP__
 static int get_msr_mce(struct kvm_vcpu *vcpu, u32 msr, u64 *pdata, bool host)
 {
 	u64 data;
@@ -2015,8 +2014,10 @@ int kvm_get_msr_common(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 	case MSR_K7_PERFCTR0 ... MSR_K7_PERFCTR3:
 	case MSR_P6_PERFCTR0 ... MSR_P6_PERFCTR1:
 	case MSR_P6_EVNTSEL0 ... MSR_P6_EVNTSEL1:
+#ifndef __PKVM_HYP__
 		if (kvm_pmu_is_valid_msr(vcpu, msr_info->index))
 			return kvm_pmu_get_msr(vcpu, msr_info);
+#endif
 		msr_info->data = 0;
 		break;
 	case MSR_IA32_UCODE_REV:
@@ -2035,6 +2036,7 @@ int kvm_get_msr_common(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 	case MSR_IA32_POWER_CTL:
 		msr_info->data = vcpu->arch.msr_ia32_power_ctl;
 		break;
+#ifndef __PKVM_HYP__
 	case MSR_IA32_TSC: {
 		/*
 		 * Intel SDM states that MSR_IA32_TSC read adds the TSC offset
@@ -2058,6 +2060,7 @@ int kvm_get_msr_common(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 		msr_info->data = kvm_scale_tsc(rdtsc(), ratio) + offset;
 		break;
 	}
+#endif
 	case MSR_IA32_CR_PAT:
 		msr_info->data = vcpu->arch.pat;
 		break;
@@ -2082,6 +2085,7 @@ int kvm_get_msr_common(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 	case MSR_EBC_FREQUENCY_ID:
 		msr_info->data = 1 << 24;
 		break;
+#ifndef __PKVM_HYP__
 	case MSR_IA32_APICBASE:
 		msr_info->data = vcpu->arch.apic_base;
 		break;
@@ -2093,6 +2097,7 @@ int kvm_get_msr_common(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 	case MSR_IA32_TSC_ADJUST:
 		msr_info->data = (u64)vcpu->arch.ia32_tsc_adjust_msr;
 		break;
+#endif
 	case MSR_IA32_MISC_ENABLE:
 		msr_info->data = vcpu->arch.ia32_misc_enable_msr;
 		break;
@@ -2113,6 +2118,7 @@ int kvm_get_msr_common(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 	case MSR_EFER:
 		msr_info->data = vcpu->arch.efer;
 		break;
+#ifndef __PKVM_HYP__
 	case MSR_KVM_WALL_CLOCK:
 		if (!guest_pv_has(vcpu, KVM_FEATURE_CLOCKSOURCE))
 			return KVM_MSR_RET_UNSUPPORTED;
@@ -2173,6 +2179,7 @@ int kvm_get_msr_common(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 
 		msr_info->data = vcpu->arch.msr_kvm_poll_control;
 		break;
+#endif
 	case MSR_IA32_P5_MC_ADDR:
 	case MSR_IA32_P5_MC_TYPE:
 	case MSR_IA32_MCG_CAP:
@@ -2200,7 +2207,7 @@ int kvm_get_msr_common(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 		 */
 		msr_info->data = 0x20000000;
 		break;
-#ifdef CONFIG_KVM_HYPERV
+#if defined(CONFIG_KVM_HYPERV) && !defined(__PKVM_HYP__)
 	case HV_X64_MSR_GUEST_OS_ID ... HV_X64_MSR_SINT15:
 	case HV_X64_MSR_SYNDBG_CONTROL ... HV_X64_MSR_SYNDBG_PENDING_BUFFER:
 	case HV_X64_MSR_SYNDBG_OPTIONS:
@@ -2266,13 +2273,25 @@ int kvm_get_msr_common(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 		msr_info->data = vcpu->arch.guest_fpu.xfd_err;
 		break;
 #endif
+	/*
+	 * These CET related MSRs are passed-through to the guest, and this code
+	 * is not for the KVM to emulate rdmsr/wrmsr instruction, but for the
+	 * KVM (or the userspace VMM) to access the guest CET MSRs for managing
+	 * the guest FPU state, or emulating some other instructions (e.g., task
+	 * switch). For a pVM these MSRs are inaccessible to the host anyway and
+	 * the pKVM hypervisor itself doesn't need to access them either.
+	 */
+#ifndef __PKVM_HYP__
 	case MSR_IA32_U_CET:
 	case MSR_IA32_PL0_SSP ... MSR_IA32_PL3_SSP:
 		kvm_get_xstate_msr(vcpu, msr_info);
 		break;
+#endif
 	default:
+#ifndef __PKVM_HYP__
 		if (kvm_pmu_is_valid_msr(vcpu, msr_info->index))
 			return kvm_pmu_get_msr(vcpu, msr_info);
+#endif
 
 		return KVM_MSR_RET_UNSUPPORTED;
 	}
@@ -2280,6 +2299,7 @@ int kvm_get_msr_common(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_get_msr_common);
 
+#ifndef __PKVM_HYP__
 static int do_get_msr(struct kvm_vcpu *vcpu, unsigned index, u64 *data)
 {
 	return kvm_get_msr_ignored_check(vcpu, index, data, true);

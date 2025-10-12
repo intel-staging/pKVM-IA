@@ -108,7 +108,6 @@ int kvm_mtrr_set_msr(struct kvm_vcpu *vcpu, u32 msr, u64 data)
 	return 0;
 }
 
-#ifndef __PKVM_HYP__
 int kvm_mtrr_get_msr(struct kvm_vcpu *vcpu, u32 msr, u64 *pdata)
 {
 	u64 *mtrr;
@@ -132,4 +131,3 @@ int kvm_mtrr_get_msr(struct kvm_vcpu *vcpu, u32 msr, u64 *pdata)
 	*pdata = *mtrr;
 	return 0;
 }
-#endif /* !__PKVM_HYP__ */
