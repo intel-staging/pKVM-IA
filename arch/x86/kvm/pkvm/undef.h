@@ -66,6 +66,8 @@ static inline void arch_leave_lazy_mmu_mode(void) {}
 #undef CONFIG_GENERIC_BUG
 #undef CONFIG_TRACEPOINTS
 #undef CONFIG_DEBUG_PREEMPT
+#undef CONFIG_DYNAMIC_DEBUG
+#undef CONFIG_DYNAMIC_DEBUG_CORE
 */
 
 #endif /* __PKVM_X86_UNDEF_H */
