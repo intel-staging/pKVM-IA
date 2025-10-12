@@ -12,14 +12,23 @@
 #include "xen.h"
 #include "x86.h"
 
+#ifdef __PKVM_HYP__
+#include <asm/kvm_pkvm.h>
+
+#undef module_param_named
+#define module_param_named(...)
+#endif
+
 #ifndef __PKVM_HYP__
 bool __read_mostly ignore_msrs = 0;
 module_param(ignore_msrs, bool, 0644);
+#endif /* !__PKVM_HYP__ */
 
 bool __read_mostly report_ignored_msrs = true;
 module_param(report_ignored_msrs, bool, 0644);
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(report_ignored_msrs);
 
+#ifndef __PKVM_HYP__
 #define MAX_IO_MSRS 256
 
 struct msr_bitmap_range {
@@ -609,6 +618,7 @@ static int do_get_feature_msr(struct kvm_vcpu *vcpu, unsigned index, u64 *data)
 	return kvm_do_msr_access(vcpu, index, data, true, MSR_TYPE_R,
 				 kvm_get_feature_msr);
 }
+#endif /* !__PKVM_HYP__ */
 
 static bool __kvm_valid_efer(struct kvm_vcpu *vcpu, u64 efer)
 {
@@ -631,6 +641,8 @@ static bool __kvm_valid_efer(struct kvm_vcpu *vcpu, u64 efer)
 	return true;
 
 }
+
+#ifndef __PKVM_HYP__
 bool kvm_valid_efer(struct kvm_vcpu *vcpu, u64 efer)
 {
 	if (efer & ~kvm_caps.supported_efer_bits)
@@ -639,10 +651,13 @@ bool kvm_valid_efer(struct kvm_vcpu *vcpu, u64 efer)
 	return __kvm_valid_efer(vcpu, efer);
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_valid_efer);
+#endif /* !__PKVM_HYP__ */
 
 static int set_efer(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 {
+#ifndef __PKVM_HYP__
 	u64 old_efer = vcpu->arch.efer;
+#endif
 	u64 efer = msr_info->data;
 	int r;
 
@@ -667,16 +682,20 @@ static int set_efer(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 		return r;
 	}
 
+	/* TODO: Notify the host VMM to reset kvm mmu reset. */
+#ifndef __PKVM_HYP__
 	if ((efer ^ old_efer) & KVM_MMU_EFER_ROLE_BITS)
 		kvm_mmu_reset_context(vcpu);
 
 	if (!cpu_feature_enabled(X86_FEATURE_XSAVES) &&
 	    (efer & EFER_SVME))
 		kvm_hv_xsaves_xsavec_maybe_warn(vcpu);
+#endif
 
 	return 0;
 }
 
+#ifndef __PKVM_HYP__
 bool kvm_msr_allowed(struct kvm_vcpu *vcpu, u32 index, u32 type)
 {
 	struct kvm_x86_msr_filter *msr_filter;
@@ -1316,6 +1335,7 @@ static void kvm_write_system_time(struct kvm_vcpu *vcpu, gpa_t system_time,
 
 	return;
 }
+#endif /* !__PKVM_HYP__ */
 
 /* These helpers are safe iff @msr is known to be an MCx bank MSR. */
 static bool is_mci_control_msr(u32 msr)
@@ -1411,6 +1431,7 @@ static int set_msr_mce(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 	return 0;
 }
 
+#ifndef __PKVM_HYP__
 static int kvm_pv_enable_async_pf(struct kvm_vcpu *vcpu, u64 data)
 {
 	gpa_t gpa = data & ~0x3f;
@@ -1461,6 +1482,7 @@ static int kvm_pv_enable_async_pf_int(struct kvm_vcpu *vcpu, u64 data)
 
 	return 0;
 }
+#endif /* !__PKVM_HYP__ */
 
 #ifdef CONFIG_X86_64
 static inline u64 kvm_guest_supported_xfd(struct kvm_vcpu *vcpu)
@@ -1474,6 +1496,7 @@ int kvm_set_msr_common(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 	u32 msr = msr_info->index;
 	u64 data = msr_info->data;
 
+#ifndef __PKVM_HYP__
 	/*
 	 * Do not allow host-initiated writes to trigger the Xen hypercall
 	 * page setup; it could incur locking paths which are not expected
@@ -1482,6 +1505,7 @@ int kvm_set_msr_common(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 	if (kvm_xen_is_hypercall_page_msr(vcpu->kvm, msr) &&
 	    !msr_info->host_initiated)
 		return kvm_xen_write_hypercall_page(vcpu, data);
+#endif
 
 	switch (msr) {
 	case MSR_AMD64_NB_CFG:
@@ -1521,8 +1545,14 @@ int kvm_set_msr_common(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 			break;
 
 		vcpu->arch.perf_capabilities = data;
+		/*
+		 * The pkvm hypervisor doesn't provide X86_FEATURE_PDCM to the
+		 * guest thus no need to do PMU refresh.
+		 */
+#ifndef __PKVM_HYP__
 		kvm_pmu_refresh(vcpu);
 		kvm_make_request(KVM_REQ_RECALC_INTERCEPTS, vcpu);
+#endif
 		break;
 	case MSR_IA32_PRED_CMD: {
 		u64 reserved_bits = ~(PRED_CMD_IBPB | PRED_CMD_SBPB);
@@ -1605,6 +1635,7 @@ int kvm_set_msr_common(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 	case MTRRphysBase_MSR(0) ... MSR_MTRRfix4K_F8000:
 	case MSR_MTRRdefType:
 		return kvm_mtrr_set_msr(vcpu, msr, data);
+#ifndef __PKVM_HYP__
 	case MSR_IA32_APICBASE:
 		return kvm_apic_set_base(vcpu, data, msr_info->host_initiated);
 	case APIC_BASE_MSR ... APIC_BASE_MSR + 0xff:
@@ -1625,6 +1656,7 @@ int kvm_set_msr_common(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 			vcpu->arch.ia32_tsc_adjust_msr = data;
 		}
 		break;
+#endif
 	case MSR_IA32_MISC_ENABLE: {
 		u64 old_val = vcpu->arch.ia32_misc_enable_msr;
 
@@ -1657,6 +1689,7 @@ int kvm_set_msr_common(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 	case MSR_IA32_POWER_CTL:
 		vcpu->arch.msr_ia32_power_ctl = data;
 		break;
+#ifndef __PKVM_HYP__
 	case MSR_IA32_TSC:
 		if (msr_info->host_initiated) {
 			kvm_synchronize_tsc(vcpu, &data);
@@ -1666,6 +1699,7 @@ int kvm_set_msr_common(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 			vcpu->arch.ia32_tsc_adjust_msr += adj;
 		}
 		break;
+#endif
 	case MSR_IA32_XSS:
 		if (!guest_cpuid_has(vcpu, X86_FEATURE_XSAVES))
 			return KVM_MSR_RET_UNSUPPORTED;
@@ -1682,6 +1716,7 @@ int kvm_set_msr_common(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 			return 1;
 		vcpu->arch.smi_count = data;
 		break;
+#ifndef __PKVM_HYP__
 	case MSR_KVM_WALL_CLOCK_NEW:
 		if (!guest_pv_has(vcpu, KVM_FEATURE_CLOCKSOURCE2))
 			return KVM_MSR_RET_UNSUPPORTED;
@@ -1771,6 +1806,7 @@ int kvm_set_msr_common(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 
 		vcpu->arch.msr_kvm_poll_control = data;
 		break;
+#endif
 
 	case MSR_IA32_MCG_CTL:
 	case MSR_IA32_MCG_STATUS:
@@ -1782,8 +1818,10 @@ int kvm_set_msr_common(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 	case MSR_P6_PERFCTR0 ... MSR_P6_PERFCTR1:
 	case MSR_K7_EVNTSEL0 ... MSR_K7_EVNTSEL3:
 	case MSR_P6_EVNTSEL0 ... MSR_P6_EVNTSEL1:
+#ifndef __PKVM_HYP__
 		if (kvm_pmu_is_valid_msr(vcpu, msr))
 			return kvm_pmu_set_msr(vcpu, msr_info);
+#endif
 
 		if (data)
 			kvm_pr_unimpl_wrmsr(vcpu, msr, data);
@@ -1798,7 +1836,7 @@ int kvm_set_msr_common(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 		 * the need to ignore the workaround.
 		 */
 		break;
-#ifdef CONFIG_KVM_HYPERV
+#if defined(CONFIG_KVM_HYPERV) && !defined(__PKVM_HYP__)
 	case HV_X64_MSR_GUEST_OS_ID ... HV_X64_MSR_SINT15:
 	case HV_X64_MSR_SYNDBG_CONTROL ... HV_X64_MSR_SYNDBG_PENDING_BUFFER:
 	case HV_X64_MSR_SYNDBG_OPTIONS:
@@ -1862,13 +1900,25 @@ int kvm_set_msr_common(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 		vcpu->arch.guest_fpu.xfd_err = data;
 		break;
 #endif
+	/*
+	 * These CET related MSRs are passed-through to the guest, and this code
+	 * is not for the KVM to emulate rdmsr/wrmsr instruction, but for the
+	 * KVM (or the userspace VMM) to access the guest CET MSRs for managing
+	 * the guest FPU state, or emulating some other instructions (e.g., task
+	 * switch). For a pVM these MSRs are inaccessible to the host anyway and
+	 * the pKVM hypervisor itself doesn't need to access them either.
+	 */
+#ifndef __PKVM_HYP__
 	case MSR_IA32_U_CET:
 	case MSR_IA32_PL0_SSP ... MSR_IA32_PL3_SSP:
 		kvm_set_xstate_msr(vcpu, msr_info);
 		break;
+#endif
 	default:
+#ifndef __PKVM_HYP__
 		if (kvm_pmu_is_valid_msr(vcpu, msr))
 			return kvm_pmu_set_msr(vcpu, msr_info);
+#endif
 
 		return KVM_MSR_RET_UNSUPPORTED;
 	}
@@ -1876,6 +1926,7 @@ int kvm_set_msr_common(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_set_msr_common);
 
+#ifndef __PKVM_HYP__
 static int get_msr_mce(struct kvm_vcpu *vcpu, u32 msr, u64 *pdata, bool host)
 {
 	u64 data;
