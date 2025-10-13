@@ -271,3 +271,134 @@ int pkvm_iommu_set_lm_ce(u64 param_va)
 		copy_pv_param_to_host(lm_context_param, param_ptr, param);
 	return ret;
 }
+
+/*
+ * Calculate PDTS(PASID Directory Size) for scalable mode context entry.
+ * Value of X in the PDTS field of a scalable mode context entry
+ * indicates PASID directory with 2^(X + 7) entries.
+ *
+ * Copied from drivers/iommu/intel/pasid.c:context_get_sm_pds()
+ */
+static unsigned long context_get_sm_pds(u32 max_pasid)
+{
+	unsigned long pds, max_pde;
+
+	max_pde = max_pasid >> PASIDDIR_SHIFT;
+	pds = find_first_bit(&max_pde, MAX_NR_PASID_BITS);
+	if (pds < 7)
+		return 0;
+
+	return pds - 7;
+}
+
+/*
+ * Size of pasid directory in bytes, given the max pasid number
+ * A pasid directory entry can address 64 pasids and a pasid
+ * directory page holds 512 entries, hence one pasid dir page can
+ * address (64 * 512) entries.
+ * So pasid_dir_size = (max_pasid / (64 * 512)) * PAGE_SIZE
+ *                   = (max_pasid >> 15) << PAGE_SHIFT
+ */
+#define pasid_dir_size(max_pasid) ((max_pasid) >> (15 - PAGE_SHIFT))
+
+int pkvm_iommu_set_sm_ce(u64 param_va)
+{
+	struct pkvm_sm_context_param param, *param_ptr;
+	u64 pasid_dir_pa, pasid_dir_sz;
+	struct context_entry *context;
+	struct pkvm_iommu *hyp_iommu;
+	struct intel_iommu *iommu;
+	unsigned long pds;
+	void *pasid_dir;
+	u8 bus, devfn;
+	int ret;
+
+	if (!param_va)
+		return -EINVAL;
+
+	param_ptr = (struct pkvm_sm_context_param *)kern_pkvm_va((void *)param_va);
+	if (WARN_ON_ONCE(copy_pv_param_from_host(sm_context_param, param_ptr, param)))
+		return -EINVAL;
+
+	hyp_iommu = find_iommu_by_reg_phys(param.phys);
+	if (!hyp_iommu)
+		return -EINVAL;
+
+	if (!param.pasid_dir_gpa)
+		return -EINVAL;
+
+	if (param.ats_supported && !is_dev_in_satc(param.bdf)) {
+		pkvm_err("pkvm: device[%x]: host reports ats supported, but not in satc\n",
+			 param.bdf);
+		return -EPERM;
+	}
+
+	iommu = &hyp_iommu->iommu;
+	if (!sm_supported(iommu)) {
+		pkvm_err("pkvm: %s: iommu%d doesn't support scalable mode!\n",
+			 __func__, iommu->seq_id);
+		return -EINVAL;
+	};
+
+	pkvm_dbg("pkvm: %s: dev[%x] max_pasid: %u, pasid_dir: %llx\n",
+		 __func__, param.bdf, param.max_pasid, param.pasid_dir_gpa);
+
+	pkvm_spin_lock(&hyp_iommu->lock);
+	bus = PCI_BUS_NUM(param.bdf);
+	devfn = PCI_DEV_FN(param.bdf);
+	context = pkvm_iommu_context_addr(iommu, bus, devfn, &param.context_gpa);
+	if (!context) {
+		pkvm_spin_unlock(&hyp_iommu->lock);
+		return -ENOMEM;
+	}
+
+	if (context_present(context)) {
+		pkvm_spin_unlock(&hyp_iommu->lock);
+		return 0;
+	}
+
+	pasid_dir_pa = host_gpa2hpa(param.pasid_dir_gpa);
+	pasid_dir_sz = pasid_dir_size(param.max_pasid);
+	pasid_dir = pkvm_phys_to_virt(pasid_dir_pa);
+	ret = __pkvm_host_donate_hyp_share_ro(pasid_dir_pa, pasid_dir_sz);
+	if (ret) {
+		pkvm_spin_unlock(&hyp_iommu->lock);
+		pkvm_err("pkvm: %s: failed to write protect pasid dir pages(err=%d)\n",
+			 __func__, ret);
+		return ret;
+	}
+	memset(pasid_dir, 0, pasid_dir_sz);
+	__pkvm_iommu_flush_cache(iommu, pasid_dir, pasid_dir_sz);
+
+	context_clear_entry(context);
+
+	pds = context_get_sm_pds(param.max_pasid);
+	context->lo = pasid_dir_pa | context_pdts(pds);
+	context_set_sm_rid2pasid(context, IOMMU_NO_PASID);
+
+	if (param.ats_supported)
+		context_set_sm_dte(context);
+	if (ecap_pasid(iommu->ecap))
+		context_set_pasid(context);
+
+	context_set_fault_enable(context);
+	context_set_present(context);
+
+	__pkvm_iommu_flush_cache(iommu, context, sizeof(*context));
+	pkvm_spin_unlock(&hyp_iommu->lock);
+
+	/*
+	 * It's a non-present to present mapping. If hardware doesn't cache
+	 * non-present entry we don't need to flush the caches. If it does
+	 * cache non-present entries, then it does so in the special
+	 * domain #0, which we have to flush:
+	 */
+	if (cap_caching_mode(iommu->cap)) {
+		flush_context_cache(hyp_iommu, 0, param.bdf,
+				    DMA_CCMD_MASK_NOBIT, DMA_CCMD_DEVICE_INVL);
+		flush_iotlb(hyp_iommu, 0, 0, 0, DMA_TLB_DSI_FLUSH);
+	}
+
+	copy_pv_param_to_host(sm_context_param, param_ptr, param);
+	return 0;
+}

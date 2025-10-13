@@ -265,6 +265,7 @@ union pkvm_pv_param {
 	/* IOMMU hypercall params */
 	struct pkvm_lm_context_param lm_context_param;
 	struct pkvm_clear_translation_param clear_translation_param;
+	struct pkvm_sm_context_param sm_context_param;
 } __aligned(PAGE_SIZE);
 
 #ifdef __PKVM_HYP__

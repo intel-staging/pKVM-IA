@@ -9,11 +9,15 @@
 #include <asm/io.h>
 #include <asm/coco.h>
 
+#ifdef CONFIG_PKVM_INTEL_PVIOMMU
+#define PKVM_MAX_PASID_BITS	20
+#else
 /*
  * 15bits for PASID, DO NOT change it, based on it,
  * the size of PASID DIR table can kept as one page
  */
 #define PKVM_MAX_PASID_BITS	15
+#endif
 #define PKVM_MAX_PASID		(1 << PKVM_MAX_PASID_BITS)
 
 struct pkvm_iommu_driver {
@@ -114,6 +118,15 @@ struct pkvm_lm_context_param {
 	u16 did;
 	u16 ats_supported;
 	u64 domain_pgd_gpa;
+	u64 context_gpa;
+};
+
+struct pkvm_sm_context_param {
+	u64 phys;
+	u16 bdf;
+	u8 ats_supported;
+	u32 max_pasid;
+	u64 pasid_dir_gpa;
 	u64 context_gpa;
 };
 
