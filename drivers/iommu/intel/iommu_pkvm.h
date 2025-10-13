@@ -8,9 +8,31 @@
 
 #include <asm/kvm_pkvm.h>
 
+#define pkvm_iommu_hypercall(hc, param_name, param)			\
+	({									\
+		unsigned long f;						\
+		struct pkvm_##param_name *p = get_this_pv_param(param_name, f);	\
+		int ret;							\
+		*p = *(param);							\
+		ret = pkvm_hypercall(hc, (unsigned long)p);		\
+		*(param) = *p;							\
+		put_this_pv_param(p, f);					\
+		ret;								\
+	})
+
 static inline int pkvm_hc_qi_iec_flush(unsigned long reg_phys, bool global, unsigned long index,
 		unsigned int mask)
 {
 	return pkvm_hypercall(iommu_iec_flush, reg_phys, global, index, mask);
+}
+
+static inline long pkvm_hc_iommu_clear_ce(struct pkvm_clear_translation_param *param)
+{
+	return pkvm_iommu_hypercall(iommu_clear_ce, clear_translation_param, param);
+}
+
+static inline long pkvm_hc_iommu_set_lm_ce(struct pkvm_lm_context_param *param)
+{
+	return pkvm_iommu_hypercall(iommu_set_lm_ce, lm_context_param, param);
 }
 #endif

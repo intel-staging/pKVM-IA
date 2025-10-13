@@ -30,6 +30,7 @@
 #include "../iommu-pages.h"
 #include "pasid.h"
 #include "cap_audit.h"
+#include "iommu_pkvm.h"
 #include "perfmon.h"
 
 #define ROOT_SIZE		VTD_PAGE_SIZE
@@ -1589,6 +1590,41 @@ static void context_present_cache_flush(struct intel_iommu *iommu, u16 did,
 	}
 }
 
+static int pv_context_mapping(struct dmar_domain *domain, struct intel_iommu *iommu,
+			      struct device_domain_info *info, u8 bus, u8 devfn)
+{
+	struct pkvm_lm_context_param param = {
+		.phys = iommu->reg_phys,
+		.bdf = PCI_DEVID(bus, devfn),
+		.domain_pgd_gpa = virt_to_phys(domain->pgd),
+		.did = domain_id_iommu(domain, iommu),
+		.ats_supported = info ? info->ats_supported : 0,
+	};
+	int ret;
+
+	spin_lock(&iommu->lock);
+	ret = pkvm_hc_iommu_set_lm_ce(&param);
+	if (ret == -ENOMEM) {
+		void *context = iommu_alloc_page_node(iommu->node, GFP_ATOMIC);
+
+		if (!context) {
+			spin_unlock(&iommu->lock);
+			pr_err("%s: failed to allocate context page for iommu: %d\n",
+			       __func__, iommu->seq_id);
+			return -ENOMEM;
+		}
+		param.context_gpa = virt_to_phys(context);
+		ret = pkvm_hc_iommu_set_lm_ce(&param);
+
+		/* Free the page if pkvm did not use it. */
+		if (param.context_gpa)
+			iommu_free_page(context);
+	}
+	spin_unlock(&iommu->lock);
+
+	return ret;
+}
+
 static int domain_context_mapping_one(struct dmar_domain *domain,
 				      struct intel_iommu *iommu,
 				      u8 bus, u8 devfn)
@@ -1603,6 +1639,9 @@ static int domain_context_mapping_one(struct dmar_domain *domain,
 
 	pr_debug("Set context mapping for %02x:%02x.%d\n",
 		bus, PCI_SLOT(devfn), PCI_FUNC(devfn));
+
+	if (pkvm_pviommu_enabled())
+		return pv_context_mapping(domain, iommu, info, bus, devfn);
 
 	spin_lock(&iommu->lock);
 	ret = -ENOMEM;
@@ -1843,11 +1882,30 @@ __domain_mapping(struct dmar_domain *domain, unsigned long iov_pfn,
 	return 0;
 }
 
+static void pv_context_clear(struct device_domain_info *info, u8 bus, u8 devfn)
+{
+	struct pkvm_clear_translation_param param = {
+		.phys = info->iommu->reg_phys,
+		.bdf = PCI_DEVID(bus, devfn),
+		.ats_qdep = info->ats_qdep,
+	};
+	int ret = pkvm_hc_iommu_clear_ce(&param);
+
+	if (ret)
+		pr_warn("%s: pkvm failed to clear context entry for device[%x] (err=%d)\n",
+			__func__, param.bdf, ret);
+}
+
 static void domain_context_clear_one(struct device_domain_info *info, u8 bus, u8 devfn)
 {
 	struct intel_iommu *iommu = info->iommu;
 	struct context_entry *context;
 	u16 did;
+
+	if (pkvm_pviommu_enabled()) {
+		pv_context_clear(info, bus, devfn);
+		return;
+	}
 
 	spin_lock(&iommu->lock);
 	context = iommu_context_addr(iommu, bus, devfn, 0);
@@ -4461,11 +4519,47 @@ static const struct iommu_dirty_ops intel_dirty_ops = {
 	.read_and_clear_dirty = intel_iommu_read_and_clear_dirty,
 };
 
+static int pv_context_setup_pass_through(struct intel_iommu *iommu, u8 bus, u8 devfn)
+{
+	struct pkvm_lm_context_param param = {
+		.phys = iommu->reg_phys,
+		.bdf = PCI_DEVID(bus, devfn),
+		.did = FLPT_DEFAULT_DID,
+	};
+	int ret;
+
+	spin_lock(&iommu->lock);
+	ret = pkvm_hc_iommu_set_lm_ce(&param);
+
+	if (ret == -ENOMEM) {
+		void *context = iommu_alloc_page_node(iommu->node, GFP_ATOMIC);
+
+		if (!context) {
+			spin_unlock(&iommu->lock);
+			pr_err("%s: failed to allocate context page for iommu: %d\n",
+			       __func__, iommu->seq_id);
+			return -ENOMEM;
+		}
+		param.context_gpa = virt_to_phys(context);
+		ret = pkvm_hc_iommu_set_lm_ce(&param);
+
+		/* Free the page if pkvm did not use it. */
+		if (param.context_gpa)
+			iommu_free_page(context);
+	}
+	spin_unlock(&iommu->lock);
+
+	return ret;
+}
+
 static int context_setup_pass_through(struct device *dev, u8 bus, u8 devfn)
 {
 	struct device_domain_info *info = dev_iommu_priv_get(dev);
 	struct intel_iommu *iommu = info->iommu;
 	struct context_entry *context;
+
+	if (pkvm_pviommu_enabled())
+		return pv_context_setup_pass_through(iommu, bus, devfn);
 
 	spin_lock(&iommu->lock);
 	context = iommu_context_addr(iommu, bus, devfn, 1);
