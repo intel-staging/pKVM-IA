@@ -2,6 +2,7 @@
 #include <linux/kvm_host.h>
 #include <asm/fpu/xstate.h>
 #include <asm/kvm_pkvm.h>
+#include "../cpuid.h"
 #include "../x86.h"
 #include "early_alloc.h"
 #include "fpu.h"
@@ -246,6 +247,12 @@ static int initialize_global(struct pkvm_mem_info infos[], int nr_infos)
 		return ret;
 
 	pkvm_setup_xstate_cache();
+
+	/*
+	 * Initialize KVM cpuid_xstate_sizes to support CPUID emulation for the
+	 * guest VMs.
+	 */
+	kvm_init_xstate_sizes();
 
 	return hyp_global_init ? hyp_global_init() : 0;
 }
