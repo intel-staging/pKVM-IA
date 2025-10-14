@@ -44,6 +44,9 @@ int pkvm_handle_host_hypercall(unsigned long nr, unsigned long a0,
 	case __pkvm__dump_vmexit_trace:
 		ret = pkvm_dump_vmexit_trace(pkvm_host_gpa_to_phys(a0), a1);
 		break;
+	case __pkvm__check_processor_compatibility:
+		ret = kvm_x86_call(check_processor_compatibility)();
+		break;
 	default:
 		ret = -EINVAL;
 		break;

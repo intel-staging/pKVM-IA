@@ -10,4 +10,7 @@ PKVM_HC(init_finalize)
 PKVM_HC(enable_vmexit_trace)
 PKVM_HC(dump_vmexit_trace)
 
+/* KVM ops */
+PKVM_HC(check_processor_compatibility)
+
 #undef PKVM_HC
