@@ -40,7 +40,6 @@ EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_cpu_caps);
 bool kvm_is_configuring_cpu_caps __read_mostly;
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_is_configuring_cpu_caps);
 
-#ifndef __PKVM_HYP__
 struct cpuid_xstate_sizes {
 	u32 eax;
 	u32 ebx;
@@ -61,6 +60,7 @@ void __init kvm_init_xstate_sizes(void)
 	}
 }
 
+#ifndef __PKVM_HYP__
 u32 xstate_required_size(u64 xstate_bv, bool compacted)
 {
 	u32 ret = XSAVE_HDR_SIZE + XSAVE_HDR_OFFSET;
