@@ -3,6 +3,7 @@
 #define _ASM_X86_KVM_PKVM_H
 
 #ifdef CONFIG_PKVM_X86
+#include <linux/memblock.h>
 #include <linux/mm.h>
 #include <asm/desc.h>
 #include <asm/kvm_para.h>
@@ -67,6 +68,8 @@ enum pkvm_hc {
 extern unsigned long pkvm_sym(page_offset_base);
 extern unsigned long pkvm_sym(phys_base);
 extern struct pkvm_hyp *pkvm_sym(pkvm_hyp);
+extern struct memblock_region pkvm_sym(pkvm_memory)[];
+extern unsigned int pkvm_sym(pkvm_memblock_nr);
 
 u64 pkvm_total_reserve_pages(void);
 PKVM_DECLARE(void *, pkvm_early_alloc_page, (void));
