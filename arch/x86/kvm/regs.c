@@ -6,7 +6,6 @@
 #include "regs.h"
 #include "x86.h"
 
-#ifndef __PKVM_HYP__
 unsigned long kvm_get_linear_rip(struct kvm_vcpu *vcpu)
 {
 	/* Can't read the RIP when guest state is protected, just return 0 */
@@ -26,6 +25,7 @@ bool kvm_is_linear_rip(struct kvm_vcpu *vcpu, unsigned long linear_rip)
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_is_linear_rip);
 
+#ifndef __PKVM_HYP__
 unsigned long kvm_get_rflags(struct kvm_vcpu *vcpu)
 {
 	unsigned long rflags;
@@ -36,6 +36,7 @@ unsigned long kvm_get_rflags(struct kvm_vcpu *vcpu)
 	return rflags;
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_get_rflags);
+#endif /* !__PKVM_HYP__ */
 
 void __kvm_set_rflags(struct kvm_vcpu *vcpu, unsigned long rflags)
 {
@@ -52,6 +53,7 @@ void kvm_set_rflags(struct kvm_vcpu *vcpu, unsigned long rflags)
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_set_rflags);
 
+#ifndef __PKVM_HYP__
 static void __get_regs(struct kvm_vcpu *vcpu, struct kvm_regs *regs)
 {
 	if (vcpu->arch.emulate_regs_need_sync_to_vcpu) {
@@ -743,6 +745,7 @@ int kvm_run_sync_regs_from_user(struct kvm_vcpu *vcpu)
 
 	return 0;
 }
+#endif /* !__PKVM_HYP__ */
 
 void kvm_update_dr0123(struct kvm_vcpu *vcpu)
 {
@@ -769,6 +772,7 @@ void kvm_update_dr7(struct kvm_vcpu *vcpu)
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_update_dr7);
 
+#ifndef __PKVM_HYP__
 static u64 kvm_dr6_fixed(struct kvm_vcpu *vcpu)
 {
 	u64 fixed = DR6_FIXED_1;

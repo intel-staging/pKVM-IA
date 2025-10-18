@@ -9,6 +9,11 @@
 
 #include <asm/fpu/api.h>
 
+#ifdef __PKVM_HYP__
+/* For the pKVM hypervisor's KVM_BUG_ON() */
+#include <asm/pkvm_redef.h>
+#endif
+
 /* Swap (qemu) user FPU context for the guest FPU context. */
 static inline void kvm_load_guest_fpu(struct kvm_vcpu *vcpu)
 {
