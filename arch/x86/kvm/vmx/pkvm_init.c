@@ -245,6 +245,7 @@ static __init int pkvm_setup_pcpu(struct pkvm_hyp *pkvm, int cpu)
 
 static __init int pkvm_setup_host_vcpu(struct pkvm_hyp *pkvm, int cpu)
 {
+	struct kvm *kvm = pkvm->host_kvm;
 	struct vcpu_vmx *vmx;
 
 	if (cpu >= CONFIG_NR_CPUS) {
@@ -271,7 +272,9 @@ static __init int pkvm_setup_host_vcpu(struct pkvm_hyp *pkvm, int cpu)
 	}
 
 	vmx->vcpu.cpu = cpu;
-	vmx->vcpu.kvm = pkvm->host_kvm;
+	vmx->vcpu.vcpu_id = kvm->created_vcpus;
+	vmx->vcpu.kvm = kvm;
+	kvm->created_vcpus++;
 	pkvm->host_vcpus[cpu] = &vmx->vcpu;
 
 	return 0;
