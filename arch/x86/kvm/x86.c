@@ -87,6 +87,8 @@
 #include <clocksource/hyperv_timer.h>
 
 #ifdef __PKVM_HYP__
+#include <asm/kvm_pkvm.h>
+
 #undef module_param_named
 #define module_param_named(...)
 #endif
@@ -675,6 +677,7 @@ static void kvm_load_host_pkru(struct kvm_vcpu *vcpu)
 			wrpkru(vcpu->arch.host_pkru);
 	}
 }
+#endif /* !__PKVM_HYP__ */
 
 int __kvm_set_xcr(struct kvm_vcpu *vcpu, u32 index, u64 xcr)
 {
@@ -722,6 +725,7 @@ int __kvm_set_xcr(struct kvm_vcpu *vcpu, u32 index, u64 xcr)
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(__kvm_set_xcr);
 
+#ifndef __PKVM_HYP__
 int kvm_emulate_xsetbv(struct kvm_vcpu *vcpu)
 {
 	/* Note, #UD due to CR4.OSXSAVE=0 has priority over the intercept. */
@@ -9473,6 +9477,7 @@ void kvm_arch_vcpu_destroy(struct kvm_vcpu *vcpu)
 	free_page((unsigned long)vcpu->arch.pio_data);
 	kvfree(vcpu->arch.cpuid_entries);
 }
+#endif /* !__PKVM_HYP__ */
 
 static void kvm_xstate_reset(struct kvm_vcpu *vcpu, bool init_event)
 {
@@ -9487,6 +9492,15 @@ static void kvm_xstate_reset(struct kvm_vcpu *vcpu, bool init_event)
 	 */
 	if (!init_event || !fpstate)
 		return;
+
+#ifdef __PKVM_HYP__
+	/*
+	 * The npVM's FPU state is managed by the host thus it is not necessary
+	 * to reset by the pKVM hypervisor.
+	 */
+	if (!pkvm_is_protected_vcpu(vcpu))
+		return;
+#endif
 
 	/*
 	 * On INIT, only select XSTATE components are zeroed, most components
@@ -9572,11 +9586,17 @@ void kvm_vcpu_reset(struct kvm_vcpu *vcpu, bool init_event)
 	vcpu->arch.apf.msr_int_val = 0;
 	vcpu->arch.st.msr_val = 0;
 
+	/*
+	 * For the pKVM hypervisor, the kvmclock/async_pf is emulated by the
+	 * host.
+	 */
+#ifndef __PKVM_HYP__
 	kvmclock_reset(vcpu);
 
 	kvm_clear_async_pf_completion_queue(vcpu);
 	kvm_async_pf_hash_reset(vcpu);
 	vcpu->arch.apf.halted = false;
+#endif
 
 	kvm_xstate_reset(vcpu, init_event);
 
@@ -9641,7 +9661,10 @@ void kvm_vcpu_reset(struct kvm_vcpu *vcpu, bool init_event)
 	 */
 	if (old_cr0 & X86_CR0_PG) {
 		kvm_make_request(KVM_REQ_TLB_FLUSH_GUEST, vcpu);
+		/* The host will reset kvm mmu context. */
+#ifndef __PKVM_HYP__
 		kvm_mmu_reset_context(vcpu);
+#endif
 	}
 
 	/*
@@ -9658,6 +9681,7 @@ void kvm_vcpu_reset(struct kvm_vcpu *vcpu, bool init_event)
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_vcpu_reset);
 
+#ifndef __PKVM_HYP__
 void kvm_vcpu_deliver_sipi_vector(struct kvm_vcpu *vcpu, u8 vector)
 {
 	struct kvm_segment cs;
