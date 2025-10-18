@@ -276,9 +276,11 @@ static __init int pkvm_setup_host_vcpu(struct kvm *kvm, int cpu)
 	}
 
 	vmx->vcpu.cpu = cpu;
+	vmx->vcpu.vcpu_id = kvm->created_vcpus;
 	vmx->vcpu.kvm = kvm;
-	per_cpu(host_vcpu, cpu) = &vmx->vcpu;
+	kvm->created_vcpus++;
 
+	per_cpu(host_vcpu, cpu) = &vmx->vcpu;
 	return 0;
 }
 
