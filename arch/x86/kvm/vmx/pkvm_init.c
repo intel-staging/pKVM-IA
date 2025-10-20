@@ -732,8 +732,12 @@ static __init int pkvm_host_deprivilege_cpus(struct pkvm_hyp *pkvm)
 		.ret = 0,
 	};
 	int cpu, ret = 0;
+	u64 spec_ctrl;
 
 	pkvm_sym(pkvm_vmx_register_excp_handlers)();
+
+	rdmsrq_safe(MSR_IA32_SPEC_CTRL, &spec_ctrl);
+	pkvm_sym(set_x86_spec_ctrl)(spec_ctrl);
 
 	for_each_possible_cpu(cpu) {
 		ret = smp_call_function_single(cpu, pkvm_host_deprivilege_cpu, &p, 1);

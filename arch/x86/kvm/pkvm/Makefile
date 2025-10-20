@@ -43,8 +43,17 @@ pkvm-hyp-$(CONFIG_PKVM_INTEL)	+= vmx/host_vmentry.o vmx/host_vmx.o \
 pkvm-obj 			:= $(patsubst %.o,%.pkvm.o,$(pkvm-hyp-y))
 obj-$(CONFIG_PKVM_X86)		+= pkvm.o
 
-targets += $(pkvm-obj) pkvm.tmp.o pkvm.lds retpoline.pkvm.S
-clean-files += retpoline.pkvm.S
+AFLAGS_vmx/host_vmentry.pkvm.o	+= -iquote $(srctree)/arch/x86/kvm/vmx
+AFLAGS_vmx/host_vmentry.pkvm.o	+= -iquote $(obj)/
+$(obj)/vmx/host_vmentry.pkvm.o:	$(obj)/kvm-asm-offsets.h
+
+$(obj)/kvm-asm-offsets.s: $(obj)/$(kvm)/kvm-asm-offsets.c FORCE
+	$(call if_changed_dep,cc_s_c)
+$(obj)/kvm-asm-offsets.h: $(obj)/kvm-asm-offsets.s FORCE
+	$(call filechk,offsets,__KVM_ASM_OFFSETS_H__)
+
+targets += $(pkvm-obj) pkvm.tmp.o pkvm.lds retpoline.pkvm.S kvm-asm-offsets.s
+clean-files += retpoline.pkvm.S kvm-asm-offsets.h
 
 $(obj)/%.pkvm.o: $(src)/%.c FORCE
 	$(call if_changed_rule,cc_o_c)
