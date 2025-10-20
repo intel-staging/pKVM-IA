@@ -6,6 +6,7 @@
 #include "pkvm_constants.h"
 #include "pmu.h"
 #include "posted_intr.h"
+#include "trace.h"
 #include "x86_ops.h"
 #include "vmx.h"
 
@@ -834,6 +835,48 @@ static u32 pkvm_get_interrupt_shadow(struct kvm_vcpu *vcpu)
 	return out.get_interrupt_shadow.data;
 }
 
+static void pkvm_inject_irq(struct kvm_vcpu *vcpu, bool reinjected)
+{
+	trace_kvm_inj_virq(vcpu->arch.interrupt.nr,
+			   vcpu->arch.interrupt.soft, reinjected);
+
+	++vcpu->stat.irq_injections;
+
+	KVM_BUG_ON(pkvm_hypercall(inject_irq), vcpu->kvm);
+}
+
+static void pkvm_inject_nmi(struct kvm_vcpu *vcpu)
+{
+	++vcpu->stat.nmi_injections;
+
+	KVM_BUG_ON(pkvm_hypercall(inject_nmi), vcpu->kvm);
+}
+
+static void pkvm_inject_exception(struct kvm_vcpu *vcpu)
+{
+	if (pkvm_is_protected_vcpu(vcpu))
+		return;
+
+	/*
+	 * Generic KVM leaves delivering the exception payload to the vendor's
+	 * inject_exception operation, i.e. vmx_inject_exception(), which runs
+	 * in the pKVM hypervisor when handling the hypercall below and so only
+	 * updates the pKVM hypervisor's copy of the vCPU state.
+	 *
+	 * The payloads are delivered to DR6 (#DB) and CR2 (#PF), and the npVM's
+	 * DR6 and CR2 will be copied from the host to the pKVM hypervisor each
+	 * time the vCPU is run, which would overwrite the values updated by the
+	 * pKVM hypervisor with the host's ones without the payload. So deliver
+	 * the payload to the host's vCPU state before the hypercall, as
+	 * vmx_inject_exception() does. This also clears the payload, so the
+	 * pKVM hypervisor won't deliver it again and will sync the DR6/CR2 from
+	 * the host by the next VM-entry.
+	 */
+	kvm_deliver_exception_payload(vcpu, &vcpu->arch.exception);
+
+	KVM_BUG_ON(pkvm_hypercall(inject_exception), vcpu->kvm);
+}
+
 static int pkvm_interrupt_allowed(struct kvm_vcpu *vcpu, bool for_injection)
 {
 	return pkvm_hypercall(interrupt_allowed, for_injection);
@@ -927,6 +970,9 @@ struct kvm_x86_ops pkvm_host_vt_x86_ops __initdata = {
 
 	.set_interrupt_shadow = pkvm_set_interrupt_shadow,
 	.get_interrupt_shadow = pkvm_get_interrupt_shadow,
+	.inject_irq = pkvm_inject_irq,
+	.inject_nmi = pkvm_inject_nmi,
+	.inject_exception = pkvm_inject_exception,
 	.interrupt_allowed = pkvm_interrupt_allowed,
 	.nmi_allowed = pkvm_nmi_allowed,
 	.get_nmi_mask = pkvm_get_nmi_mask,
