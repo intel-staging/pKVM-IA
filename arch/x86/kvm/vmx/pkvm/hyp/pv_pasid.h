@@ -283,4 +283,5 @@ static inline bool pasid_copy_entry(struct pasid_entry *to, struct pasid_entry *
 int pkvm_iommu_clear_pasid_entry(u64 param_va);
 int pkvm_iommu_set_pasid_fl(u64 param_va);
 int pkvm_iommu_set_pasid_sl(u64 param_va);
+int pkvm_pasid_free_table(struct pasid_dir_entry *dir, int max_pde);
 #endif /* __PKVM_PV_PASID_H */

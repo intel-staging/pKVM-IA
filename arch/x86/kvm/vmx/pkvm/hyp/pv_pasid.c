@@ -54,6 +54,34 @@ static void __pasid_setup_sl(struct intel_iommu *iommu, struct pasid_entry *pe, 
 	pasid_set_present(pe);
 }
 
+int pkvm_pasid_free_table(struct pasid_dir_entry *dir, int max_pde)
+{
+	struct pasid_entry *table;
+	int i, ret = 0, _ret;
+
+	for (i = 0; i < max_pde; i++) {
+		table = get_pasid_table_from_pde(&dir[i]);
+		if (!table)
+			continue;
+		_ret = __pkvm_hyp_donate_host_unshare_ro(pkvm_virt_to_phys(table), VTD_PAGE_SIZE);
+		if (_ret) {
+			pkvm_err("pkvm: %s: failed to remove write protect pasid entry: %llx (err=%d)\n",
+				  __func__, pkvm_virt_to_phys(table), _ret);
+			ret = _ret;
+		}
+	}
+
+	_ret = __pkvm_hyp_donate_host_unshare_ro(pkvm_virt_to_phys(dir),
+						 ALIGN(max_pde * 8, VTD_PAGE_SIZE));
+	if (_ret) {
+		pkvm_err("pkvm: %s: failed to remove write protect pasid dir: %llx (err=%d)\n",
+			 __func__, pkvm_virt_to_phys(dir), _ret);
+		ret = _ret;
+	}
+
+	return ret;
+}
+
 static int pkvm_pasid_get_entry(struct intel_iommu *iommu, u32 pasid, u16 bdf,
 				u64 *ptable_gpa, struct pasid_entry **pte)
 {
