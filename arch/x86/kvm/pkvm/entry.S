@@ -1,7 +1,9 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #include <linux/linkage.h>
 #include <asm/asm.h>
+#include <asm/cache.h>
 #include <asm/nospec-branch.h>
+#include <asm/segment.h>
 #include <asm/trapnr.h>
 #include <asm/unwind_hints.h>
 
@@ -88,3 +90,15 @@ SYM_FUNC_START(write_ibpb)
 	FILL_RETURN_BUFFER %rax, RSB_CLEAR_LOOPS, X86_BUG_IBPB_NO_RET
 	RET
 SYM_FUNC_END(write_ibpb)
+
+.pushsection .pkvm.text, "ax"
+
+.align L1_CACHE_BYTES, 0xcc
+SYM_CODE_START_NOALIGN(x86_verw_sel)
+	UNWIND_HINT_UNDEFINED
+	ANNOTATE_NOENDBR
+	.word __KERNEL_DS
+.align L1_CACHE_BYTES, 0xcc
+SYM_CODE_END(x86_verw_sel);
+
+.popsection
