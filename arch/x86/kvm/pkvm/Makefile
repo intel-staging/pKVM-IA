@@ -19,7 +19,7 @@ pkvm-hyp-y			:= early_alloc.o memory.o cpu.o \
 CFLAGS_fpu.pkvm.o		+= -iquote $(srctree)/arch/x86/kernel/fpu
 
 fpu				:= ../../kernel/fpu
-pkvm-hyp-y			+= $(fpu)/core.o
+pkvm-hyp-y			+= $(fpu)/core.o $(fpu)/xstate.o
 
 pkvm-lib			:= lib
 pkvm-hyp-y			+= $(pkvm-lib)/find_bit.o
@@ -38,7 +38,8 @@ quiet_cmd_patch_retpoline = PATCH_RETPOLINE $@
       cmd_patch_retpoline = $(BASH) $(src)/compiling_cmds.sh patch_retpoline $< $@
 
 kernel-lib			:= ../../../../lib
-pkvm-hyp-y			+= $(kernel-lib)/string.o $(kernel-lib)/ctype.o
+pkvm-hyp-y			+= $(kernel-lib)/string.o $(kernel-lib)/ctype.o \
+				   $(kernel-lib)/sort.o
 pkvm-hyp-$(CONFIG_LIST_HARDENED) += $(kernel-lib)/list_debug.o
 
 kvm				:= ..
