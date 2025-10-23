@@ -300,6 +300,7 @@ void fpu_free_guest_fpstate(struct fpu_guest *gfpu)
 	vfree(fpstate);
 }
 EXPORT_SYMBOL_FOR_KVM(fpu_free_guest_fpstate);
+#endif /* !__PKVM_HYP__ */
 
 /**
  * fpu_enable_guest_xfd_features - Check xfeatures against guest perm and enable
@@ -322,7 +323,6 @@ int fpu_enable_guest_xfd_features(struct fpu_guest *guest_fpu, u64 xfeatures)
 	return __xfd_enable_feature(xfeatures, guest_fpu);
 }
 EXPORT_SYMBOL_FOR_KVM(fpu_enable_guest_xfd_features);
-#endif /* !__PKVM_HYP__ */
 
 #ifdef CONFIG_X86_64
 void fpu_update_guest_xfd(struct fpu_guest *guest_fpu, u64 xfd)
