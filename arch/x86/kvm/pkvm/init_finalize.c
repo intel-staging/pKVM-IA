@@ -3,6 +3,7 @@
 #include <linux/extable.h>
 #include <asm/kvm_pkvm.h>
 #include "early_alloc.h"
+#include "fpu.h"
 #include "init_finalize.h"
 #include "lapic.h"
 #include "memory.h"
@@ -291,6 +292,8 @@ int pkvm_init_finalize(struct pkvm_mem_info infos[], int nr_infos,
 	ret = pkvm_host_mmu_finalize(host_mmu_finalize_fn);
 	if (ret)
 		return ret;
+
+	pkvm_init_percpu_fpu();
 
 	pkvm_vcpu_perf_init(this_cpu_read(host_vcpu));
 
