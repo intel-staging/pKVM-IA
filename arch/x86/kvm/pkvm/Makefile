@@ -14,7 +14,8 @@ cmd_deps			:= $(src)/compiling_cmds.sh
 
 pkvm-hyp-y			:= early_alloc.o pkvm.o memory.o cpu.o \
 				   idt.o entry.o init_finalize.o pgtable.o \
-				   mmu.o page_alloc.o lapic.o trace.o
+				   mmu.o page_alloc.o lapic.o trace.o \
+				   fpu.o
 
 kernel-x86-lib			:= ../../lib
 pkvm-hyp-y			+= $(kernel-x86-lib)/memset_64.o
@@ -47,6 +48,8 @@ pkvm-hyp-y			+= $(fpu)/core.o
 
 pkvm-obj 			:= $(patsubst %.o,%.pkvm.o,$(pkvm-hyp-y))
 obj-$(CONFIG_PKVM_X86)		+= pkvm.o
+
+CFLAGS_fpu.pkvm.o		+= -iquote $(srctree)/arch/x86/kernel/fpu
 
 AFLAGS_vmx/host_vmentry.pkvm.o	+= -iquote $(srctree)/arch/x86/kvm/vmx
 AFLAGS_vmx/host_vmentry.pkvm.o	+= -iquote $(obj)/
