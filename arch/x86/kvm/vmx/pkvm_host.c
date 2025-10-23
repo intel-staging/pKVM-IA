@@ -292,8 +292,22 @@ static int pkvm_set_msr(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 	if (pkvm_host_has_emulated_msr(vcpu->kvm, msr_info->index))
 		return kvm_set_msr_common(vcpu, msr_info);
 
-	if (!vcpu->arch.guest_state_protected)
-		return pkvm_hypercall(set_msr, msr_info->index, msr_info->data);
+	if (!vcpu->arch.guest_state_protected) {
+		int ret = pkvm_hypercall(set_msr, msr_info->index, msr_info->data);
+
+		if (ret)
+			return ret;
+
+		switch (msr_info->index) {
+		case MSR_IA32_XFD:
+			fpu_update_guest_xfd(&vcpu->arch.guest_fpu, msr_info->data);
+			break;
+		default:
+			break;
+		}
+
+		return 0;
+	}
 
 	return -EPERM;
 }

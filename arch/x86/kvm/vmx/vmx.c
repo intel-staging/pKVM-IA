@@ -2342,6 +2342,10 @@ int vmx_set_msr(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 						      MSR_TYPE_RW);
 			vcpu->arch.xfd_no_write_intercept = true;
 			vmx_update_exception_bitmap(vcpu);
+#ifdef __PKVM_HYP__
+			if (!pkvm_is_protected_vcpu(vcpu))
+				to_pkvm_vcpu(vcpu)->shared_vcpu->arch.xfd_no_write_intercept = true;
+#endif
 		}
 		break;
 #endif
