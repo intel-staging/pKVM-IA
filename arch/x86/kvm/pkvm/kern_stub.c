@@ -12,3 +12,11 @@ unsigned int debug_smp_processor_id(void)
 
 void __this_cpu_preempt_check(const char *op) {}
 #endif
+
+#ifndef CONFIG_PREEMPTION
+int __cond_resched(void) { return 0; }
+#endif
+
+#ifdef CONFIG_DEBUG_ATOMIC_SLEEP
+void __might_resched(const char *file, int line, unsigned int offsets) {}
+#endif
