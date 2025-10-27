@@ -1034,6 +1034,7 @@ struct kvm_x86_ops pkvm_host_vt_x86_ops __initdata = {
 	.set_virtual_apic_mode = pkvm_set_virtual_apic_mode,
 	.refresh_apicv_exec_ctrl = pkvm_refresh_apicv_exec_ctrl,
 	.load_eoi_exitmap = pkvm_load_eoi_exitmap,
+	.apicv_pre_state_restore = pi_apicv_pre_state_restore,
 };
 
 static struct kvm_pmc *pkvm_intel_rdpmc_ecx_to_pmc(struct kvm_vcpu *vcpu,
