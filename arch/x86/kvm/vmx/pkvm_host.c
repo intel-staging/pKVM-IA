@@ -1082,6 +1082,9 @@ struct kvm_x86_ops pkvm_host_vt_x86_ops __initdata = {
 	.sync_pir_to_irr = pkvm_sync_pir_to_irr,
 	.deliver_interrupt = vmx_deliver_interrupt,
 	.dy_apicv_has_pending_interrupt = pi_has_pending_interrupt,
+
+	.pi_update_irte = vmx_pi_update_irte,
+	.pi_start_bypass = vmx_pi_start_bypass,
 };
 
 static struct kvm_pmc *pkvm_intel_rdpmc_ecx_to_pmc(struct kvm_vcpu *vcpu,
