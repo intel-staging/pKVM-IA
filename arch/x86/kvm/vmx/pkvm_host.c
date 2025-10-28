@@ -1063,6 +1063,16 @@ static void pkvm_vcpu_after_set_cpuid(struct kvm_vcpu *vcpu)
 		kvm_free_pkvm_memcache(&out.vcpu_after_set_cpuid.memcache);
 }
 
+static u64 pkvm_get_l2_tsc_offset(struct kvm_vcpu *vcpu)
+{
+	return 0;
+}
+
+static u64 pkvm_get_l2_tsc_multiplier(struct kvm_vcpu *vcpu)
+{
+	return kvm_caps.default_tsc_scaling_ratio;
+}
+
 static void pkvm_write_tsc_offset(struct kvm_vcpu *vcpu)
 {
 	KVM_BUG_ON(pkvm_hypercall(write_tsc_offset), vcpu->kvm);
@@ -1172,6 +1182,8 @@ struct kvm_x86_ops pkvm_host_vt_x86_ops __initdata = {
 
 	.vcpu_after_set_cpuid = pkvm_vcpu_after_set_cpuid,
 
+	.get_l2_tsc_offset = pkvm_get_l2_tsc_offset,
+	.get_l2_tsc_multiplier = pkvm_get_l2_tsc_multiplier,
 	.write_tsc_offset = pkvm_write_tsc_offset,
 	.write_tsc_multiplier = pkvm_write_tsc_multiplier,
 
