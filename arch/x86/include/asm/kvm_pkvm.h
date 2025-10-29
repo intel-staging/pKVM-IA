@@ -5,6 +5,7 @@
 #ifdef CONFIG_PKVM_X86
 #include <linux/mm.h>
 #include <asm/desc.h>
+#include <asm/kvm_para.h>
 #include <asm/pkvm_image.h>
 
 #define PKVM_MEMBLOCK_REGIONS		128
@@ -32,6 +33,32 @@ struct pkvm_hyp {
 
 #define PKVM_HYP_PAGES		(PAGE_ALIGN(sizeof(struct pkvm_hyp)) >> PAGE_SHIFT)
 #define PKVM_PCPU_PAGES		(PAGE_ALIGN(sizeof(struct pkvm_pcpu)) >> PAGE_SHIFT)
+
+#define __pkvm_hypercall_0(f)		kvm_hypercall4(f, 0, 0, 0, 0)
+#define __pkvm_hypercall_1(f, p1)							\
+	({										\
+		kvm_hypercall4(f, (unsigned long)(p1), 0, 0, 0);			\
+	})
+#define __pkvm_hypercall_2(f, p1, p2)							\
+	({										\
+		kvm_hypercall4(f, (unsigned long)(p1), (unsigned long)(p2), 0, 0);	\
+	})
+#define __pkvm_hypercall_3(f, p1, p2, p3)						\
+	({										\
+		kvm_hypercall4(f, (unsigned long)(p1), (unsigned long)(p2),		\
+			       (unsigned long)(p3), 0);					\
+	})
+#define __pkvm_hypercall_4(f, p1, p2, p3, p4)						\
+	({										\
+		kvm_hypercall4(f, (unsigned long)(p1), (unsigned long)(p2),		\
+			       (unsigned long)(p3), (unsigned long)(p4));		\
+	})
+#define PKVM_HC(f)		CONCATENATE(__pkvm__, f)
+#define pkvm_hypercall(f, ...)								\
+	({										\
+		CONCATENATE(__pkvm_hypercall_,						\
+			    COUNT_ARGS(__VA_ARGS__))(PKVM_HC(f), ##__VA_ARGS__);	\
+	})
 
 extern unsigned long pkvm_sym(page_offset_base);
 extern unsigned long pkvm_sym(phys_base);
