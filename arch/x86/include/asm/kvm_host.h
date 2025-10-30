@@ -793,6 +793,14 @@ struct kvm_protected_vm {
 	bool finalized;
 	struct mutex finalized_lock;
 };
+
+struct kvm_protected_vcpu {
+	/*
+	 * Save the handle returned from the pkvm when create a pkvm_vcpu. This
+	 * will be used by pkvm hypervisor to get the corresponding pkvm_vcpu.
+	 */
+	int handle;
+};
 #endif /* CONFIG_PKVM_INTEL */
 
 struct kvm_vcpu_arch {
@@ -1099,11 +1107,9 @@ struct kvm_vcpu_arch {
 	hpa_t hv_root_tdp;
 #endif
 
-	/*
-	 * Save the handle returned from the pkvm when create a pkvm_vcpu. This
-	 * will be used by pkvm hypervisor to get the corresponding pkvm_vcpu.
-	 */
-	int pkvm_vcpu_handle;
+#if IS_ENABLED(CONFIG_PKVM_INTEL)
+	struct kvm_protected_vcpu pkvm_vcpu;
+#endif
 };
 
 struct kvm_lpage_info {
