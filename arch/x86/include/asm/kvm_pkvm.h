@@ -124,6 +124,9 @@ union pkvm_hc_data {
 		unsigned long reqs_to_host;
 #define HOST_HANDLE_EXIT			0
 #define HOST_HANDLE_GUESTDBG_SINGLESTEP		1
+#define HOST_INIT_MMU				2
+#define HOST_RESET_MMU				3
+#define HOST_APF_READY				4
 	} vcpu_run;
 	struct {
 		u64 data[PKVM_HC_DATA_MAX_NUM];
