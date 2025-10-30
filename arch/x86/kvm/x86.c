@@ -554,7 +554,6 @@ void kvm_requeue_exception(struct kvm_vcpu *vcpu, unsigned int nr,
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_requeue_exception);
 
-#ifndef __PKVM_HYP__
 int kvm_complete_insn_gp(struct kvm_vcpu *vcpu, int err)
 {
 	if (err)
@@ -565,7 +564,6 @@ int kvm_complete_insn_gp(struct kvm_vcpu *vcpu, int err)
 	return 1;
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_complete_insn_gp);
-#endif /* !__PKVM_HYP__ */
 
 void kvm_inject_page_fault(struct kvm_vcpu *vcpu, struct x86_exception *fault,
 			   bool from_hardware)

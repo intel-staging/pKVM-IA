@@ -64,6 +64,9 @@
 	unlikely(__ret);						\
 })
 
+#undef KVM_BUG
+#define KVM_BUG(cond, kvm, fmt...)		KVM_BUG_ON(cond, kvm)
+
 #endif /* __PKVM_HYP__ */
 
 #endif /* _ASM_X86_KVM_PKVM_REDEF_H */
