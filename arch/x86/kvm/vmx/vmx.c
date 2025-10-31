@@ -3061,6 +3061,22 @@ int setup_vmcs_config_common(struct vmcs_config *vmcs_conf,
 	_cpu_based_2nd_exec_control &= ~SECONDARY_EXEC_EPT_VIOLATION_VE;
 #endif
 
+	/*
+	 * The pKVM hypervisor doesn't support instruction decoding and
+	 * emulation, thus doesn't support handling EXIT_REASON_GDTR_IDTR
+	 * and EXIT_REASON_LDTR_TR. Remove SECONDARY_EXEC_DESC to make sure
+	 * the descriptor instructions won't cause these exits. Also remove it
+	 * from the host's vmcs_config when pKVM is enabled, so that the host
+	 * doesn't emulate UMIP via the descriptor-table exiting, which the pKVM
+	 * hypervisor doesn't support, e.g. advertise X86_FEATURE_UMIP.
+	 */
+#ifdef __PKVM_HYP__
+	_cpu_based_2nd_exec_control &= ~SECONDARY_EXEC_DESC;
+#else
+	if (enable_pkvm)
+		_cpu_based_2nd_exec_control &= ~SECONDARY_EXEC_DESC;
+#endif
+
 #ifndef CONFIG_X86_64
 	if (!(_cpu_based_2nd_exec_control &
 				SECONDARY_EXEC_VIRTUALIZE_APIC_ACCESSES))
