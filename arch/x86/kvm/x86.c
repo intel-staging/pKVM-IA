@@ -746,7 +746,6 @@ int __kvm_set_xcr(struct kvm_vcpu *vcpu, u32 index, u64 xcr)
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(__kvm_set_xcr);
 
-#ifndef __PKVM_HYP__
 int kvm_emulate_xsetbv(struct kvm_vcpu *vcpu)
 {
 	/* Note, #UD due to CR4.OSXSAVE=0 has priority over the intercept. */
@@ -760,6 +759,7 @@ int kvm_emulate_xsetbv(struct kvm_vcpu *vcpu)
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_emulate_xsetbv);
 
+#ifndef __PKVM_HYP__
 void kvm_invalidate_pcid(struct kvm_vcpu *vcpu, unsigned long pcid)
 {
 	struct kvm_mmu *mmu = vcpu->arch.mmu;
