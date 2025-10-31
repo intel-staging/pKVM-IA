@@ -383,6 +383,10 @@ static int postponed_per_vm_setup(struct kvm *kvm)
 	kvm->arch.irqchip_mode = irqchip_mode;
 	kvm->arch.max_vcpu_ids = max_vcpu_ids;
 
+	if (kvm_caps.has_bus_lock_exit)
+		kvm->arch.bus_lock_detection_enabled =
+			shared_kvm->arch.bus_lock_detection_enabled;
+
 	pkvm_vm->postponed_setup_done = true;
 	return 0;
 }
