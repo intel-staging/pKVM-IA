@@ -802,9 +802,11 @@ void kvm_invalidate_pcid(struct kvm_vcpu *vcpu, unsigned long pcid)
 
 	kvm_mmu_free_roots(vcpu->kvm, mmu, roots_to_free);
 }
+#endif /* !__PKVM_HYP__ */
 
 int kvm_emulate_rdpmc(struct kvm_vcpu *vcpu)
 {
+#ifndef __PKVM_HYP__
 	u32 pmc = kvm_ecx_read(vcpu);
 	u64 data;
 
@@ -816,9 +818,13 @@ int kvm_emulate_rdpmc(struct kvm_vcpu *vcpu)
 	kvm_eax_write(vcpu, data);
 	kvm_edx_write(vcpu, data >> 32);
 	return kvm_skip_emulated_instruction(vcpu);
+#else
+	/* The pKVM hypervisor doesn't support PMU emulation. */
+	kvm_inject_gp(vcpu, 0);
+	return 1;
+#endif
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_emulate_rdpmc);
-#endif /* !__PKVM_HYP__ */
 
 int kvm_emulate_as_nop(struct kvm_vcpu *vcpu)
 {
