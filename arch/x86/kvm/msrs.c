@@ -569,6 +569,7 @@ static int kvm_get_feature_msr(struct kvm_vcpu *vcpu, u32 index, u64 *data,
 	}
 	return 0;
 }
+#endif /* !__PKVM_HYP__ */
 
 typedef int (*msr_access_t)(struct kvm_vcpu *vcpu, u32 index, u64 *data,
 			    bool host_initiated);
@@ -578,7 +579,9 @@ static __always_inline int kvm_do_msr_access(struct kvm_vcpu *vcpu, u32 msr,
 					     enum kvm_msr_access rw,
 					     msr_access_t msr_access_fn)
 {
+#ifndef __PKVM_HYP__
 	const char *op = rw == MSR_TYPE_W ? "wrmsr" : "rdmsr";
+#endif
 	int ret;
 
 	BUILD_BUG_ON(rw != MSR_TYPE_R && rw != MSR_TYPE_W);
@@ -591,6 +594,7 @@ static __always_inline int kvm_do_msr_access(struct kvm_vcpu *vcpu, u32 msr,
 	if (ret && rw == MSR_TYPE_R)
 		*data = 0;
 
+#ifndef __PKVM_HYP__
 	if (ret != KVM_MSR_RET_UNSUPPORTED)
 		return ret;
 
@@ -613,8 +617,12 @@ static __always_inline int kvm_do_msr_access(struct kvm_vcpu *vcpu, u32 msr,
 		kvm_pr_unimpl("ignored %s: 0x%x data 0x%llx\n", op, msr, *data);
 
 	return 0;
+#else
+	return ret;
+#endif
 }
 
+#ifndef __PKVM_HYP__
 static int do_get_feature_msr(struct kvm_vcpu *vcpu, unsigned index, u64 *data)
 {
 	return kvm_do_msr_access(vcpu, index, data, true, MSR_TYPE_R,
@@ -919,14 +927,12 @@ static int __kvm_get_msr(struct kvm_vcpu *vcpu, u32 index, u64 *data,
 	return ret;
 }
 
-#ifndef __PKVM_HYP__
 static int kvm_get_msr_ignored_check(struct kvm_vcpu *vcpu,
 				     u32 index, u64 *data, bool host_initiated)
 {
 	return kvm_do_msr_access(vcpu, index, data, host_initiated, MSR_TYPE_R,
 				 __kvm_get_msr);
 }
-#endif /* !__PKVM_HYP__ */
 
 int kvm_msr_write(struct kvm_vcpu *vcpu, u32 index, u64 data)
 {
@@ -938,18 +944,19 @@ int kvm_msr_read(struct kvm_vcpu *vcpu, u32 index, u64 *data)
 	return __kvm_get_msr(vcpu, index, data, true);
 }
 
-#ifndef __PKVM_HYP__
 int __kvm_emulate_msr_read(struct kvm_vcpu *vcpu, u32 index, u64 *data)
 {
 	return kvm_get_msr_ignored_check(vcpu, index, data, false);
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(__kvm_emulate_msr_read);
 
+#ifndef __PKVM_HYP__
 int __kvm_emulate_msr_write(struct kvm_vcpu *vcpu, u32 index, u64 data)
 {
 	return kvm_set_msr_ignored_check(vcpu, index, data, false);
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(__kvm_emulate_msr_write);
+#endif /* !__PKVM_HYP__ */
 
 int kvm_emulate_msr_read(struct kvm_vcpu *vcpu, u32 index, u64 *data)
 {
@@ -960,6 +967,7 @@ int kvm_emulate_msr_read(struct kvm_vcpu *vcpu, u32 index, u64 *data)
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_emulate_msr_read);
 
+#ifndef __PKVM_HYP__
 int kvm_emulate_msr_write(struct kvm_vcpu *vcpu, u32 index, u64 data)
 {
 	if (!kvm_msr_allowed(vcpu, index, KVM_MSR_FILTER_WRITE))
@@ -1091,12 +1099,18 @@ static int kvm_msr_user_space(struct kvm_vcpu *vcpu, u32 index,
 
 	return 1;
 }
+#endif /* !__PKVM_HYP__ */
 
 static int __kvm_emulate_rdmsr(struct kvm_vcpu *vcpu, u32 msr, int reg,
 			       int (*complete_rdmsr)(struct kvm_vcpu *))
 {
 	u64 data;
 	int r;
+
+#ifdef __PKVM_HYP__
+	if (pkvm_host_has_emulated_msr(vcpu->kvm, msr))
+		return 0;
+#endif
 
 	r = kvm_emulate_msr_read(vcpu, msr, &data);
 
@@ -1110,10 +1124,12 @@ static int __kvm_emulate_rdmsr(struct kvm_vcpu *vcpu, u32 msr, int reg,
 			kvm_register_write(vcpu, reg, data);
 		}
 	} else {
+#ifndef __PKVM_HYP__
 		/* MSR read failed? See if we should ask user space */
 		if (kvm_msr_user_space(vcpu, msr, KVM_EXIT_X86_RDMSR, 0,
 				       complete_rdmsr, r))
 			return 0;
+#endif
 		trace_kvm_msr_read_ex(msr);
 	}
 
@@ -1122,11 +1138,16 @@ static int __kvm_emulate_rdmsr(struct kvm_vcpu *vcpu, u32 msr, int reg,
 
 int kvm_emulate_rdmsr(struct kvm_vcpu *vcpu)
 {
+#ifndef __PKVM_HYP__
 	return __kvm_emulate_rdmsr(vcpu, kvm_ecx_read(vcpu), -1,
 				   complete_fast_rdmsr);
+#else
+	return __kvm_emulate_rdmsr(vcpu, kvm_ecx_read(vcpu), -1, NULL);
+#endif
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_emulate_rdmsr);
 
+#ifndef __PKVM_HYP__
 int kvm_emulate_rdmsr_imm(struct kvm_vcpu *vcpu, u32 msr, int reg)
 {
 	vcpu->arch.cui_rdmsr_imm_reg = reg;
