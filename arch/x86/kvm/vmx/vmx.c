@@ -9652,10 +9652,11 @@ static void update_protected_vcpu_state(struct kvm_vcpu *vcpu,
 			memcpy(&val, &host_rax, size);
 			kvm_rax_write(vcpu, val);
 		}
-
+		fallthrough;
+	}
+	case EXIT_REASON_WBINVD:
 		WARN_ON_ONCE(kvm_skip_emulated_instruction(vcpu) != 1);
 		break;
-	}
 	case EXIT_REASON_MSR_READ:
 	case EXIT_REASON_MSR_WRITE:
 		if (!pkvm_host_has_emulated_msr(vcpu->kvm, kvm_rcx_read(vcpu)))
