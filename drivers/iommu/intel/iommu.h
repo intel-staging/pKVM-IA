@@ -62,6 +62,8 @@
 #define CONTEXT_TT_PASS_THROUGH 2
 #define CONTEXT_PASIDE		BIT_ULL(3)
 
+#define DEFAULT_DOMAIN_ADDRESS_WIDTH 57
+
 /*
  * Intel IOMMU register specification per version 1.0 public spec.
  */
@@ -1327,8 +1329,62 @@ extern const struct iommu_ops intel_iommu_ops;
 
 #ifdef CONFIG_INTEL_IOMMU
 extern int intel_iommu_sm;
-int iommu_calculate_agaw(struct intel_iommu *iommu);
-int iommu_calculate_max_sagaw(struct intel_iommu *iommu);
+
+/*
+ * Calculate the Supported Adjusted Guest Address Widths of an IOMMU.
+ * Refer to 11.4.2 of the VT-d spec for the encoding of each bit of
+ * the returned SAGAW.
+ */
+static inline unsigned long __iommu_calculate_sagaw(struct intel_iommu *iommu)
+{
+	unsigned long fl_sagaw, sl_sagaw;
+
+	fl_sagaw = BIT(2) | (cap_fl5lp_support(iommu->cap) ? BIT(3) : 0);
+	sl_sagaw = cap_sagaw(iommu->cap);
+
+	/* Second level only. */
+	if (!sm_supported(iommu) || !ecap_flts(iommu->ecap))
+		return sl_sagaw;
+
+	/* First level only. */
+	if (!ecap_slts(iommu->ecap))
+		return fl_sagaw;
+
+	return fl_sagaw & sl_sagaw;
+}
+
+static inline int __iommu_calculate_agaw(struct intel_iommu *iommu, int max_gaw)
+{
+	unsigned long sagaw;
+	int agaw;
+
+	sagaw = __iommu_calculate_sagaw(iommu);
+	for (agaw = width_to_agaw(max_gaw); agaw >= 0; agaw--) {
+		if (test_bit(agaw, &sagaw))
+			break;
+	}
+
+	return agaw;
+}
+
+/*
+ * Calculate max SAGAW for each iommu.
+ */
+static inline int iommu_calculate_max_sagaw(struct intel_iommu *iommu)
+{
+	return __iommu_calculate_agaw(iommu, MAX_AGAW_WIDTH);
+}
+
+/*
+ * calculate agaw for each iommu.
+ * "SAGAW" may be different across iommus, use a default agaw, and
+ * get a supported less agaw for iommus that don't support the default agaw.
+ */
+static inline int iommu_calculate_agaw(struct intel_iommu *iommu)
+{
+	return __iommu_calculate_agaw(iommu, DEFAULT_DOMAIN_ADDRESS_WIDTH);
+}
+
 int ecmd_submit_sync(struct intel_iommu *iommu, u8 ecmd, u64 oa, u64 ob);
 
 static inline bool ecmd_has_pmu_essential(struct intel_iommu *iommu)

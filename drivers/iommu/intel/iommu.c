@@ -44,8 +44,6 @@
 #define IOAPIC_RANGE_END	(0xfeefffff)
 #define IOVA_START_ADDR		(0x1000)
 
-#define DEFAULT_DOMAIN_ADDRESS_WIDTH 57
-
 #define __DOMAIN_MAX_PFN(gaw)  ((((uint64_t)1) << ((gaw) - VTD_PAGE_SHIFT)) - 1)
 #define __DOMAIN_MAX_ADDR(gaw) ((((uint64_t)1) << (gaw)) - 1)
 
@@ -280,61 +278,6 @@ static int domain_pfn_supported(struct dmar_domain *domain, unsigned long pfn)
 	int addr_width = agaw_to_width(domain->agaw) - VTD_PAGE_SHIFT;
 
 	return !(addr_width < BITS_PER_LONG && pfn >> addr_width);
-}
-
-/*
- * Calculate the Supported Adjusted Guest Address Widths of an IOMMU.
- * Refer to 11.4.2 of the VT-d spec for the encoding of each bit of
- * the returned SAGAW.
- */
-static unsigned long __iommu_calculate_sagaw(struct intel_iommu *iommu)
-{
-	unsigned long fl_sagaw, sl_sagaw;
-
-	fl_sagaw = BIT(2) | (cap_fl5lp_support(iommu->cap) ? BIT(3) : 0);
-	sl_sagaw = cap_sagaw(iommu->cap);
-
-	/* Second level only. */
-	if (!sm_supported(iommu) || !ecap_flts(iommu->ecap))
-		return sl_sagaw;
-
-	/* First level only. */
-	if (!ecap_slts(iommu->ecap))
-		return fl_sagaw;
-
-	return fl_sagaw & sl_sagaw;
-}
-
-static int __iommu_calculate_agaw(struct intel_iommu *iommu, int max_gaw)
-{
-	unsigned long sagaw;
-	int agaw;
-
-	sagaw = __iommu_calculate_sagaw(iommu);
-	for (agaw = width_to_agaw(max_gaw); agaw >= 0; agaw--) {
-		if (test_bit(agaw, &sagaw))
-			break;
-	}
-
-	return agaw;
-}
-
-/*
- * Calculate max SAGAW for each iommu.
- */
-int iommu_calculate_max_sagaw(struct intel_iommu *iommu)
-{
-	return __iommu_calculate_agaw(iommu, MAX_AGAW_WIDTH);
-}
-
-/*
- * calculate agaw for each iommu.
- * "SAGAW" may be different across iommus, use a default agaw, and
- * get a supported less agaw for iommus that don't support the default agaw.
- */
-int iommu_calculate_agaw(struct intel_iommu *iommu)
-{
-	return __iommu_calculate_agaw(iommu, DEFAULT_DOMAIN_ADDRESS_WIDTH);
 }
 
 static bool iommu_paging_structure_coherency(struct intel_iommu *iommu)

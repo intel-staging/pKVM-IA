@@ -946,6 +946,20 @@ int pkvm_init_iommu(unsigned long mem_base, unsigned long nr_pages)
 
 		piommu->iommu.cap = readq(piommu->iommu.reg + DMAR_CAP_REG);
 		piommu->iommu.ecap = readq(piommu->iommu.reg + DMAR_ECAP_REG);
+		piommu->iommu.agaw = iommu_calculate_agaw(&piommu->iommu);
+		if (piommu->iommu.agaw < 0) {
+			pkvm_err("pkvm: %s: no valid agaw for iommu (seq_id = %d)\n",
+					__func__, piommu->iommu.seq_id);
+			return -EFAULT;
+		}
+
+		piommu->iommu.msagaw = iommu_calculate_max_sagaw(&piommu->iommu);
+		if (piommu->iommu.msagaw < 0) {
+			pkvm_err("pkvm: %s: no valid max agaw for iommu (seq_id = %d)\n",
+					__func__, piommu->iommu.seq_id);
+			return -EFAULT;
+		}
+
 		gsts = readl(piommu->iommu.reg + DMAR_GSTS_REG);
 		/* cache the enabled features from Global Status register */
 		piommu->iommu.gcmd = gsts & DMAR_GSTS_EN_BITS;
