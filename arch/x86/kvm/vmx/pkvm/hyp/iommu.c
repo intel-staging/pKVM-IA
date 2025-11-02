@@ -19,6 +19,11 @@
 #include "bug.h"
 #include "iommu.h"
 
+/*
+ * pkvm copy of scalable mode enabled flag.
+ */
+int intel_iommu_sm;
+
 #define for_each_valid_iommu(p)						\
 	for ((p) = iommus; (p) < iommus + PKVM_MAX_IOMMU_NUM; (p)++)	\
 		if (!(p) || !(p)->iommu.reg_phys) {			\
@@ -332,9 +337,10 @@ static struct pkvm_ptdev *iommu_find_ptdev(struct pkvm_iommu *iommu, u16 bdf, u3
 	return NULL;
 }
 
-static inline bool iommu_coherency(u64 ecap)
+static inline bool iommu_coherency(struct intel_iommu *iommu)
 {
-	return ecap_smts(ecap) ? ecap_smpwc(ecap) : ecap_coherent(ecap);
+	return sm_supported(iommu) ?
+		ecap_smpwc(iommu->ecap) : ecap_coherent(iommu->ecap);
 }
 
 static struct pkvm_ptdev *iommu_add_ptdev(struct pkvm_iommu *iommu, u16 bdf, u32 pasid)
@@ -342,7 +348,7 @@ static struct pkvm_ptdev *iommu_add_ptdev(struct pkvm_iommu *iommu, u16 bdf, u32
 	struct pkvm_ptdev *ptdev = pkvm_get_ptdev(bdf, pasid);
 
 	if (!ptdev) {
-		ptdev = pkvm_alloc_ptdev(bdf, pasid, iommu_coherency(iommu->iommu.ecap));
+		ptdev = pkvm_alloc_ptdev(bdf, pasid, iommu_coherency(&iommu->iommu));
 		if (!ptdev)
 			return NULL;
 	}
@@ -507,7 +513,7 @@ static bool sync_shadow_context_entry(struct id_sync_data *sdata)
 	u8 tt, aw;
 	u16 bdf, did;
 
-	if (ecap_smts(sdata->iommu_ecap)) {
+	if (sm_supported(&iommu->iommu)) {
 		if (sdata->guest_ptep && sdata->shadow_pa) {
 			bdf = sdata->vaddr >> DEVFN_SHIFT;
 			tmp.hi = guest_ce->hi;
@@ -799,8 +805,9 @@ static bool iommu_id_sync_entry(struct id_sync_data *sdata)
 {
 	bool ret = false;
 	struct pkvm_pgtable *shadow_id = sdata->shadow_id;
+	struct pkvm_iommu *iommu = pgt_to_pkvm_iommu(shadow_id);
 
-	if (ecap_smts(sdata->iommu_ecap)) {
+	if (sm_supported(&iommu->iommu)) {
 		switch (sdata->level) {
 		case IOMMU_PASID_TABLE:
 			ret = sync_shadow_pasid_table_entry(sdata);
@@ -849,7 +856,7 @@ static int initialize_iommu_pgt(struct pkvm_iommu *iommu)
 	struct pkvm_pgtable_cap cap;
 	int ret;
 
-	if (ecap_smts(iommu->iommu.ecap)) {
+	if (sm_supported(&iommu->iommu)) {
 		cap.level = IOMMU_SM_ROOT;
 		iommu_ops = &iommu_sm_id_ops;
 	} else {
@@ -1051,7 +1058,7 @@ static int init_sync_id_data(struct id_sync_data *sync_data,
 	int idx = shadow_id->pgt_ops->pgt_entry_to_index(vaddr, level);
 	int entry_size = shadow_id->pgt_ops->pgt_level_entry_size(level);
 
-	if (ecap_smts(iommu->iommu.ecap)) {
+	if (sm_supported(&iommu->iommu)) {
 		switch (level) {
 		case IOMMU_PASID_TABLE:
 			sync_data->p_entry = *((struct pasid_entry *)guest_ptep);
@@ -1177,7 +1184,7 @@ static int sync_shadow_id_cb(struct pkvm_pgtable *vpgt, unsigned long vaddr,
 		 * So non-zero DID means a real DID from host software.
 		 */
 		if (data->did) {
-			u16 did = ecap_smts(iommu->iommu.ecap)
+			u16 did = sm_supported(&iommu->iommu)
 				? pasid_get_domain_id(guest_ptep)
 				: context_lm_get_did(guest_ptep);
 
@@ -1267,7 +1274,7 @@ static int sync_shadow_id(struct pkvm_iommu *iommu, unsigned long vaddr,
 		return 0;
 
 retry:
-	if (ecap_smts(iommu->iommu.ecap))
+	if (sm_supported(&iommu->iommu))
 		arg.shadow_pa[IOMMU_SM_ROOT] = iommu->pgt.root_pa;
 	else
 		arg.shadow_pa[IOMMU_LM_ROOT] = iommu->pgt.root_pa;
@@ -1288,7 +1295,7 @@ static void enable_qi(struct pkvm_iommu *iommu)
 	int dw, qs;
 	u32 sts;
 
-	dw = !!ecap_smts(iommu->iommu.ecap);
+	dw = sm_supported(&iommu->iommu);
 	qs = fls(iommu->qi.free_cnt >> (7 + !dw)) - 1;
 
 	/* Disable QI */
@@ -1589,7 +1596,7 @@ static void set_root_table(struct pkvm_iommu *iommu)
 	u32 sts;
 
 	/* Set scalable mode */
-	if (ecap_smts(iommu->iommu.ecap))
+	if (sm_supported(&iommu->iommu))
 		val |= DMA_RTADDR_SMT;
 
 	writeq(val, reg + DMAR_RTADDR_REG);
@@ -1614,7 +1621,7 @@ static void set_root_table(struct pkvm_iommu *iommu)
 	PKVM_IOMMU_WAIT_OP(reg + DMAR_GSTS_REG, readl, (sts & DMA_GSTS_RTPS), sts);
 
 	flush_context_cache(iommu, 0, 0, 0, DMA_CCMD_GLOBAL_INVL);
-	if (ecap_smts(iommu->iommu.ecap))
+	if (sm_supported(&iommu->iommu))
 		flush_pasid_cache(iommu, 0, QI_PC_GLOBAL, 0);
 	flush_iotlb(iommu, 0, 0, 0, DMA_TLB_GLOBAL_FLUSH);
 }
@@ -1677,7 +1684,7 @@ free_shadow:
 static int context_cache_invalidate(struct pkvm_iommu *iommu, struct qi_desc *desc)
 {
 	u16 sid = QI_DESC_CC_SID(desc->qw0);
-	u16 did = ecap_smts(iommu->iommu.ecap) ? 0 : QI_DESC_CC_DID(desc->qw0);
+	u16 did = sm_supported(&iommu->iommu) ? 0 : QI_DESC_CC_DID(desc->qw0);
 	u64 granu = QI_DESC_CC_GRANU(desc->qw0) << DMA_CCMD_INVL_GRANU_OFFSET;
 	unsigned long start, end;
 	int ret;
@@ -1702,7 +1709,7 @@ static int context_cache_invalidate(struct pkvm_iommu *iommu, struct qi_desc *de
 		ret = sync_shadow_id(iommu, start, end, did, NULL);
 		break;
 	case DMA_CCMD_DEVICE_INVL:
-		if (ecap_smts(iommu->iommu.ecap)) {
+		if (sm_supported(&iommu->iommu)) {
 			start = (unsigned long)sid << DEVFN_SHIFT;
 			end = ((unsigned long)sid + 1) << DEVFN_SHIFT;
 		} else {
@@ -1863,7 +1870,7 @@ static int handle_descriptor(struct pkvm_iommu *iommu, struct qi_desc *desc)
 		ret = pasid_cache_invalidate(iommu, desc);
 		break;
 	case QI_IOTLB_TYPE:
-		if (!ecap_smts(iommu->iommu.ecap))
+		if (!sm_supported(&iommu->iommu))
 			ret = iotlb_lm_invalidate(iommu, desc);
 		break;
 	default:
@@ -2001,7 +2008,7 @@ static void handle_gcmd_te(struct pkvm_iommu *iommu, bool en)
 	pkvm_dbg("pkvm: %s: disable TE\n", __func__);
 out:
 	flush_context_cache(iommu, 0, 0, 0, DMA_CCMD_GLOBAL_INVL);
-	if (ecap_smts(iommu->iommu.ecap))
+	if (sm_supported(&iommu->iommu))
 		flush_pasid_cache(iommu, 0, QI_PC_GLOBAL, 0);
 	flush_iotlb(iommu, 0, 0, 0, DMA_TLB_GLOBAL_FLUSH);
 
@@ -2033,7 +2040,7 @@ static void handle_gcmd_srtp(struct pkvm_iommu *iommu)
 			return;
 
 		flush_context_cache(iommu, 0, 0, 0, DMA_CCMD_GLOBAL_INVL);
-		if (ecap_smts(iommu->iommu.ecap))
+		if (sm_supported(&iommu->iommu))
 			flush_pasid_cache(iommu, 0, QI_PC_GLOBAL, 0);
 		flush_iotlb(iommu, 0, 0, 0, DMA_TLB_GLOBAL_FLUSH);
 	}
@@ -2343,7 +2350,7 @@ int pkvm_iommu_sync(u16 bdf, u32 pasid)
 
 	old_did = ptdev->did;
 
-	if (ecap_smts(iommu->iommu.ecap)) {
+	if (sm_supported(&iommu->iommu)) {
 		id_addr = ((unsigned long)bdf << DEVFN_SHIFT) |
 			  ((unsigned long)pasid & ((1UL << MAX_NR_PASID_BITS) - 1));
 		id_addr_end = id_addr + 1;
@@ -2357,7 +2364,7 @@ int pkvm_iommu_sync(u16 bdf, u32 pasid)
 	if (!ret) {
 		if (old_did != ptdev->did) {
 			/* Flush pasid cache and IOTLB for the valid old_did */
-			if (ecap_smts(iommu->iommu.ecap))
+			if (sm_supported(&iommu->iommu))
 				flush_pasid_cache(iommu, old_did, QI_PC_PASID_SEL, pasid);
 			else
 				flush_context_cache(iommu, old_did, 0, 0, DMA_CCMD_DOMAIN_INVL);
@@ -2365,7 +2372,7 @@ int pkvm_iommu_sync(u16 bdf, u32 pasid)
 		}
 
 		/* Flush pasid cache and IOTLB to make sure no stale TLB for the new did */
-		if (ecap_smts(iommu->iommu.ecap))
+		if (sm_supported(&iommu->iommu))
 			flush_pasid_cache(iommu, ptdev->did, QI_PC_PASID_SEL, pasid);
 		else
 			flush_context_cache(iommu, ptdev->did, 0, 0, DMA_CCMD_DOMAIN_INVL);
@@ -2389,7 +2396,7 @@ bool pkvm_iommu_coherency(u16 bdf, u32 pasid)
 	if (!iommu)
 		return false;
 
-	return iommu_coherency(iommu->iommu.ecap);
+	return iommu_coherency(&iommu->iommu);
 }
 
 struct iotlb_flush_data {

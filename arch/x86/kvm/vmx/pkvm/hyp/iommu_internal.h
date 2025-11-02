@@ -90,7 +90,7 @@ enum sm_level {
 #define IOMMU_MAX_VADDR		BIT(IOMMU_MAX_VADDR_LEN)
 
 #define MAX_NUM_OF_ADDRESS_SPACE(_iommu)		\
-	(ecap_smts((_iommu)->iommu.ecap) ?		\
+	(sm_supported(&(_iommu)->iommu) ?		\
 		IOMMU_MAX_VADDR : IOMMU_LM_MAX_VADDR)
 
 #define DMAR_GSTS_EN_BITS	(DMA_GCMD_TE | DMA_GCMD_EAFL | \

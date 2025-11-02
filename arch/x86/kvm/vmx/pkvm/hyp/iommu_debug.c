@@ -63,7 +63,7 @@ static struct context_entry *context_addr(struct pkvm_iommu *iommu, u8 bus, u8 d
 	u64 *entry;
 
 	entry = &root->lo;
-	if (ecap_smts(iommu->iommu.ecap)) {
+	if (sm_supported(&iommu->iommu)) {
 		if (devfn >= 0x80) {
 			devfn -= 0x80;
 			entry = &root->hi;
@@ -170,7 +170,7 @@ static void ctx_tbl_walk(struct pkvm_iommu *iommu, u16 bus)
 		tbl_wlk.rt_entry = &root_entry[bus];
 		tbl_wlk.ctx_entry = context;
 
-		if (ecap_smts(iommu->iommu.ecap)) {
+		if (sm_supported(&iommu->iommu)) {
 			pasid_dir_ptr = context->lo & VTD_PAGE_MASK;
 			pasid_dir_size = get_pasid_dir_size(context);
 			pasid_dir_walk(&tbl_wlk, pasid_dir_ptr, pasid_dir_size);

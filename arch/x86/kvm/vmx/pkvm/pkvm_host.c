@@ -159,9 +159,10 @@ static void scan_devices_in_satc(void)
  * Check for the coherency of paging structures accessed through pasid table
  * entries (in scalable mode) or context table entries (in legacy mode).
  */
-static inline bool is_iommu_coherent(u64 ecap)
+static inline bool is_iommu_coherent(struct intel_iommu *iommu)
 {
-	return ecap_smts(ecap) ? !!ecap_smpwc(ecap) : !!ecap_coherent(ecap);
+	return sm_supported(iommu) ?
+		!!ecap_smpwc(iommu->ecap) : !!ecap_coherent(iommu->ecap);
 }
 
 static __init int check_and_init_iommu(struct pkvm_hyp *pkvm)
@@ -209,6 +210,7 @@ static __init int check_and_init_iommu(struct pkvm_hyp *pkvm)
 	if ((pkvm->vmx_cap.ept & VMX_EPT_1GB_PAGE_BIT))
 		pgsz_mask |= 1 << PG_LEVEL_1G;
 
+	pkvm_sym(intel_iommu_sm) = intel_iommu_sm;
 	pkvm->iommu_coherent = true;
 	for_each_drhd_unit(drhd) {
 		int level = 0, mask = 1 << PG_LEVEL_4K;
@@ -251,7 +253,7 @@ static __init int check_and_init_iommu(struct pkvm_hyp *pkvm)
 		 * If pkvm IOMMU works in scalable mode, it requires to use nested translation,
 		 * unless the host will use this IOMMU in passthrough mode only.
 		 */
-		if (ecap_smts(ecap) && !ecap_nest(ecap)) {
+		if (sm_supported(drhd->iommu) && !ecap_nest(ecap)) {
 			pr_warn("pkvm: drhd reg_base 0x%llx: nested translation not supported\n",
 				drhd->reg_base_addr);
 			pr_warn("pkvm: drhd reg_base 0x%llx: do not use this iommu in non-passthrough mode!\n",
@@ -261,7 +263,7 @@ static __init int check_and_init_iommu(struct pkvm_hyp *pkvm)
 		/*
 		 * Check for the coherency of the paging structure access.
 		 */
-		if (!is_iommu_coherent(ecap))
+		if (!is_iommu_coherent(drhd->iommu))
 			pkvm->iommu_coherent = false;
 
 		info->reg_phys = drhd->reg_base_addr;
