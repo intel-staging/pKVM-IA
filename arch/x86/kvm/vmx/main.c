@@ -1104,6 +1104,12 @@ static int __init vt_init(void)
 	if (r)
 		return r;
 
+#ifdef CONFIG_KVM_INTEL_TDX
+	/* TDX is not supported when pKVM is enabled. */
+	if (enable_pkvm)
+		enable_tdx = false;
+#endif
+
 	/*
 	 * TDX and VMX have different vCPU structures.  Calculate the
 	 * maximum size/align so that kvm_init() can use the larger
