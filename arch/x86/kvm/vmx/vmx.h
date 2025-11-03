@@ -753,6 +753,7 @@ void vmx_exit(void);
 #ifdef CONFIG_PKVM_INTEL
 
 int __init vmx_pkvm_init(void);
+void pkvm_host_vmexit_entry(void);
 
 #endif /* CONFIG_PKVM_INTEL */
 
