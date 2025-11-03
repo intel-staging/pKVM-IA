@@ -36,6 +36,7 @@ PKVM_DECLARE(void, pkvm_early_alloc_init, (void *virt, unsigned long size));
 PKVM_DECLARE(int, pkvm_setup_per_cpu, (int cpu, unsigned long base,
 				       unsigned long pcpu_pa, unsigned long vcpu_pa));
 PKVM_DECLARE(unsigned int, pkvm_per_cpu_nr_pages, (void));
+PKVM_DECLARE(unsigned long, pkvm_per_cpu_offset, (int cpu));
 
 #ifdef CONFIG_PKVM_INTEL
 unsigned long __init pkvm_vmx_reserve_pages(void);
