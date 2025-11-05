@@ -1006,9 +1006,15 @@ fastpath_t handle_fastpath_wrmsr(struct kvm_vcpu *vcpu)
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(handle_fastpath_wrmsr);
 
+/*
+ * The immediate forms of RDMSR and WRMSRNS are only valid in 64-bit mode, so
+ * always access the full 64-bit register. Use the raw accessors rather than
+ * kvm_register_{read,write}(), which check the vCPU's mode. That is not
+ * possible when the guest state is protected, e.g. for a pKVM protected VM.
+ */
 fastpath_t handle_fastpath_wrmsr_imm(struct kvm_vcpu *vcpu, u32 msr, int reg)
 {
-	return __handle_fastpath_wrmsr(vcpu, msr, kvm_register_read(vcpu, reg));
+	return __handle_fastpath_wrmsr(vcpu, msr, kvm_register_read_raw(vcpu, reg));
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(handle_fastpath_wrmsr_imm);
 
@@ -1055,9 +1061,10 @@ static int complete_fast_rdmsr(struct kvm_vcpu *vcpu)
 
 static int complete_fast_rdmsr_imm(struct kvm_vcpu *vcpu)
 {
+	/* See handle_fastpath_wrmsr_imm() for why the raw accessor is used. */
 	if (!vcpu->run->msr.error)
-		kvm_register_write(vcpu, vcpu->arch.cui_rdmsr_imm_reg,
-				   vcpu->run->msr.data);
+		kvm_register_write_raw(vcpu, vcpu->arch.cui_rdmsr_imm_reg,
+				       vcpu->run->msr.data);
 
 	return complete_fast_msr_access(vcpu);
 }
@@ -1117,7 +1124,8 @@ static int __kvm_emulate_rdmsr(struct kvm_vcpu *vcpu, u32 msr, int reg,
 			kvm_eax_write(vcpu, data);
 			kvm_edx_write(vcpu, data >> 32);
 		} else {
-			kvm_register_write(vcpu, reg, data);
+			/* RDMSR imm, see handle_fastpath_wrmsr_imm(). */
+			kvm_register_write_raw(vcpu, reg, data);
 		}
 	} else {
 #ifndef __PKVM_HYP__
@@ -1143,15 +1151,17 @@ int kvm_emulate_rdmsr(struct kvm_vcpu *vcpu)
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_emulate_rdmsr);
 
-#ifndef __PKVM_HYP__
 int kvm_emulate_rdmsr_imm(struct kvm_vcpu *vcpu, u32 msr, int reg)
 {
+#ifndef __PKVM_HYP__
 	vcpu->arch.cui_rdmsr_imm_reg = reg;
 
 	return __kvm_emulate_rdmsr(vcpu, msr, reg, complete_fast_rdmsr_imm);
+#else
+	return __kvm_emulate_rdmsr(vcpu, msr, reg, NULL);
+#endif
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_emulate_rdmsr_imm);
-#endif /* !__PKVM_HYP__ */
 
 static int __kvm_emulate_wrmsr(struct kvm_vcpu *vcpu, u32 msr, u64 data)
 {
@@ -1188,13 +1198,14 @@ int kvm_emulate_wrmsr(struct kvm_vcpu *vcpu)
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_emulate_wrmsr);
 
-#ifndef __PKVM_HYP__
 int kvm_emulate_wrmsr_imm(struct kvm_vcpu *vcpu, u32 msr, int reg)
 {
-	return __kvm_emulate_wrmsr(vcpu, msr, kvm_register_read(vcpu, reg));
+	/* See handle_fastpath_wrmsr_imm() for why the raw accessor is used. */
+	return __kvm_emulate_wrmsr(vcpu, msr, kvm_register_read_raw(vcpu, reg));
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_emulate_wrmsr_imm);
 
+#ifndef __PKVM_HYP__
 int kvm_emulator_get_msr_with_filter(struct kvm_vcpu *vcpu, u32 msr_index,
 				     u64 *pdata)
 {
