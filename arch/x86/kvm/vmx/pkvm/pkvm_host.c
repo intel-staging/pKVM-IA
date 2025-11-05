@@ -239,6 +239,15 @@ static __init int check_and_init_iommu(struct pkvm_hyp *pkvm)
 		ecap = readq(drhd->iommu->reg + DMAR_ECAP_REG);
 
 		/*
+		 * pkvm expects Queued Invalidation support for simplicity and efficiency.
+		 */
+		if (!ecap_qis(ecap)) {
+			pr_warn("pkvm: drhd reg_base 0x%llx: queued Invalidation not supported\n",
+					drhd->reg_base_addr);
+			return -EINVAL;
+		}
+
+		/*
 		 * If pkvm IOMMU works in scalable mode, it requires to use nested translation,
 		 * unless the host will use this IOMMU in passthrough mode only.
 		 */
