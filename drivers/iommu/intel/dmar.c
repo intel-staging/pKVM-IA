@@ -31,6 +31,7 @@
 #include <asm/irq_remapping.h>
 
 #include "iommu.h"
+#include "iommu_pkvm.h"
 #include "../irq_remapping.h"
 #include "../iommu-pages.h"
 #include "perf.h"
@@ -1527,6 +1528,11 @@ void qi_global_iec(struct intel_iommu *iommu)
 {
 	struct qi_desc desc;
 
+	if (pkvm_pviommu_enabled()) {
+		pkvm_hc_qi_iec_flush(iommu->reg_phys, true, 0, 0);
+		return;
+	}
+
 	desc.qw0 = QI_IEC_TYPE;
 	desc.qw1 = 0;
 	desc.qw2 = 0;
@@ -1730,6 +1736,9 @@ int dmar_enable_qi(struct intel_iommu *iommu)
 	 * if the remapping hardware supports scalable mode translation.
 	 */
 	order = ecap_smts(iommu->ecap) ? 1 : 0;
+#ifdef CONFIG_PKVM_INTEL_PVIOMMU
+	order++;
+#endif
 	desc = iommu_alloc_pages_node(iommu->node, GFP_ATOMIC, order);
 	if (!desc) {
 		kfree(qi);
@@ -1738,7 +1747,7 @@ int dmar_enable_qi(struct intel_iommu *iommu)
 	}
 
 	qi->desc = desc;
-
+#ifndef CONFIG_PKVM_INTEL_PVIOMMU
 	qi->desc_status = kcalloc(QI_LENGTH, sizeof(int), GFP_ATOMIC);
 	if (!qi->desc_status) {
 		iommu_free_page(qi->desc);
@@ -1746,7 +1755,14 @@ int dmar_enable_qi(struct intel_iommu *iommu)
 		iommu->qi = NULL;
 		return -ENOMEM;
 	}
-
+#else
+	/*
+	 * Allocate desc_status contiguously after desc, so that it's easier
+	 * to donate in pKVM hypervisor. Note that this allocation may happen
+	 * even before pKVM is enabled, during IRQ remapping setup.
+	 */
+	qi->desc_status = (int *)((u64)desc + (1 << (order - 1)) * VTD_PAGE_SIZE);
+#endif
 	raw_spin_lock_init(&qi->q_lock);
 
 	__dmar_enable_qi(iommu);

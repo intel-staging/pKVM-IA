@@ -22,6 +22,7 @@
 #include <asm/posted_intr.h>
 
 #include "iommu.h"
+#include "iommu_pkvm.h"
 #include "../irq_remapping.h"
 #include "../iommu-pages.h"
 #include "cap_audit.h"
@@ -149,6 +150,9 @@ static int alloc_irte(struct intel_iommu *iommu,
 static int qi_flush_iec(struct intel_iommu *iommu, int index, int mask)
 {
 	struct qi_desc desc;
+
+	if (pkvm_pviommu_enabled())
+		return pkvm_hc_qi_iec_flush(iommu->reg_phys, false, index, mask);
 
 	desc.qw0 = QI_IEC_IIDEX(index) | QI_IEC_TYPE | QI_IEC_IM(mask)
 		   | QI_IEC_SELECTIVE;
