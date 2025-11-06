@@ -303,6 +303,39 @@ static int create_iommu(void)
 	return pkvm_init_iommu(pkvm_virt_to_phys(iommu_mem_base), nr_pages);
 }
 
+static void __pkvm_unset_pv_param(void)
+{
+	void *pv_param_va = this_cpu_read(pv_param);
+	size_t size = sizeof(union pkvm_pv_param);
+
+	if (!pv_param_va)
+		return;
+
+	this_cpu_write(pv_param, NULL);
+	__pkvm_unpin_shared_mem(__pkvm_pa(pv_param_va), size);
+	__pkvm_host_unshare_hyp(__pkvm_pa(pv_param_va), size);
+}
+
+static int __pkvm_set_pv_param(unsigned long pv_param_gpa)
+{
+	unsigned long pv_param_pa = host_gpa2hpa(pv_param_gpa);
+	size_t size = sizeof(union pkvm_pv_param);
+	int ret;
+
+	ret = __pkvm_host_share_hyp(pv_param_pa, size);
+	if (ret)
+		return ret;
+
+	ret = __pkvm_pin_shared_mem(pv_param_pa, size);
+	if (ret) {
+		__pkvm_host_unshare_hyp(pv_param_pa, size);
+		return ret;
+	}
+
+	this_cpu_write(pv_param, __pkvm_va(pv_param_pa));
+	return ret;
+}
+
 /*
  * Flag indicating if pkvm(mainly ept and iommu) is setup and enabled
  * on at least one cpu but does not indicate pkvm is fully initialized.
@@ -335,6 +368,8 @@ int pkvm_reprivilege_vcpu(struct kvm_vcpu *vcpu)
 
 static void pkvm_undo_finalise(void)
 {
+	__pkvm_unset_pv_param();
+
 	/*
 	 * Allow the host to access memory for successfully unwinding
 	 * pkvm and returning to host mode.
@@ -383,7 +418,7 @@ int pkvm_commit_finalise(bool success)
 
 #define TMP_SECTION_SZ	16UL
 int __pkvm_init_finalise(struct kvm_vcpu *vcpu, struct pkvm_section sections[],
-			 int section_sz)
+			 int section_sz, unsigned long pv_param_gpa)
 {
 	int i, ret = 0;
 	struct pkvm_host_vcpu *hvcpu = to_pkvm_hvcpu(vcpu);
@@ -496,6 +531,11 @@ switch_pgt:
 	pkvm_vcpu_perf_init(vcpu);
 
 	ret = pkvm_setup_lapic(pcpu, vcpu->cpu);
+	if (ret)
+		goto out;
+
+	ret = __pkvm_set_pv_param(pv_param_gpa);
+
 out:
 	return ret;
 }

@@ -1075,7 +1075,8 @@ static __init int pkvm_host_deprivilege_cpus(struct pkvm_hyp *pkvm)
  */
 static int __this_cpu_do_finalise_hc(struct pkvm_section *sections, unsigned long size)
 {
-	return pkvm_hypercall(init_finalize, (unsigned long)sections, size);
+	return pkvm_hypercall(init_finalize, (unsigned long)sections, size,
+			__pa(this_cpu_ptr(&pv_param)));
 }
 
 /* Called with preemption disabled but interrupts enabled. */

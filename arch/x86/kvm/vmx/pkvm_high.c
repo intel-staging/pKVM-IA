@@ -15,19 +15,7 @@
 #include <trace/events/ipi.h>
 #include "trace.h"
 
-static DEFINE_PER_CPU(union pkvm_pv_param, pv_param);
-
-#define get_this_pv_param(f, flags)		\
-({						\
-	local_irq_save(flags);			\
-	&this_cpu_ptr(&pv_param)->f;		\
-})
-#define put_this_pv_param(ptr, flags)	\
-({					\
-	memset(ptr, 0, sizeof(*ptr));	\
-	ptr = NULL;			\
-	local_irq_restore(flags);	\
-})
+DEFINE_PER_CPU(union pkvm_pv_param, pv_param);
 
 static void free_pml_buffer(struct vcpu_vmx *vmx)
 {
@@ -681,10 +669,8 @@ static int pkvm_check_processor_compat(void)
 
 static int pkvm_enable_virtualization_cpu(void)
 {
-	unsigned long pv_param_pa = __pa(this_cpu_ptr(&pv_param));
-	int r;
+	int r = pkvm_hypercall(enable_virtualization_cpu);
 
-	r = pkvm_hypercall(enable_virtualization_cpu, pv_param_pa);
 	if (r)
 		return r;
 
