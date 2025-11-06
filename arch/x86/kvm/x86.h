@@ -944,6 +944,7 @@ int kvm_emulate_hypercall(struct kvm_vcpu *vcpu);
 #ifdef __PKVM_HYP__
 void kvm_setup_efer_caps(void);
 int kvm_vcpu_x86_setup_mce(struct kvm_vcpu *vcpu, u64 mcg_cap);
+void kvm_restore_user_return_msr(void);
 #endif /* __PKVM_HYP__ */
 
 static inline bool kvm_vcpu_has_run(struct kvm_vcpu *vcpu)
