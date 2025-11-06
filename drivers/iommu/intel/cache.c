@@ -190,6 +190,9 @@ int cache_tag_assign_domain(struct dmar_domain *domain,
 	u16 did = domain_get_id_for_dev(domain, dev);
 	int ret;
 
+	if (pkvm_pviommu_enabled())
+		return 0;
+
 	/* domain->qi_bach will be freed in iommu_free_domain() path. */
 	if (!domain->qi_batch) {
 		domain->qi_batch = kzalloc(sizeof(*domain->qi_batch), GFP_KERNEL);
@@ -219,6 +222,9 @@ void cache_tag_unassign_domain(struct dmar_domain *domain,
 			       struct device *dev, ioasid_t pasid)
 {
 	u16 did = domain_get_id_for_dev(domain, dev);
+
+	if (pkvm_pviommu_enabled())
+		return;
 
 	__cache_tag_unassign_domain(domain, did, dev, pasid);
 	if (domain->domain.type == IOMMU_DOMAIN_NESTED)

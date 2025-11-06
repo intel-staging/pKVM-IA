@@ -321,6 +321,7 @@ static int pv_pasid_setup_first_level(struct intel_iommu *iommu,
 		.domain_pgd_gpa = virt_to_phys(pgd),
 		.pasid_dir_gpa = virt_to_phys(info->pasid_table->table),
 		.max_pasid = info->pasid_table->max_pasid,
+		.ats_qdep = info->ats_qdep,
 	};
 	int ret;
 
@@ -421,6 +422,7 @@ static int pv_pasid_setup_second_level(struct intel_iommu *iommu,
 		.pasid_dir_gpa = virt_to_phys(info->pasid_table->table),
 		.max_pasid = info->pasid_table->max_pasid,
 		.dirty_tracking = domain->dirty_tracking,
+		.ats_qdep = info->ats_qdep,
 	};
 	int ret;
 

@@ -1609,6 +1609,7 @@ static int pv_context_mapping(struct dmar_domain *domain, struct intel_iommu *io
 		.domain_pgd_gpa = virt_to_phys(domain->pgd),
 		.did = domain_id_iommu(domain, iommu),
 		.ats_supported = info ? info->ats_supported : 0,
+		.ats_qdep = info->ats_qdep,
 	};
 	int ret;
 
