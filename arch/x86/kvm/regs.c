@@ -25,7 +25,6 @@ bool kvm_is_linear_rip(struct kvm_vcpu *vcpu, unsigned long linear_rip)
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_is_linear_rip);
 
-#ifndef __PKVM_HYP__
 unsigned long kvm_get_rflags(struct kvm_vcpu *vcpu)
 {
 	unsigned long rflags;
@@ -36,7 +35,6 @@ unsigned long kvm_get_rflags(struct kvm_vcpu *vcpu)
 	return rflags;
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_get_rflags);
-#endif /* !__PKVM_HYP__ */
 
 void __kvm_set_rflags(struct kvm_vcpu *vcpu, unsigned long rflags)
 {
