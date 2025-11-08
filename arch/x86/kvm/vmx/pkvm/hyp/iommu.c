@@ -254,11 +254,49 @@ static void enable_qi(struct pkvm_iommu *iommu)
 			   readl, (sts & DMA_GSTS_QIES), sts);
 }
 
+#ifdef CONFIG_PKVM_INTEL_PVIOMMU
+static int alloc_qi_desc(struct pkvm_iommu *iommu)
+{
+	u64 desc_phys = IQ_DESC_BASE_PHYS(iommu->viommu.iqa);
+	int order = sm_supported(&iommu->iommu) ? 2 : 1;
+	struct q_inval *qi = &iommu->qi;
+	int ret;
+
+	ret = __pkvm_host_donate_hyp_share_ro(desc_phys, (1 << order) * PAGE_SIZE);
+	if (ret) {
+		pkvm_err("pkvm: %s: failed to write protect QI desc!\n", __func__);
+		return ret;
+	}
+	qi->desc = pkvm_phys_to_virt(desc_phys);
+	qi->desc_status = pkvm_phys_to_virt(desc_phys + (1 << (order - 1)) * PAGE_SIZE);
+
+	return 0;
+}
+#else
+static int alloc_qi_desc(struct pkvm_iommu *iommu)
+{
+	struct q_inval *qi = &iommu->qi;
+
+	qi->desc = iommu_zalloc_pages(PKVM_QI_DESC_ALIGNED_SIZE);
+	if (!qi->desc)
+		return -ENOMEM;
+
+	qi->desc_status = iommu_zalloc_pages(PKVM_QI_DESC_STATUS_ALIGNED_SIZE);
+	if (!qi->desc_status) {
+		iommu_put_page(qi->desc);
+		return -ENOMEM;
+	}
+
+	return 0;
+}
+#endif
+
 static int initialize_qi(struct pkvm_iommu *iommu)
 {
 	struct pkvm_viommu *viommu = &iommu->viommu;
 	struct q_inval *qi = &iommu->qi;
 	void __iomem *reg = iommu->iommu.reg;
+	int ret;
 
 	if (qi->desc) {
 		pkvm_dbg("pkvm: %s: QI already initialized\n", __func__);
@@ -337,15 +375,9 @@ static int initialize_qi(struct pkvm_iommu *iommu)
 	}
 
 	qi->free_cnt = PKVM_QI_DESC_ALIGNED_SIZE / sizeof(struct qi_desc);
-	qi->desc = iommu_zalloc_pages(PKVM_QI_DESC_ALIGNED_SIZE);
-	if (!qi->desc)
-		return -ENOMEM;
-
-	qi->desc_status = iommu_zalloc_pages(PKVM_QI_DESC_STATUS_ALIGNED_SIZE);
-	if (!qi->desc_status) {
-		iommu_put_page(qi->desc);
-		return -ENOMEM;
-	}
+	ret = alloc_qi_desc(iommu);
+	if (ret)
+		return ret;
 
 	enable_qi(iommu);
 	return 0;
@@ -613,103 +645,6 @@ static int activate_iommu(struct pkvm_iommu *iommu)
 	pkvm_dbg("pkvm: %s: iommu%d activated\n", __func__, iommu->iommu.seq_id);
 
 	return 0;
-}
-
-static void handle_qi_submit(struct pkvm_iommu *iommu, void *vdesc, int vhead, int count)
-{
-	struct pkvm_viommu *viommu = &iommu->viommu;
-	int vlen = IQ_DESC_LEN(viommu->iqa);
-	int vshift = IQ_DESC_SHIFT(viommu->iqa);
-	int len = IQ_DESC_LEN(iommu->piommu_iqa);
-	int shift = IQ_DESC_SHIFT(iommu->piommu_iqa);
-	struct q_inval *qi = &iommu->qi;
-	struct qi_desc *to, *from;
-	int required_cnt = count + 1, i;
-
-	pkvm_spin_lock(&iommu->qi_lock);
-	/*
-	 * Detect if the free descriptor count is enough or not
-	 */
-	while (qi->free_cnt < required_cnt) {
-		u64 head = readq(iommu->iommu.reg + DMAR_IQH_REG) >> shift;
-		int busy_cnt = (READ_ONCE(qi->free_head) + len - head) % len;
-		int free_cnt = len - busy_cnt;
-
-		if (free_cnt >= required_cnt) {
-			qi->free_cnt = free_cnt;
-			break;
-		}
-		pkvm_spin_unlock(&iommu->qi_lock);
-		cpu_relax();
-		pkvm_spin_lock(&iommu->qi_lock);
-	}
-
-	for (i = 0; i < count; i++) {
-		from = vdesc + (((vhead + i) % vlen) << vshift);
-		to = qi->desc + (((qi->free_head + i) % len) << shift);
-
-		to->qw0 = from->qw0;
-		to->qw1 = from->qw1;
-	}
-
-	/*
-	 * Reuse the desc_status from host so that host can poll
-	 * the desc_status itself instead of waiting in pkvm.
-	 */
-	qi->free_cnt -= count;
-	qi->free_head = (qi->free_head + count) % len;
-	writel(qi->free_head << shift, iommu->iommu.reg + DMAR_IQT_REG);
-
-	pkvm_spin_unlock(&iommu->qi_lock);
-}
-
-static int handle_qi_invalidation(struct pkvm_iommu *iommu, unsigned long val)
-{
-	struct pkvm_viommu *viommu = &iommu->viommu;
-	u64 viommu_iqa = viommu->iqa;
-	struct qi_desc *wait_desc;
-	int len = IQ_DESC_LEN(viommu_iqa);
-	int shift = IQ_DESC_SHIFT(viommu_iqa);
-	int head = viommu->vreg.iq_head >> shift;
-	int count, ret = 0;
-	int *desc_status;
-	void *desc;
-
-	viommu->vreg.iq_tail = val;
-	desc = pkvm_phys_to_virt(IQ_DESC_BASE_PHYS(viommu_iqa));
-	count = ((val >> shift) + len - head) % len;
-
-#ifndef CONFIG_PKVM_INTEL_PVIOMMU
-	for (int i = 0; i < count; i++) {
-		viommu->vreg.iq_head = ((head + i) % len) << shift;
-		ret = handle_descriptor(iommu, desc + viommu->vreg.iq_head);
-		if (ret)
-			break;
-	}
-#endif
-	/* update iq_head */
-	viommu->vreg.iq_head = val;
-
-	if (likely(!ret)) {
-		/*
-		 * Submit the descriptor to hardware. The desc_status
-		 * will be taken cared by hardware.
-		 */
-		handle_qi_submit(iommu, desc, head, count);
-	} else {
-		pkvm_err("pkvm: %s: failed with ret %d\n", __func__, ret);
-		/*
-		 * The descriptor seems invalid. Mark the desc_status as
-		 * QI_ABORT to make sure host driver won't be blocked.
-		 */
-		wait_desc = desc + (((head + count - 1) % len) << shift);
-		if (QI_DESC_TYPE(wait_desc->qw0) == QI_IWD_TYPE) {
-			desc_status = pkvm_phys_to_virt(wait_desc->qw1);
-			WRITE_ONCE(*desc_status, QI_ABORT);
-		}
-	}
-
-	return ret;
 }
 
 static void handle_gcmd_te(struct pkvm_iommu *iommu, bool en)
@@ -1010,10 +945,15 @@ static unsigned long access_iommu_mmio(struct pkvm_iommu *iommu, bool is_read,
 		if (is_read)
 			ret = viommu->vreg.iq_tail;
 		else {
+#ifdef CONFIG_PKVM_INTEL_PVIOMMU
+			pkvm_err("pkvm: %s: IQT write not allowed with paravirt iommu\n", __func__);
+			ret = -EINVAL;
+#else
 			if (viommu->vreg.gsts & DMA_GSTS_QIES)
 				ret = handle_qi_invalidation(iommu, val);
 			else
 				viommu->vreg.iq_tail = val;
+#endif
 		}
 		break;
 	default:
@@ -1259,4 +1199,24 @@ void pkvm_iommu_flush_iotlb(struct pkvm_pgtable *pgt, unsigned long addr, unsign
 
 	if (data.desc)
 		iommu_put_page(data.desc);
+}
+
+int pkvm_iommu_iec_flush(u64 phys, bool global, u64 index, u64 mask)
+{
+	struct pkvm_iommu *hyp_iommu = find_iommu_by_reg_phys(phys);
+	struct qi_desc desc;
+
+	if (!hyp_iommu)
+		return -EINVAL;
+
+	desc.qw0 = QI_IEC_TYPE;
+	if (!global)
+		desc.qw0 |= QI_IEC_IIDEX(index) | QI_IEC_IM(mask) | QI_IEC_SELECTIVE;
+	desc.qw1 = 0;
+	desc.qw2 = 0;
+	desc.qw3 = 0;
+
+	submit_qi(hyp_iommu, &desc, 1);
+
+	return 0;
 }

@@ -79,6 +79,7 @@ PKVM_HC(vm_mmu_age)
 
 /* IOMMU driver hypercalls */
 PKVM_HC(iommu_mmio_access)
+PKVM_HC(iommu_iec_flush)
 
 /* pKVM vmexit tracing/profiling */
 PKVM_HC(set_vmexit_trace)

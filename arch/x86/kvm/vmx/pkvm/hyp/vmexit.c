@@ -18,6 +18,7 @@
 #include "lapic.h"
 #include "debug.h"
 #include "init_finalise.h"
+#include "iommu_internal.h"
 
 #define CR4	4
 
@@ -111,6 +112,11 @@ static unsigned long handle_vmcall(struct kvm_vcpu *vcpu)
 	case __pkvm__iommu_mmio_access:
 		ret = pkvm_access_iommu(a0, a1, a2, a3);
 		break;
+#ifdef CONFIG_PKVM_INTEL_PVIOMMU
+	case __pkvm__iommu_iec_flush:
+		ret = pkvm_iommu_iec_flush(a0, a1, a2, a3);
+		break;
+#endif
 	case __pkvm__add_ptdev:
 		ret = pkvm_add_ptdev(a0, a1, a2);
 		break;

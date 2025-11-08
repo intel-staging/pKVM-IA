@@ -1312,3 +1312,98 @@ int handle_descriptor(struct pkvm_iommu *iommu, struct qi_desc *desc)
 
 	return ret;
 }
+
+static void handle_qi_submit(struct pkvm_iommu *iommu, void *vdesc, int vhead, int count)
+{
+	struct pkvm_viommu *viommu = &iommu->viommu;
+	int vlen = IQ_DESC_LEN(viommu->iqa);
+	int vshift = IQ_DESC_SHIFT(viommu->iqa);
+	int len = IQ_DESC_LEN(iommu->piommu_iqa);
+	int shift = IQ_DESC_SHIFT(iommu->piommu_iqa);
+	struct q_inval *qi = &iommu->qi;
+	struct qi_desc *to, *from;
+	int required_cnt = count + 1, i;
+
+	pkvm_spin_lock(&iommu->qi_lock);
+	/*
+	 * Detect if the free descriptor count is enough or not
+	 */
+	while (qi->free_cnt < required_cnt) {
+		u64 head = readq(iommu->iommu.reg + DMAR_IQH_REG) >> shift;
+		int busy_cnt = (READ_ONCE(qi->free_head) + len - head) % len;
+		int free_cnt = len - busy_cnt;
+
+		if (free_cnt >= required_cnt) {
+			qi->free_cnt = free_cnt;
+			break;
+		}
+		pkvm_spin_unlock(&iommu->qi_lock);
+		cpu_relax();
+		pkvm_spin_lock(&iommu->qi_lock);
+	}
+
+	for (i = 0; i < count; i++) {
+		from = vdesc + (((vhead + i) % vlen) << vshift);
+		to = qi->desc + (((qi->free_head + i) % len) << shift);
+
+		to->qw0 = from->qw0;
+		to->qw1 = from->qw1;
+	}
+
+	/*
+	 * Reuse the desc_status from host so that host can poll
+	 * the desc_status itself instead of waiting in pkvm.
+	 */
+	qi->free_cnt -= count;
+	qi->free_head = (qi->free_head + count) % len;
+	writel(qi->free_head << shift, iommu->iommu.reg + DMAR_IQT_REG);
+
+	pkvm_spin_unlock(&iommu->qi_lock);
+}
+
+int handle_qi_invalidation(struct pkvm_iommu *iommu, unsigned long val)
+{
+	struct pkvm_viommu *viommu = &iommu->viommu;
+	u64 viommu_iqa = viommu->iqa;
+	struct qi_desc *wait_desc;
+	int len = IQ_DESC_LEN(viommu_iqa);
+	int shift = IQ_DESC_SHIFT(viommu_iqa);
+	int head = viommu->vreg.iq_head >> shift;
+	int count, i, ret = 0;
+	int *desc_status;
+	void *desc;
+
+	viommu->vreg.iq_tail = val;
+	desc = pkvm_phys_to_virt(IQ_DESC_BASE_PHYS(viommu_iqa));
+	count = ((val >> shift) + len - head) % len;
+
+	for (i = 0; i < count; i++) {
+		viommu->vreg.iq_head = ((head + i) % len) << shift;
+		ret = handle_descriptor(iommu, desc + viommu->vreg.iq_head);
+		if (ret)
+			break;
+	}
+	/* update iq_head */
+	viommu->vreg.iq_head = val;
+
+	if (likely(!ret)) {
+		/*
+		 * Submit the descriptor to hardware. The desc_status
+		 * will be taken cared by hardware.
+		 */
+		handle_qi_submit(iommu, desc, head, count);
+	} else {
+		pkvm_err("pkvm: %s: failed with ret %d\n", __func__, ret);
+		/*
+		 * The descriptor seems invalid. Mark the desc_status as
+		 * QI_ABORT to make sure host driver won't be blocked.
+		 */
+		wait_desc = desc + (((head + count - 1) % len) << shift);
+		if (QI_DESC_TYPE(wait_desc->qw0) == QI_IWD_TYPE) {
+			desc_status = pkvm_phys_to_virt(wait_desc->qw1);
+			WRITE_ONCE(*desc_status, QI_ABORT);
+		}
+	}
+
+	return ret;
+}
