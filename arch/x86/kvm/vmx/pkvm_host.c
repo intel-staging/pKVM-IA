@@ -933,6 +933,15 @@ static void pkvm_update_cr8_intercept(struct kvm_vcpu *vcpu, int tpr, int irr)
 	KVM_BUG_ON(pkvm_hypercall(update_cr8_intercept, tpr, irr), vcpu->kvm);
 }
 
+static void pkvm_set_virtual_apic_mode(struct kvm_vcpu *vcpu)
+{
+	if (pkvm_is_protected_vcpu(vcpu))
+		return;
+
+	if (lapic_in_kernel(vcpu))
+		KVM_BUG_ON(pkvm_hypercall(set_virtual_apic_mode), vcpu->kvm);
+}
+
 struct kvm_x86_ops pkvm_host_vt_x86_ops __initdata = {
 	.name = KBUILD_MODNAME,
 
@@ -1003,6 +1012,7 @@ struct kvm_x86_ops pkvm_host_vt_x86_ops __initdata = {
 	.update_cr8_intercept = pkvm_update_cr8_intercept,
 
 	.x2apic_icr_is_split = false,
+	.set_virtual_apic_mode = pkvm_set_virtual_apic_mode,
 };
 
 static struct kvm_pmc *pkvm_intel_rdpmc_ecx_to_pmc(struct kvm_vcpu *vcpu,
