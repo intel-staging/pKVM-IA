@@ -952,6 +952,15 @@ static void pkvm_refresh_apicv_exec_ctrl(struct kvm_vcpu *vcpu)
 			   vcpu->kvm);
 }
 
+static void pkvm_load_eoi_exitmap(struct kvm_vcpu *vcpu, u64 *eoi_exit_bitmap)
+{
+	if (kvm_vcpu_apicv_active(vcpu))
+		KVM_BUG_ON(pkvm_hypercall(load_eoi_exitmap, eoi_exit_bitmap[0],
+					  eoi_exit_bitmap[1], eoi_exit_bitmap[2],
+					  eoi_exit_bitmap[3]),
+			   vcpu->kvm);
+}
+
 struct kvm_x86_ops pkvm_host_vt_x86_ops __initdata = {
 	.name = KBUILD_MODNAME,
 
@@ -1024,6 +1033,7 @@ struct kvm_x86_ops pkvm_host_vt_x86_ops __initdata = {
 	.x2apic_icr_is_split = false,
 	.set_virtual_apic_mode = pkvm_set_virtual_apic_mode,
 	.refresh_apicv_exec_ctrl = pkvm_refresh_apicv_exec_ctrl,
+	.load_eoi_exitmap = pkvm_load_eoi_exitmap,
 };
 
 static struct kvm_pmc *pkvm_intel_rdpmc_ecx_to_pmc(struct kvm_vcpu *vcpu,
