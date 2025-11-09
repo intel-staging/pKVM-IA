@@ -1098,6 +1098,8 @@ struct kvm_x86_ops pkvm_host_vt_x86_ops __initdata = {
 	.pi_start_bypass = vmx_pi_start_bypass,
 
 	.apic_init_signal_blocked = pkvm_apic_init_signal_blocked,
+
+	.vcpu_deliver_sipi_vector = kvm_vcpu_deliver_sipi_vector,
 };
 
 static struct kvm_pmc *pkvm_intel_rdpmc_ecx_to_pmc(struct kvm_vcpu *vcpu,
