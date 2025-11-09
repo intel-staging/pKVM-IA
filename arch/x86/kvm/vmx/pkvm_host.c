@@ -942,6 +942,16 @@ static void pkvm_set_virtual_apic_mode(struct kvm_vcpu *vcpu)
 		KVM_BUG_ON(pkvm_hypercall(set_virtual_apic_mode), vcpu->kvm);
 }
 
+static void pkvm_refresh_apicv_exec_ctrl(struct kvm_vcpu *vcpu)
+{
+	if (KVM_BUG_ON(pkvm_is_protected_vcpu(vcpu) && enable_apicv, vcpu->kvm))
+		return;
+
+	if (lapic_in_kernel(vcpu))
+		KVM_BUG_ON(pkvm_hypercall(refresh_apicv_exec_ctrl, vcpu->arch.apic->apicv_active),
+			   vcpu->kvm);
+}
+
 struct kvm_x86_ops pkvm_host_vt_x86_ops __initdata = {
 	.name = KBUILD_MODNAME,
 
@@ -1013,6 +1023,7 @@ struct kvm_x86_ops pkvm_host_vt_x86_ops __initdata = {
 
 	.x2apic_icr_is_split = false,
 	.set_virtual_apic_mode = pkvm_set_virtual_apic_mode,
+	.refresh_apicv_exec_ctrl = pkvm_refresh_apicv_exec_ctrl,
 };
 
 static struct kvm_pmc *pkvm_intel_rdpmc_ecx_to_pmc(struct kvm_vcpu *vcpu,
