@@ -7,8 +7,20 @@ static int pkvm_check_processor_compat(void)
 	return pkvm_hypercall(check_processor_compatibility);
 }
 
+static int pkvm_enable_virtualization_cpu(void)
+{
+	/*
+	 * There is nothing to do here as virtualization was already enabled
+	 * during pKVM initialization and is never disabled or re-enabled later.
+	 */
+
+	return 0;
+}
+
 struct kvm_x86_ops pkvm_host_vt_x86_ops __initdata = {
 	.name = KBUILD_MODNAME,
 
 	.check_processor_compatibility = pkvm_check_processor_compat,
+
+	.enable_virtualization_cpu = pkvm_enable_virtualization_cpu,
 };
