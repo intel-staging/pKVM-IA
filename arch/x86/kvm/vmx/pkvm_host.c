@@ -246,6 +246,19 @@ static void pkvm_update_exception_bitmap(struct kvm_vcpu *vcpu)
 		KVM_BUG_ON(pkvm_hypercall(update_exception_bitmap), vcpu->kvm);
 }
 
+static int pkvm_set_efer(struct kvm_vcpu *vcpu, u64 efer)
+{
+	if (!vcpu->arch.guest_state_protected) {
+		int ret = pkvm_hypercall(set_efer, efer);
+
+		if (ret)
+			return ret;
+	}
+
+	vcpu->arch.efer = efer;
+	return 0;
+}
+
 struct kvm_x86_ops pkvm_host_vt_x86_ops __initdata = {
 	.name = KBUILD_MODNAME,
 
@@ -269,6 +282,7 @@ struct kvm_x86_ops pkvm_host_vt_x86_ops __initdata = {
 	.vcpu_put = pkvm_vcpu_put,
 
 	.update_exception_bitmap = pkvm_update_exception_bitmap,
+	.set_efer = pkvm_set_efer,
 };
 
 static struct kvm_pmc *pkvm_intel_rdpmc_ecx_to_pmc(struct kvm_vcpu *vcpu,
