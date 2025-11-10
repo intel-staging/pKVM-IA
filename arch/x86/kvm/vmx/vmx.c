@@ -3501,7 +3501,6 @@ void vmx_flush_tlb_guest(struct kvm_vcpu *vcpu)
 	vpid_sync_context(vmx_get_current_vpid(vcpu));
 }
 
-#ifndef __PKVM_HYP__
 void vmx_ept_load_pdptrs(struct kvm_vcpu *vcpu)
 {
 	struct kvm_mmu *mmu = vcpu->arch.walk_mmu;
@@ -3516,7 +3515,6 @@ void vmx_ept_load_pdptrs(struct kvm_vcpu *vcpu)
 		vmcs_write64(GUEST_PDPTR3, mmu->pdptrs[3]);
 	}
 }
-#endif /* !__PKVM_HYP__ */
 
 void ept_save_pdptrs(struct kvm_vcpu *vcpu)
 {
@@ -3659,7 +3657,6 @@ u64 construct_eptp(struct kvm_vcpu *vcpu, hpa_t root_hpa, int root_level)
 	return eptp;
 }
 
-#ifndef __PKVM_HYP__
 void vmx_load_mmu_pgd(struct kvm_vcpu *vcpu, hpa_t root_hpa, int root_level)
 {
 	struct kvm *kvm = vcpu->kvm;
@@ -3688,7 +3685,6 @@ void vmx_load_mmu_pgd(struct kvm_vcpu *vcpu, hpa_t root_hpa, int root_level)
 	if (update_guest_cr3)
 		vmcs_writel(GUEST_CR3, guest_cr3);
 }
-#endif /* !__PKVM_HYP__ */
 
 bool vmx_is_valid_cr4(struct kvm_vcpu *vcpu, unsigned long cr4)
 {
