@@ -1028,8 +1028,10 @@ struct kvm_x86_ops vt_x86_ops __initdata = {
 
 #ifndef __PKVM_HYP__
 	.check_intercept = vmx_check_intercept,
+#endif
 	.handle_exit_irqoff = vmx_handle_exit_irqoff,
 
+#ifndef __PKVM_HYP__
 	.update_cpu_dirty_logging = vt_op(update_cpu_dirty_logging),
 
 	.pi_update_irte = vmx_pi_update_irte,
