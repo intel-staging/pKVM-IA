@@ -74,6 +74,8 @@
 #include "vmx_onhyperv.h"
 #include "posted_intr.h"
 #ifdef __PKVM_HYP__
+#include "mem_protect.h"
+#include "memory.h"
 #include "pkvm.h"
 
 #undef module_param_named
@@ -4712,6 +4714,7 @@ static u32 vmx_secondary_exec_control(struct vcpu_vmx *vmx)
 
 	return exec_control;
 }
+#endif /* !__PKVM_HYP__ */
 
 static inline int vmx_get_pid_table_order(struct kvm *kvm)
 {
@@ -4720,7 +4723,13 @@ static inline int vmx_get_pid_table_order(struct kvm *kvm)
 
 static int vmx_alloc_ipiv_pid_table(struct kvm *kvm)
 {
+#ifndef __PKVM_HYP__
 	struct page *pages;
+#else
+	struct kvm *shared_kvm = to_pkvm(kvm)->shared_kvm;
+	u64 *pid_table;
+	int ret;
+#endif
 	struct kvm_vmx *kvm_vmx = to_kvm_vmx(kvm);
 
 	if (!irqchip_in_kernel(kvm) || !enable_ipiv)
@@ -4729,12 +4738,32 @@ static int vmx_alloc_ipiv_pid_table(struct kvm *kvm)
 	if (kvm_vmx->pid_table)
 		return 0;
 
+#ifndef __PKVM_HYP__
 	pages = alloc_pages(GFP_KERNEL_ACCOUNT | __GFP_ZERO,
 			    vmx_get_pid_table_order(kvm));
 	if (!pages)
 		return -ENOMEM;
 
 	kvm_vmx->pid_table = (void *)page_address(pages);
+#else
+	pid_table = kern_pkvm_va(READ_ONCE(to_kvm_vmx(shared_kvm)->pid_table));
+	if (!pid_table)
+		return -EINVAL;
+
+	/*
+	 * Although the contents in pid_table is not secret since it is
+	 * constructed following the SDM, still donate the pid_table pages to
+	 * the pKVM hypervisor as the host doesn't need to access these pages
+	 * until the guest is destroyed.
+	 */
+	ret = pkvm_host_donate_hyp(__pkvm_pa(pid_table),
+				   PAGE_SIZE << vmx_get_pid_table_order(kvm),
+				   true);
+	if (ret)
+		return ret;
+
+	kvm_vmx->pid_table = pid_table;
+#endif
 	return 0;
 }
 
@@ -4743,6 +4772,7 @@ int vmx_vcpu_precreate(struct kvm *kvm)
 	return vmx_alloc_ipiv_pid_table(kvm);
 }
 
+#ifndef __PKVM_HYP__
 #define VMX_XSS_EXIT_BITMAP 0
 
 static void init_vmcs(struct vcpu_vmx *vmx)
@@ -8439,11 +8469,19 @@ void vmx_hardware_unsetup(void)
 
 void vmx_vm_destroy(struct kvm *kvm)
 {
-	/* TODO: Enable this for pKVM hypervisor when enabling ipiv */
-#ifndef __PKVM_HYP__
 	struct kvm_vmx *kvm_vmx = to_kvm_vmx(kvm);
 
+#ifndef __PKVM_HYP__
 	free_pages((unsigned long)kvm_vmx->pid_table, vmx_get_pid_table_order(kvm));
+#else
+	if (kvm_vmx->pid_table) {
+		/*
+		 * No need to clear the pid_table as its contents is following the SDM
+		 * which is not a secret.
+		 */
+		pkvm_hyp_donate_host(__pkvm_pa(kvm_vmx->pid_table),
+				     PAGE_SIZE << vmx_get_pid_table_order(kvm), false);
+	}
 #endif
 }
 
