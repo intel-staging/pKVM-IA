@@ -7456,6 +7456,7 @@ static void vmx_recover_nmi_blocking(struct vcpu_vmx *vmx)
 			ktime_to_ns(ktime_sub(ktime_get(),
 					      vmx->loaded_vmcs->entry_time));
 }
+#endif /* !__PKVM_HYP__ */
 
 static void __vmx_complete_interrupts(struct kvm_vcpu *vcpu,
 				      u32 idt_vectoring_info,
@@ -7515,15 +7516,30 @@ static void __vmx_complete_interrupts(struct kvm_vcpu *vcpu,
 	}
 }
 
+#ifndef __PKVM_HYP__
 static void vmx_complete_interrupts(struct vcpu_vmx *vmx)
 {
 	__vmx_complete_interrupts(&vmx->vcpu, vmx->idt_vectoring_info,
 				  VM_EXIT_INSTRUCTION_LEN,
 				  IDT_VECTORING_ERROR_CODE);
 }
+#endif /* !__PKVM_HYP__ */
 
 void vmx_cancel_injection(struct kvm_vcpu *vcpu)
 {
+#ifdef __PKVM_HYP__
+	/*
+	 * A malicious host may request cancel_injection twice to cancel
+	 * a pVM's soft interrupts or exceptions, as the second call finds
+	 * VM_ENTRY_INTR_INFO_FIELD already zeroed and unconditionally clears
+	 * previous canceled events. Prevent this by returning early if
+	 * VM_ENTRY_INTR_INFO_FIELD is already zeroed and thus there is
+	 * nothing to do.
+	 */
+	if (pkvm_is_protected_vcpu(vcpu) &&
+	    !(vmcs_read32(VM_ENTRY_INTR_INFO_FIELD) & VECTORING_INFO_VALID_MASK))
+		return;
+#endif
 	__vmx_complete_interrupts(vcpu,
 				  vmcs_read32(VM_ENTRY_INTR_INFO_FIELD),
 				  VM_ENTRY_INSTRUCTION_LEN,
@@ -7532,6 +7548,7 @@ void vmx_cancel_injection(struct kvm_vcpu *vcpu)
 	vmcs_write32(VM_ENTRY_INTR_INFO_FIELD, 0);
 }
 
+#ifndef __PKVM_HYP__
 static void atomic_switch_perf_msrs(struct vcpu_vmx *vmx)
 {
 	int i, nr_msrs;
