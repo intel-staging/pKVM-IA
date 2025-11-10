@@ -8705,6 +8705,7 @@ void vmx_update_cpu_dirty_logging(struct kvm_vcpu *vcpu)
 	else
 		secondary_exec_controls_clearbit(vmx, SECONDARY_EXEC_ENABLE_PML);
 }
+#endif /* !__PKVM_HYP__ */
 
 void vmx_setup_mce(struct kvm_vcpu *vcpu)
 {
@@ -8716,6 +8717,7 @@ void vmx_setup_mce(struct kvm_vcpu *vcpu)
 			~FEAT_CTL_LMCE_ENABLED;
 }
 
+#ifndef __PKVM_HYP__
 #ifdef CONFIG_KVM_SMM
 int vmx_smi_allowed(struct kvm_vcpu *vcpu, bool for_injection)
 {
