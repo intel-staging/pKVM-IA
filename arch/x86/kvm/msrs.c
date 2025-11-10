@@ -149,14 +149,15 @@ void kvm_user_return_msr_cpu_online(void)
 	}
 }
 
-#ifndef __PKVM_HYP__
 static void kvm_user_return_register_notifier(struct kvm_user_return_msrs *msrs)
 {
+#ifndef __PKVM_HYP__
 	if (!msrs->registered) {
 		msrs->urn.on_user_return = kvm_on_user_return;
 		user_return_notifier_register(&msrs->urn);
 		msrs->registered = true;
 	}
+#endif
 }
 
 int kvm_set_user_return_msr(unsigned slot, u64 value, u64 mask)
@@ -177,6 +178,7 @@ int kvm_set_user_return_msr(unsigned slot, u64 value, u64 mask)
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_set_user_return_msr);
 
+#ifndef __PKVM_HYP__
 u64 kvm_get_user_return_msr(unsigned int slot)
 {
 	return this_cpu_ptr(&user_return_msrs)->values[slot].curr;
@@ -695,9 +697,9 @@ static int set_efer(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 	return 0;
 }
 
-#ifndef __PKVM_HYP__
 bool kvm_msr_allowed(struct kvm_vcpu *vcpu, u32 index, u32 type)
 {
+#ifndef __PKVM_HYP__
 	struct kvm_x86_msr_filter *msr_filter;
 	struct msr_bitmap_range *ranges;
 	struct kvm *kvm = vcpu->kvm;
@@ -736,9 +738,18 @@ out:
 	srcu_read_unlock(&kvm->srcu, idx);
 
 	return allowed;
+#else
+	/*
+	 * The pKVM hypervisor will not check the MSR filter configured by the
+	 * host user space VMM for simplicity, thus always allow MSR emulation
+	 * for the guest.
+	 */
+	return true;
+#endif
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_msr_allowed);
 
+#ifndef __PKVM_HYP__
 /*
  * Write @data into the MSR specified by @index.  Select MSR specific fault
  * checks are bypassed if @host_initiated is %true.
@@ -2849,6 +2860,7 @@ void kvm_init_msr_lists(void)
 	for (i = 0; i < ARRAY_SIZE(msr_based_features_all_except_vmx); i++)
 		kvm_probe_feature_msr(msr_based_features_all_except_vmx[i]);
 }
+#endif /* !__PKVM_HYP__ */
 
 int kvm_spec_ctrl_test_value(u64 value)
 {
@@ -2858,10 +2870,14 @@ int kvm_spec_ctrl_test_value(u64 value)
 	 */
 
 	u64 saved_value;
+#ifndef __PKVM_HYP__
 	unsigned long flags;
+#endif
 	int ret = 0;
 
+#ifndef __PKVM_HYP__
 	local_irq_save(flags);
+#endif
 
 	if (rdmsrq_safe(MSR_IA32_SPEC_CTRL, &saved_value))
 		ret = 1;
@@ -2870,9 +2886,10 @@ int kvm_spec_ctrl_test_value(u64 value)
 	else
 		wrmsrq(MSR_IA32_SPEC_CTRL, saved_value);
 
+#ifndef __PKVM_HYP__
 	local_irq_restore(flags);
+#endif
 
 	return ret;
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_spec_ctrl_test_value);
-#endif /* !__PKVM_HYP__ */
