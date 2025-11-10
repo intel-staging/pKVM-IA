@@ -5,6 +5,7 @@
 #include <kvm/iodev.h>
 
 #include <asm/apic.h>
+#include <asm/mce.h>
 
 #include <linux/kvm_host.h>
 
@@ -312,6 +313,11 @@ static inline enum lapic_mode kvm_get_apic_mode(struct kvm_vcpu *vcpu)
 static inline u8 kvm_xapic_id(struct kvm_lapic *apic)
 {
 	return kvm_lapic_get_reg(apic, APIC_ID) >> 24;
+}
+
+static inline int kvm_apic_calc_nr_lvt_entries(struct kvm_vcpu *vcpu)
+{
+	return KVM_APIC_MAX_NR_LVT_ENTRIES - !(vcpu->arch.mcg_cap & MCG_CMCI_P);
 }
 
 #endif
