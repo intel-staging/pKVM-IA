@@ -1235,6 +1235,7 @@ void kvm_lmsw(struct kvm_vcpu *vcpu, unsigned long msw)
 	(void)kvm_set_cr0(vcpu, kvm_read_cr0_bits(vcpu, ~0x0eul) | (msw & 0x0f));
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_lmsw);
+#endif /* !__PKVM_HYP__ */
 
 void kvm_load_guest_xsave_state(struct kvm_vcpu *vcpu)
 {
@@ -1284,7 +1285,6 @@ void kvm_load_host_xsave_state(struct kvm_vcpu *vcpu)
 
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_load_host_xsave_state);
-#endif /* !__PKVM_HYP__ */
 
 #ifdef CONFIG_X86_64
 static inline u64 kvm_guest_supported_xfd(struct kvm_vcpu *vcpu)
