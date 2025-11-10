@@ -1219,7 +1219,6 @@ static bool update_transition_efer(struct vcpu_vmx *vmx)
 	return true;
 }
 
-#ifndef __PKVM_HYP__
 static void vmx_add_autostore_msr(struct vcpu_vmx *vmx, u32 msr)
 {
 	vmx_add_auto_msr(&vmx->msr_autostore, msr, 0, VM_EXIT_MSR_STORE_COUNT,
@@ -1231,6 +1230,7 @@ static void vmx_remove_autostore_msr(struct vcpu_vmx *vmx, u32 msr)
 	vmx_remove_auto_msr(&vmx->msr_autostore, msr, VM_EXIT_MSR_STORE_COUNT);
 }
 
+#ifndef __PKVM_HYP__
 static u16 vmx_store_ldt(void)
 {
 	u16 ldt;
@@ -4587,7 +4587,6 @@ static void vmx_update_msr_bitmap_x2apic(struct kvm_vcpu *vcpu)
 	}
 }
 
-#ifndef __PKVM_HYP__
 void pt_update_intercept_for_msr(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
@@ -4651,7 +4650,15 @@ static void vmx_recalc_pmu_msr_intercepts(struct kvm_vcpu *vcpu)
 		vmx_set_intercept_for_msr(vcpu, MSR_CORE_PERF_FIXED_CTR0 + i,
 					  MSR_TYPE_RW, true);
 
+#ifndef __PKVM_HYP__
 	intercept = kvm_need_perf_global_ctrl_intercept(vcpu);
+#else
+	/*
+	 * pKVM hypervisor doesn't have PMU support for the guest VM thus always
+	 * intercept PERF MSRs.
+	 */
+	intercept = true;
+#endif
 	vmx_set_intercept_for_msr(vcpu, MSR_CORE_PERF_GLOBAL_STATUS,
 				  MSR_TYPE_RW, intercept);
 	vmx_set_intercept_for_msr(vcpu, MSR_CORE_PERF_GLOBAL_CTRL,
@@ -4736,8 +4743,17 @@ static void vmx_recalc_msr_intercepts(struct kvm_vcpu *vcpu)
 
 static void vmx_recalc_instruction_intercepts(struct kvm_vcpu *vcpu)
 {
+#ifndef __PKVM_HYP__
 	exec_controls_changebit(to_vmx(vcpu), CPU_BASED_RDPMC_EXITING,
 				kvm_need_rdpmc_intercept(vcpu));
+#else
+	/*
+	 * pKVM hypervisor doesn't have PMU support for the guest VM thus always
+	 * intercept RDPMC.
+	 */
+	exec_controls_changebit(to_vmx(vcpu), CPU_BASED_RDPMC_EXITING,
+				true);
+#endif
 }
 
 void vmx_recalc_intercepts(struct kvm_vcpu *vcpu)
@@ -4746,6 +4762,7 @@ void vmx_recalc_intercepts(struct kvm_vcpu *vcpu)
 	vmx_recalc_msr_intercepts(vcpu);
 }
 
+#ifndef __PKVM_HYP__
 static int vmx_deliver_nested_posted_interrupt(struct kvm_vcpu *vcpu,
 						int vector)
 {
