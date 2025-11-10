@@ -7544,6 +7544,7 @@ int vmx_sync_pir_to_irr(struct kvm_vcpu *vcpu)
 
 	return max_irr;
 }
+#endif /* !__PKVM_HYP__ */
 
 void vmx_load_eoi_exitmap(struct kvm_vcpu *vcpu, u64 *eoi_exit_bitmap)
 {
@@ -7556,6 +7557,7 @@ void vmx_load_eoi_exitmap(struct kvm_vcpu *vcpu, u64 *eoi_exit_bitmap)
 	vmcs_write64(EOI_EXIT_BITMAP3, eoi_exit_bitmap[3]);
 }
 
+#ifndef __PKVM_HYP__
 static void handle_nm_fault_irqoff(struct kvm_vcpu *vcpu)
 {
 	/*
