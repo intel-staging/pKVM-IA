@@ -1638,7 +1638,6 @@ bool vmx_get_if_flag(struct kvm_vcpu *vcpu)
 	return vmx_get_rflags(vcpu) & X86_EFLAGS_IF;
 }
 
-#ifndef __PKVM_HYP__
 u32 vmx_get_interrupt_shadow(struct kvm_vcpu *vcpu)
 {
 	u32 interruptibility = vmcs_read32(GUEST_INTERRUPTIBILITY_INFO);
@@ -1651,7 +1650,6 @@ u32 vmx_get_interrupt_shadow(struct kvm_vcpu *vcpu)
 
 	return ret;
 }
-#endif /* !__PKVM_HYP__ */
 
 void vmx_set_interrupt_shadow(struct kvm_vcpu *vcpu, int mask)
 {
