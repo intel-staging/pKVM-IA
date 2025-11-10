@@ -6,6 +6,7 @@
 #include "regs.h"
 #include "x86.h"
 
+#ifndef __PKVM_HYP__
 unsigned long kvm_get_linear_rip(struct kvm_vcpu *vcpu)
 {
 	/* Can't read the RIP when guest state is protected, just return 0 */
@@ -439,6 +440,7 @@ int kvm_set_cr4(struct kvm_vcpu *vcpu, unsigned long cr4)
 	return 0;
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_set_cr4);
+#endif /* !__PKVM_HYP__ */
 
 int kvm_set_cr8(struct kvm_vcpu *vcpu, unsigned long cr8)
 {
@@ -452,6 +454,7 @@ int kvm_set_cr8(struct kvm_vcpu *vcpu, unsigned long cr8)
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_set_cr8);
 
+#ifndef __PKVM_HYP__
 unsigned long kvm_get_cr8(struct kvm_vcpu *vcpu)
 {
 	if (lapic_in_kernel(vcpu))
@@ -873,3 +876,4 @@ int kvm_vcpu_ioctl_x86_set_debugregs(struct kvm_vcpu *vcpu,
 
 	return 0;
 }
+#endif /* !__PKVM_HYP__ */

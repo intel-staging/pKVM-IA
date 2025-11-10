@@ -102,10 +102,8 @@ MODULE_DEVICE_TABLE(x86cpu, vmx_cpu_id);
 bool __read_mostly enable_vpid = 1;
 module_param_named(vpid, enable_vpid, bool, 0444);
 
-#ifndef __PKVM_HYP__
 static bool __read_mostly enable_vnmi = 1;
 module_param_named(vnmi, enable_vnmi, bool, 0444);
-#endif
 
 bool __read_mostly flexpriority_enabled = 1;
 module_param_named(flexpriority, flexpriority_enabled, bool, 0444);
@@ -557,9 +555,7 @@ static void vmx_update_fb_clear_dis(struct kvm_vcpu *vcpu, struct vcpu_vmx *vmx)
 
 static u32 vmx_segment_access_rights(struct kvm_segment *var);
 
-#ifndef __PKVM_HYP__
 void vmx_vmexit(void);
-#endif /* !__PKVM_HYP__ */
 
 #define vmx_insn_failed(fmt...)		\
 do {					\
@@ -794,12 +790,10 @@ static inline bool cpu_has_broken_vmx_preemption_timer(void)
 	return false;
 }
 
-#ifndef __PKVM_HYP__
 static inline bool cpu_need_virtualize_apic_accesses(struct kvm_vcpu *vcpu)
 {
 	return flexpriority_enabled && lapic_in_kernel(vcpu);
 }
-#endif /* !__PKVM_HYP__ */
 
 struct vmx_uret_msr *vmx_find_uret_msr(struct vcpu_vmx *vmx, u32 msr)
 {
@@ -4323,6 +4317,7 @@ out:
 	mutex_unlock(&kvm->slots_lock);
 	return r;
 }
+#endif /* !__PKVM_HYP__ */
 
 static void seg_setup(int seg)
 {
@@ -4338,7 +4333,6 @@ static void seg_setup(int seg)
 
 	vmcs_write32(sf->ar_bytes, ar);
 }
-#endif /* !__PKVM_HYP__ */
 
 int allocate_vpid(void)
 {
@@ -4719,6 +4713,7 @@ void vmx_deliver_interrupt(struct kvm_lapic *apic, int delivery_mode,
 					   trig_mode, vector);
 	}
 }
+#endif /* !__PKVM_HYP__ */
 
 /*
  * Set up the vmcs's constant host-state fields, i.e., host-state fields that
@@ -4745,7 +4740,11 @@ void vmx_set_constant_host_state(struct vcpu_vmx *vmx)
 	vmx->loaded_vmcs->host_state.cr3 = cr3;
 
 	/* Save the most likely value for this task's CR4 in the VMCS. */
+#ifdef __PKVM_HYP__
+	cr4 = native_read_cr4();
+#else
 	cr4 = cr4_read_shadow();
+#endif
 	vmcs_writel(HOST_CR4, cr4);			/* 22.2.3, 22.2.5 */
 	vmx->loaded_vmcs->host_state.cr4 = cr4;
 
@@ -4894,6 +4893,7 @@ static u32 vmx_get_initial_vmexit_ctrl(void)
 		  VM_EXIT_SAVE_IA32_PERF_GLOBAL_CTRL);
 }
 
+#ifndef __PKVM_HYP__
 void vmx_refresh_apicv_exec_ctrl(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
@@ -4912,6 +4912,7 @@ void vmx_refresh_apicv_exec_ctrl(struct kvm_vcpu *vcpu)
 
 	vmx_update_msr_bitmap_x2apic(vcpu);
 }
+#endif /* !__PKVM_HYP__ */
 
 static u32 vmx_exec_control(struct vcpu_vmx *vmx)
 {
@@ -5125,7 +5126,6 @@ static u32 vmx_secondary_exec_control(struct vcpu_vmx *vmx)
 
 	return exec_control;
 }
-#endif /* !__PKVM_HYP__ */
 
 static inline int vmx_get_pid_table_order(struct kvm *kvm)
 {
@@ -5183,7 +5183,6 @@ int vmx_vcpu_precreate(struct kvm *kvm)
 	return vmx_alloc_ipiv_pid_table(kvm);
 }
 
-#ifndef __PKVM_HYP__
 #define VMX_XSS_EXIT_BITMAP 0
 
 static void init_vmcs(struct vcpu_vmx *vmx)
@@ -5215,6 +5214,9 @@ static void init_vmcs(struct vcpu_vmx *vmx)
 		tertiary_exec_controls_set(vmx, vmx_tertiary_exec_control(vmx));
 
 	if (enable_apicv && lapic_in_kernel(&vmx->vcpu)) {
+#ifdef __PKVM_HYP__
+		struct vcpu_vmx *shared_vmx = to_vmx(to_pkvm_vcpu(&vmx->vcpu)->shared_vcpu);
+#endif
 		vmcs_write64(EOI_EXIT_BITMAP0, 0);
 		vmcs_write64(EOI_EXIT_BITMAP1, 0);
 		vmcs_write64(EOI_EXIT_BITMAP2, 0);
@@ -5223,7 +5225,17 @@ static void init_vmcs(struct vcpu_vmx *vmx)
 		vmcs_write16(GUEST_INTR_STATUS, 0);
 
 		vmcs_write16(POSTED_INTR_NV, POSTED_INTR_VECTOR);
+#ifndef __PKVM_HYP__
 		vmcs_write64(POSTED_INTR_DESC_ADDR, __pa((&vmx->vt.pi_desc)));
+#else
+		/*
+		 * The pKVM hypervisor needs to use the pi_desc from the shared
+		 * vmx to set the POSTED_INTR_DESC_ADDR as the host will post
+		 * the virtual interrupt to the guest via its pi_desc.
+		 */
+		vmcs_write64(POSTED_INTR_DESC_ADDR,
+			     __pa(kern_pkvm_va(&shared_vmx->vt.pi_desc)));
+#endif
 	}
 
 	if (vmx_can_use_ipiv(&vmx->vcpu)) {
@@ -5357,7 +5369,13 @@ void vmx_vcpu_reset(struct kvm_vcpu *vcpu, bool init_event)
 	vmx->msr_ia32_umwait_control = 0;
 
 	vmx->hv_deadline_tsc = -1;
+	/*
+	 * The host emulates the virtual APIC for the guest and resets its TPR,
+	 * so the pKVM hypervisor must not write the APIC page owned by the host.
+	 */
+#ifndef __PKVM_HYP__
 	kvm_set_cr8(vcpu, 0);
+#endif
 
 	seg_setup(VCPU_SREG_CS);
 	vmcs_write16(GUEST_CS_SELECTOR, 0xf000);
@@ -5404,13 +5422,19 @@ void vmx_vcpu_reset(struct kvm_vcpu *vcpu, bool init_event)
 	    kvm_cpu_cap_has(X86_FEATURE_SHSTK))
 		vmcs_writel(GUEST_S_CET, 0);
 
+	/*
+	 * The virtual APIC page reload request is for the XAPIC mode
+	 * which will only be supported for the npVMs, thus leaving this
+	 * to the host.
+	 */
+#ifndef __PKVM_HYP__
 	kvm_make_request(KVM_REQ_APIC_PAGE_RELOAD, vcpu);
+#endif
 
 	vpid_sync_context(vmx->vpid);
 
 	vmx_update_fb_clear_dis(vcpu, vmx);
 }
-#endif /* !__PKVM_HYP__ */
 
 void vmx_enable_irq_window(struct kvm_vcpu *vcpu)
 {
