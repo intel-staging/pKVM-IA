@@ -7433,6 +7433,7 @@ void vmx_set_apic_access_page_addr(struct kvm_vcpu *vcpu)
 	 */
 	read_unlock(&vcpu->kvm->mmu_lock);
 }
+#endif /* !__PKVM_HYP__ */
 
 void vmx_hwapic_isr_update(struct kvm_vcpu *vcpu, int max_isr)
 {
@@ -7458,6 +7459,7 @@ void vmx_hwapic_isr_update(struct kvm_vcpu *vcpu, int max_isr)
 	}
 }
 
+#ifndef __PKVM_HYP__
 static void vmx_set_rvi(int vector)
 {
 	u16 status;
