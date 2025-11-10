@@ -7824,6 +7824,7 @@ free_vpid:
 	free_vpid(vmx->vpid);
 	return err;
 }
+#endif /* !__PKVM_HYP__ */
 
 #define L1TF_MSG_SMT "L1TF CPU bug present and SMT on, data leak possible. See CVE-2018-3646 and https://www.kernel.org/doc/html/latest/admin-guide/hw-vuln/l1tf.html for details.\n"
 #define L1TF_MSG_L1D "L1TF CPU bug present and virtualization mitigation disabled, data leak possible. See CVE-2018-3646 and https://www.kernel.org/doc/html/latest/admin-guide/hw-vuln/l1tf.html for details.\n"
@@ -7833,6 +7834,16 @@ int vmx_vm_init(struct kvm *kvm)
 	if (!ple_gap)
 		kvm_disable_exits(kvm, KVM_X86_DISABLE_EXITS_PAUSE);
 
+	/*
+	 * Since pkvm_mitigate_cpu_bugs() doesn't currently mitigate L1TF, pKVM
+	 * initialization fails if the L1TF bug is present, unless
+	 * kvm-intel.pkvm_relax_cpu_bugs is set (the default, for development
+	 * purposes), in which case pKVM runs with L1TF unmitigated. So we are
+	 * here either because the CPU doesn't have the L1TF bug or pKVM is
+	 * allowed to run with L1TF bug, and both cases don't need to mitigate
+	 * the L1TF bug.
+	 */
+#ifndef __PKVM_HYP__
 	if (boot_cpu_has(X86_BUG_L1TF) && enable_ept) {
 		switch (l1tf_mitigation) {
 		case L1TF_MITIGATION_OFF:
@@ -7857,12 +7868,14 @@ int vmx_vm_init(struct kvm *kvm)
 			break;
 		}
 	}
+#endif
 
 	if (enable_pml)
 		kvm->arch.cpu_dirty_log_size = PML_LOG_NR_ENTRIES;
 	return 0;
 }
 
+#ifndef __PKVM_HYP__
 static inline bool vmx_ignore_guest_pat(struct kvm *kvm)
 {
 	/*
