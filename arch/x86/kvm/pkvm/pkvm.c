@@ -32,6 +32,7 @@ __visible bool virt_rebooting;
  * needs a private copy which has the same default value.
  */
 bool __read_mostly enable_pmu = true;
+bool __read_mostly enable_mediated_pmu;
 
 /*
  * Needed by code sharing with the KVM. As the pKVM hypervisor requires to have
