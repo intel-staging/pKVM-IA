@@ -962,8 +962,8 @@ struct kvm_x86_ops vt_x86_ops __initdata = {
 	.vcpu_needs_initialization = vt_op_tdx_only(vcpu_needs_initialization),
 #endif
 	.vcpu_run = vt_op(vcpu_run),
-#ifndef __PKVM_HYP__
 	.handle_exit = vt_op(handle_exit),
+#ifndef __PKVM_HYP__
 	.skip_emulated_instruction = vmx_skip_emulated_instruction,
 	.update_emulated_instruction = vmx_update_emulated_instruction,
 	.unhandleable_emulation_required = vt_op(unhandleable_emulation_required),
