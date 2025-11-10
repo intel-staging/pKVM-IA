@@ -128,6 +128,8 @@ static int pkvm_vm_init(phys_addr_t host_kvm_pa, phys_addr_t pkvm_vm_pa)
 
 	pkvm_vm->kvm.arch.vm_type = vm_type;
 
+	pkvm_spin_lock_init(&pkvm_vm->lock);
+
 	ret = allocate_pkvm_vm_handle(pkvm_vm);
 	if (ret < 0)
 		goto undonate;
