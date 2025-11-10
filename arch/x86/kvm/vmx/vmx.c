@@ -3538,7 +3538,6 @@ static void exit_lmode(struct kvm_vcpu *vcpu)
 
 #endif
 
-#ifndef __PKVM_HYP__
 void vmx_flush_tlb_all(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
@@ -3569,9 +3568,14 @@ static inline int vmx_get_current_vpid(struct kvm_vcpu *vcpu)
 	return to_vmx(vcpu)->vpid;
 }
 
+#ifndef __PKVM_HYP__
 static u64 construct_eptp(hpa_t root_hpa)
+#else
+static u64 construct_eptp(hpa_t root_hpa, int root_level)
+#endif
 {
 	u64 eptp = root_hpa | VMX_EPTP_MT_WB;
+#ifndef __PKVM_HYP__
 	struct kvm_mmu_page *root;
 
 	if (kvm_mmu_is_dummy_root(root_hpa))
@@ -3589,13 +3593,26 @@ static u64 construct_eptp(hpa_t root_hpa)
 
 	if (enable_ept_ad_bits && !root->role.ad_disabled)
 		eptp |= VMX_EPTP_AD_ENABLE_BIT;
+#else
+	eptp |= (root_level == 5) ? VMX_EPTP_PWL_5 : VMX_EPTP_PWL_4;
+	if (enable_ept_ad_bits)
+		eptp |= VMX_EPTP_AD_ENABLE_BIT;
+#endif
 
 	return eptp;
 }
 
+#ifndef __PKVM_HYP__
 static void vmx_flush_tlb_ept_root(hpa_t root_hpa)
+#else
+static void vmx_flush_tlb_ept_root(hpa_t root_hpa, int root_level)
+#endif
 {
+#ifndef __PKVM_HYP__
 	u64 eptp = construct_eptp(root_hpa);
+#else
+	u64 eptp = construct_eptp(root_hpa, root_level);
+#endif
 
 	if (VALID_PAGE(eptp))
 		ept_sync_context(eptp);
@@ -3613,7 +3630,11 @@ void vmx_flush_tlb_current(struct kvm_vcpu *vcpu)
 		return;
 
 	if (enable_ept)
+#ifndef __PKVM_HYP__
 		vmx_flush_tlb_ept_root(root_hpa);
+#else
+		vmx_flush_tlb_ept_root(root_hpa, mmu->root_role.level);
+#endif
 	else
 		vpid_sync_context(vmx_get_current_vpid(vcpu));
 }
@@ -3639,6 +3660,7 @@ void vmx_flush_tlb_guest(struct kvm_vcpu *vcpu)
 	vpid_sync_context(vmx_get_current_vpid(vcpu));
 }
 
+#ifndef __PKVM_HYP__
 void vmx_ept_load_pdptrs(struct kvm_vcpu *vcpu)
 {
 	if (!kvm_register_is_dirty(vcpu, VCPU_REG_PDPTR))
