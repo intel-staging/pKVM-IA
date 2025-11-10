@@ -7815,22 +7815,34 @@ fastpath_t vmx_vcpu_run(struct kvm_vcpu *vcpu, u64 run_flags)
 
 	return vmx_exit_handlers_fastpath(vcpu, force_immediate_exit);
 }
+#endif /* !__PKVM_HYP__ */
 
 void vmx_vcpu_free(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 
+#ifndef __PKVM_HYP__
 	if (enable_pml)
 		vmx_destroy_pml_buffer(vmx);
+#endif
 	free_vpid(vmx->vpid);
 	nested_vmx_free_vcpu(vcpu);
 	free_loaded_vmcs(vmx->loaded_vmcs);
+#ifndef __PKVM_HYP__
 	free_page((unsigned long)vmx->ve_info);
+#endif
 
 	if (vmx_can_use_ipiv(vcpu))
+		/*
+		 * FIXME: For pKVM, in the case when vmx_vcpu_free() is called
+		 * in the failure path when vCPU creation failed due to an
+		 * already existing vCPU with the same vcpu_id, this clearing
+		 * means unexpected disabling of IPIv for that existing good
+		 * vCPU. This could be fixed by checking for duplicate vcpu_id
+		 * before creating the vCPU. See TODO in __vcpu_create().
+		 */
 		WRITE_ONCE(to_kvm_vmx(vcpu->kvm)->pid_table[vcpu->vcpu_id], 0);
 }
-#endif /* !__PKVM_HYP__ */
 
 int vmx_vcpu_create(struct kvm_vcpu *vcpu)
 {
