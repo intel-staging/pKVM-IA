@@ -3676,7 +3676,6 @@ void vmx_flush_tlb_guest(struct kvm_vcpu *vcpu)
 	vpid_sync_context(vmx_get_current_vpid(vcpu));
 }
 
-#ifndef __PKVM_HYP__
 void vmx_ept_load_pdptrs(struct kvm_vcpu *vcpu)
 {
 	if (!kvm_register_is_dirty(vcpu, VCPU_REG_PDPTR))
@@ -3689,7 +3688,6 @@ void vmx_ept_load_pdptrs(struct kvm_vcpu *vcpu)
 		vmcs_write64(GUEST_PDPTR3, vcpu->arch.pdptrs[3]);
 	}
 }
-#endif /* !__PKVM_HYP__ */
 
 void ept_save_pdptrs(struct kvm_vcpu *vcpu)
 {
@@ -3814,6 +3812,7 @@ static int vmx_get_max_ept_level(void)
 		return 5;
 	return 4;
 }
+#endif /* !__PKVM_HYP__ */
 
 void vmx_load_mmu_pgd(struct kvm_vcpu *vcpu, hpa_t root_hpa, int root_level)
 {
@@ -3822,9 +3821,13 @@ void vmx_load_mmu_pgd(struct kvm_vcpu *vcpu, hpa_t root_hpa, int root_level)
 	unsigned long guest_cr3;
 
 	if (enable_ept) {
+#ifndef __PKVM_HYP__
 		KVM_MMU_WARN_ON(root_to_sp(root_hpa) &&
 				root_level != root_to_sp(root_hpa)->role.level);
 		vmcs_write64(EPT_POINTER, construct_eptp(root_hpa));
+#else
+		vmcs_write64(EPT_POINTER, construct_eptp(root_hpa, root_level));
+#endif
 
 		hv_track_root_tdp(vcpu, root_hpa);
 
@@ -3843,7 +3846,6 @@ void vmx_load_mmu_pgd(struct kvm_vcpu *vcpu, hpa_t root_hpa, int root_level)
 	if (update_guest_cr3)
 		vmcs_writel(GUEST_CR3, guest_cr3);
 }
-#endif /* !__PKVM_HYP__ */
 
 bool vmx_is_valid_cr4(struct kvm_vcpu *vcpu, unsigned long cr4)
 {
