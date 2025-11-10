@@ -1698,6 +1698,7 @@ static void vmx_switch_loaded_vmcs(struct kvm_vcpu *vcpu,
 	vmx_vcpu_load_vmcs(vcpu, cpu);
 	put_cpu();
 }
+#endif /* !__PKVM_HYP__ */
 
 static void vmx_load_vmcs01(struct kvm_vcpu *vcpu)
 {
@@ -1708,8 +1709,16 @@ static void vmx_load_vmcs01(struct kvm_vcpu *vcpu)
 		return;
 	}
 
+#ifndef __PKVM_HYP__
 	WARN_ON_ONCE(vmx->loaded_vmcs != &vmx->nested.vmcs02);
 	vmx_switch_loaded_vmcs(vcpu, &vmx->vmcs01);
+#else
+	/*
+	 * pKVM hypervisor doesn't support run nested guest VM, so it should not
+	 * be here.
+	 */
+	BUG_ON(1);
+#endif
 }
 
 static void vmx_put_vmcs01(struct kvm_vcpu *vcpu)
@@ -1717,11 +1726,18 @@ static void vmx_put_vmcs01(struct kvm_vcpu *vcpu)
 	if (!is_guest_mode(vcpu))
 		return;
 
+#ifndef __PKVM_HYP__
 	vmx_switch_loaded_vmcs(vcpu, &to_vmx(vcpu)->nested.vmcs02);
+#else
+	/*
+	 * pKVM hypervisor doesn't support run nested guest VM, so it should not
+	 * be here.
+	 */
+	BUG_ON(1);
+#endif
 }
 DEFINE_GUARD(vmx_vmcs01, struct kvm_vcpu *,
 	     vmx_load_vmcs01(_T), vmx_put_vmcs01(_T))
-#endif /* !__PKVM_HYP__ */
 
 bool vmx_emulation_required(struct kvm_vcpu *vcpu)
 {
@@ -7259,6 +7275,7 @@ int vmx_handle_exit(struct kvm_vcpu *vcpu, fastpath_t exit_fastpath)
 	return ret;
 }
 
+#endif /* !__PKVM_HYP__ */
 void vmx_update_cr8_intercept(struct kvm_vcpu *vcpu, int tpr, int irr)
 {
 	int tpr_threshold;
@@ -7273,6 +7290,7 @@ void vmx_update_cr8_intercept(struct kvm_vcpu *vcpu, int tpr, int irr)
 	vmcs_write32(TPR_THRESHOLD, tpr_threshold);
 }
 
+#ifndef __PKVM_HYP__
 void vmx_set_virtual_apic_mode(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
