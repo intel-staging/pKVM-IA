@@ -47,11 +47,15 @@ pkvm-hyp-y			+= $(kvm)/x86.o $(kvm)/msrs.o $(kvm)/cpuid.o \
 
 pkvm-hyp-$(CONFIG_PKVM_INTEL)	+= $(kvm)/vmx/vmx.o vmx/host_vmx.o \
 				   vmx/host_vmentry.o vmx/idt.o vmx/ept.o \
-				   $(kvm)/vmx/main.o
+				   $(kvm)/vmx/main.o $(kvm)/vmx/vmenter.o
 
 AFLAGS_vmx/host_vmentry.pkvm.o	+= -iquote $(srctree)/arch/x86/kvm
 AFLAGS_vmx/host_vmentry.pkvm.o	+= -iquote $(obj)
 $(obj)/vmx/host_vmentry.pkvm.o:	$(obj)/kvm-asm-offsets.h
+
+AFLAGS_$(kvm)/vmx/vmenter.pkvm.o += -iquote $(srctree)/arch/x86/kvm
+AFLAGS_$(kvm)/vmx/vmenter.pkvm.o += -iquote $(obj)
+$(obj)/$(kvm)/vmx/vmenter.pkvm.o: $(obj)/kvm-asm-offsets.h
 
 $(obj)/kvm-asm-offsets.s: $(src)/$(kvm)/kvm-asm-offsets.c FORCE
 	$(call if_changed_dep,cc_s_c)

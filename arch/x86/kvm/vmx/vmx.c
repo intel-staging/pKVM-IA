@@ -7711,6 +7711,7 @@ static void vmx_refresh_guest_perf_global_control(struct kvm_vcpu *vcpu)
 
 	pmu->global_ctrl = vmcs_read64(GUEST_IA32_PERF_GLOBAL_CTRL);
 }
+#endif /* !__PKVM_HYP__ */
 
 void noinstr vmx_update_host_rsp(struct vcpu_vmx *vmx, unsigned long host_rsp)
 {
@@ -7720,6 +7721,7 @@ void noinstr vmx_update_host_rsp(struct vcpu_vmx *vmx, unsigned long host_rsp)
 	}
 }
 
+#ifndef __PKVM_HYP__
 static fastpath_t vmx_exit_handlers_fastpath(struct kvm_vcpu *vcpu,
 					     bool force_immediate_exit)
 {
