@@ -526,6 +526,7 @@ static __always_inline void vmx_enable_fb_clear(struct vcpu_vmx *vmx)
 	vmx->msr_ia32_mcu_opt_ctrl &= ~FB_CLEAR_DIS;
 	native_wrmsrq(MSR_IA32_MCU_OPT_CTRL, vmx->msr_ia32_mcu_opt_ctrl);
 }
+#endif /* !__PKVM_HYP__ */
 
 static void vmx_update_fb_clear_dis(struct kvm_vcpu *vcpu, struct vcpu_vmx *vmx)
 {
@@ -556,6 +557,7 @@ static void vmx_update_fb_clear_dis(struct kvm_vcpu *vcpu, struct vcpu_vmx *vmx)
 		vmx->disable_fb_clear = false;
 }
 
+#ifndef __PKVM_HYP__
 static u32 vmx_segment_access_rights(struct kvm_segment *var);
 
 void vmx_vmexit(void);
@@ -814,14 +816,21 @@ struct vmx_uret_msr *vmx_find_uret_msr(struct vcpu_vmx *vmx, u32 msr)
 	return NULL;
 }
 
-#ifndef __PKVM_HYP__
 static int vmx_set_guest_uret_msr(struct vcpu_vmx *vmx,
 				  struct vmx_uret_msr *msr, u64 data)
 {
 	unsigned int slot = msr - vmx->guest_uret_msrs;
 	int ret = 0;
 
+#ifndef __PKVM_HYP__
 	if (msr->load_into_hardware) {
+#else
+	/*
+	 * The host may use set_msr PV interface to access uret MSRs and in this
+	 * case, the uret MSRs are not loaded to the hardware.
+	 */
+	if (msr->load_into_hardware && vmx->guest_uret_msrs_loaded) {
+#endif
 		preempt_disable();
 		ret = kvm_set_user_return_msr(slot, data, msr->mask);
 		preempt_enable();
@@ -831,6 +840,7 @@ static int vmx_set_guest_uret_msr(struct vcpu_vmx *vmx,
 	return ret;
 }
 
+#ifndef __PKVM_HYP__
 void vmx_emergency_disable_virtualization_cpu(void)
 {
 	int cpu = raw_smp_processor_id();
@@ -1484,8 +1494,10 @@ static void vmx_prepare_switch_to_host(struct vcpu_vmx *vmx)
 	vmx->vt.guest_state_loaded = false;
 	vmx->guest_uret_msrs_loaded = false;
 }
+#endif /* !__PKVM_HYP__ */
 
 #ifdef CONFIG_X86_64
+#ifndef __PKVM_HYP__
 static u64 vmx_read_guest_host_msr(struct vcpu_vmx *vmx, u32 msr, u64 *cache)
 {
 	preempt_disable();
@@ -1494,6 +1506,7 @@ static u64 vmx_read_guest_host_msr(struct vcpu_vmx *vmx, u32 msr, u64 *cache)
 	preempt_enable();
 	return *cache;
 }
+#endif /* !__PKVM_HYP__ */
 
 static void vmx_write_guest_host_msr(struct vcpu_vmx *vmx, u32 msr, u64 data,
 				     u64 *cache)
@@ -1505,11 +1518,13 @@ static void vmx_write_guest_host_msr(struct vcpu_vmx *vmx, u32 msr, u64 data,
 	*cache = data;
 }
 
+#ifndef __PKVM_HYP__
 static u64 vmx_read_guest_kernel_gs_base(struct vcpu_vmx *vmx)
 {
 	return vmx_read_guest_host_msr(vmx, MSR_KERNEL_GS_BASE,
 				       &vmx->msr_guest_kernel_gs_base);
 }
+#endif /* !__PKVM_HYP__ */
 
 static void vmx_write_guest_kernel_gs_base(struct vcpu_vmx *vmx, u64 data)
 {
@@ -1518,6 +1533,7 @@ static void vmx_write_guest_kernel_gs_base(struct vcpu_vmx *vmx, u64 data)
 }
 #endif
 
+#ifndef __PKVM_HYP__
 static void grow_ple_window(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
@@ -2177,6 +2193,7 @@ void vmx_write_tsc_multiplier(struct kvm_vcpu *vcpu)
 {
 	vmcs_write64(TSC_MULTIPLIER, vcpu->arch.tsc_scaling_ratio);
 }
+#endif /* !__PKVM_HYP__ */
 
 /*
  * Userspace is allowed to set any supported IA32_FEATURE_CONTROL regardless of
@@ -2216,6 +2233,7 @@ static inline bool is_vmx_feature_control_msr_valid(struct vcpu_vmx *vmx,
 	return !(msr->data & ~valid_bits);
 }
 
+#ifndef __PKVM_HYP__
 int vmx_get_feature_msr(u32 msr, u64 *data)
 {
 	switch (msr) {
@@ -2392,6 +2410,7 @@ int vmx_get_msr(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 
 	return 0;
 }
+#endif /* !__PKVM_HYP__ */
 
 static u64 nested_vmx_truncate_sysenter_addr(struct kvm_vcpu *vcpu,
 						    u64 data)
@@ -2411,9 +2430,11 @@ u64 vmx_get_supported_debugctl(struct kvm_vcpu *vcpu, bool host_initiated)
 	    (host_initiated || guest_cpu_cap_has(vcpu, X86_FEATURE_BUS_LOCK_DETECT)))
 		debugctl |= DEBUGCTLMSR_BUS_LOCK_DETECT;
 
+#ifndef __PKVM_HYP__
 	if ((kvm_caps.supported_perf_cap & PERF_CAP_LBR_FMT) &&
 	    (host_initiated || intel_pmu_lbr_is_enabled(vcpu)))
 		debugctl |= DEBUGCTLMSR_LBR | DEBUGCTLMSR_FREEZE_LBRS_ON_PMI;
+#endif
 
 	if (boot_cpu_has(X86_FEATURE_RTM) &&
 	    (host_initiated || guest_cpu_cap_has(vcpu, X86_FEATURE_RTM)))
@@ -2446,7 +2467,9 @@ int vmx_set_msr(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 	int ret = 0;
 	u32 msr_index = msr_info->index;
 	u64 data = msr_info->data;
+#ifndef __PKVM_HYP__
 	u32 index;
+#endif
 
 	switch (msr_index) {
 	case MSR_EFER:
@@ -2480,6 +2503,10 @@ int vmx_set_msr(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 						      MSR_TYPE_RW);
 			vcpu->arch.xfd_no_write_intercept = true;
 			vmx_update_exception_bitmap(vcpu);
+#ifdef __PKVM_HYP__
+			if (!pkvm_is_protected_vcpu(vcpu))
+				to_pkvm_vcpu(vcpu)->shared_vcpu->arch.xfd_no_write_intercept = true;
+#endif
 		}
 		break;
 #endif
@@ -2514,9 +2541,15 @@ int vmx_set_msr(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 
 		vmx_guest_debugctl_write(vcpu, data);
 
+		/*
+		 * The pKVM doesn't support guest PMU emulation. Disabling this
+		 * code to avoid importing unnecessary symbols.
+		 */
+#ifndef __PKVM_HYP__
 		if (intel_pmu_lbr_is_enabled(vcpu) && !vmx->lbr_desc.event &&
 		    (data & DEBUGCTLMSR_LBR))
 			intel_pmu_create_guest_lbr_event(vcpu);
+#endif
 		return 0;
 	case MSR_IA32_BNDCFGS:
 		if (!kvm_mpx_supported() ||
@@ -2636,6 +2669,9 @@ int vmx_set_msr(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 		if (!guest_cpu_cap_has(vcpu, X86_FEATURE_VMX))
 			return 1;
 		return vmx_set_vmx_msr(vcpu, msr_index, data);
+
+	/* The pKVM hypervisor doesn't support PT guest mode. */
+#ifndef __PKVM_HYP__
 	case MSR_IA32_RTIT_CTL:
 		if (!vmx_pt_mode_is_host_guest() ||
 			vmx_rtit_ctl_check(vcpu, data) ||
@@ -2695,6 +2731,17 @@ int vmx_set_msr(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 		else
 			vmx->pt_desc.guest.addr_a[index / 2] = data;
 		break;
+#else
+	/* The pKVM hypervisor doesn't support PT guest mode. */
+	case MSR_IA32_RTIT_CTL:
+	case MSR_IA32_RTIT_STATUS:
+	case MSR_IA32_RTIT_CR3_MATCH:
+	case MSR_IA32_RTIT_OUTPUT_BASE:
+	case MSR_IA32_RTIT_OUTPUT_MASK:
+	case MSR_IA32_RTIT_ADDR0_A ... MSR_IA32_RTIT_ADDR3_B:
+		WARN_ON_ONCE(vmx_pt_mode_is_host_guest());
+		return 1;
+#endif
 	case MSR_IA32_S_CET:
 		vmcs_writel(GUEST_S_CET, data);
 		break;
@@ -2705,6 +2752,7 @@ int vmx_set_msr(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 		vmcs_writel(GUEST_INTR_SSP_TABLE, data);
 		break;
 	case MSR_IA32_PERF_CAPABILITIES:
+#ifndef __PKVM_HYP__
 		if (data & PERF_CAP_LBR_FMT) {
 			if ((data & PERF_CAP_LBR_FMT) !=
 			    (kvm_caps.supported_perf_cap & PERF_CAP_LBR_FMT))
@@ -2725,6 +2773,13 @@ int vmx_set_msr(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 		}
 		ret = kvm_set_msr_common(vcpu, msr_info);
 		break;
+#else
+		/*
+		 * The pKVM hypervisor doesn't support emulating PMU for guest
+		 * thus also the IA32_PER_CAPABILITIES.
+		 */
+		return KVM_MSR_RET_UNSUPPORTED;
+#endif
 
 	default:
 	find_uret_msr:
@@ -2742,6 +2797,7 @@ int vmx_set_msr(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 	return ret;
 }
 
+#ifndef __PKVM_HYP__
 void vmx_cache_reg(struct kvm_vcpu *vcpu, enum kvm_reg reg)
 {
 	unsigned long guest_owned_bits;
@@ -4312,7 +4368,6 @@ void free_vpid(int vpid)
 #endif
 }
 
-#ifndef __PKVM_HYP__
 static void vmx_msr_bitmap_l01_changed(struct vcpu_vmx *vmx)
 {
 	/*
@@ -4356,6 +4411,7 @@ void vmx_set_intercept_for_msr(struct kvm_vcpu *vcpu, u32 msr, int type, bool se
 	}
 }
 
+#ifndef __PKVM_HYP__
 static void vmx_update_msr_bitmap_x2apic(struct kvm_vcpu *vcpu)
 {
 	/*
