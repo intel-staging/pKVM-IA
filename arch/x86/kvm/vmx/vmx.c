@@ -7459,7 +7459,6 @@ void vmx_hwapic_isr_update(struct kvm_vcpu *vcpu, int max_isr)
 	}
 }
 
-#ifndef __PKVM_HYP__
 static void vmx_set_rvi(int vector)
 {
 	u16 status;
@@ -7479,7 +7478,11 @@ static void vmx_set_rvi(int vector)
 
 int vmx_sync_pir_to_irr(struct kvm_vcpu *vcpu)
 {
+#ifndef __PKVM_HYP__
 	struct vcpu_vt *vt = to_vt(vcpu);
+#else
+	struct vcpu_vt *vt = to_vt(to_pkvm_vcpu(vcpu)->shared_vcpu);
+#endif
 	bool max_irr_is_from_pir;
 	int max_irr;
 
@@ -7546,7 +7549,6 @@ int vmx_sync_pir_to_irr(struct kvm_vcpu *vcpu)
 
 	return max_irr;
 }
-#endif /* !__PKVM_HYP__ */
 
 void vmx_load_eoi_exitmap(struct kvm_vcpu *vcpu, u64 *eoi_exit_bitmap)
 {
