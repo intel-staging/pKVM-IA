@@ -7,6 +7,8 @@
 #include "lapic.h"
 #include "memory.h"
 #include "mmu.h"
+#include "pkvm.h"
+#include "trace.h"
 
 static void *hyp_pgt_base;
 static void *host_pgt_base;
@@ -284,6 +286,8 @@ int pkvm_init_finalize(struct pkvm_mem_info infos[], int nr_infos,
 	ret = pkvm_host_mmu_finalize(host_mmu_finalize_fn);
 	if (ret)
 		return ret;
+
+	pkvm_vcpu_perf_init(this_cpu_read(host_vcpu));
 
 	this_cpu_write(cpu_finalized, true);
 	return 0;
