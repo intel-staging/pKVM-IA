@@ -50,10 +50,11 @@ struct pkvm_mem_info {
 	u64 prot;
 };
 
+#define TO_PKVM_HC(f)		CONCATENATE(__pkvm__, f)
+
 enum pkvm_hc {
-	__pkvm__init_finalize,
-	__pkvm__enable_vmexit_trace,
-	__pkvm__dump_vmexit_trace,
+	#define PKVM_HC(f)	TO_PKVM_HC(f),
+	#include <asm/pkvm_hypercalls.h>
 };
 
 #define __pkvm_hypercall_0(f)		kvm_hypercall4(f, 0, 0, 0, 0)
@@ -75,11 +76,10 @@ enum pkvm_hc {
 		kvm_hypercall4(f, (unsigned long)(p1), (unsigned long)(p2),		\
 			       (unsigned long)(p3), (unsigned long)(p4));		\
 	})
-#define PKVM_HC(f)		CONCATENATE(__pkvm__, f)
 #define pkvm_hypercall(f, ...)								\
 	({										\
 		CONCATENATE(__pkvm_hypercall_,						\
-			    COUNT_ARGS(__VA_ARGS__))(PKVM_HC(f), ##__VA_ARGS__);	\
+			    COUNT_ARGS(__VA_ARGS__))(TO_PKVM_HC(f), ##__VA_ARGS__);	\
 	})
 
 extern unsigned long pkvm_sym(page_offset_base);
