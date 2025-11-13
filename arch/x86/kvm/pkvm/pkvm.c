@@ -4,6 +4,7 @@
 #include "init_finalize.h"
 #include "lapic.h"
 #include "pkvm.h"
+#include "trace.h"
 
 /*
  * Needed by kvm_spurious_fault() which is a generic fault function for the
@@ -21,12 +22,15 @@ int pkvm_handle_host_hypercall(unsigned long nr, unsigned long a0,
 			       unsigned long a1, unsigned long a2,
 			       unsigned long a3)
 {
-	int ret;
+	int ret = 0;
 
 	switch (nr) {
 	case __pkvm__init_finalize:
 		ret = pkvm_init_finalize((struct pkvm_mem_info *)a0, a1,
 					 (struct pkvm_init_ops *)a2);
+		break;
+	case __pkvm__enable_vmexit_trace:
+		pkvm_enable_vmexit_trace(a0);
 		break;
 	default:
 		ret = -EINVAL;
