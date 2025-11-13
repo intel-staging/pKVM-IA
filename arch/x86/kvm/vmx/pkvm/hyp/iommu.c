@@ -114,15 +114,15 @@ int pkvm_init_iommu(unsigned long mem_base, unsigned long nr_pages)
 {
 	struct pkvm_iommu_info *info = &pkvm_hyp->iommu_infos[0];
 	struct pkvm_iommu *piommu = &iommus[0];
-	int i, ret = hyp_pool_init(&iommu_pool, mem_base >> PAGE_SHIFT, nr_pages, 0);
+	int i, ret;
 
+#ifndef CONFIG_PKVM_INTEL_PVIOMMU
+	ret =  hyp_pool_init(&iommu_pool, mem_base >> PAGE_SHIFT, nr_pages, 0);
 	if (ret)
 		return ret;
-
-#ifdef CONFIG_PKVM_INTEL_PVIOMMU
-	pkvm_dbg("pkvm: %s: Initializing iommus in paravirt mode\n", __func__);
-#else
 	pkvm_dbg("pkvm: %s: Initializing iommus in shadow mode\n", __func__);
+#else
+	pkvm_dbg("pkvm: %s: Initializing iommus in paravirt mode\n", __func__);
 #endif
 
 	for (i = 0; i < PKVM_MAX_IOMMU_NUM; piommu++, info++, i++) {

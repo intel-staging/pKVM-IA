@@ -75,6 +75,7 @@ static int divide_memory_pool(void)
 	if (!host_ept_pgt_base)
 		return -ENOMEM;
 
+#ifndef CONFIG_PKVM_INTEL_PVIOMMU
 	nr_pages = pkvm_iommu_pages(PKVM_MAX_PASID, PKVM_MAX_PASID_PDEV_NUM,
 				    PKVM_MAX_PDEV_NUM, PKVM_MAX_IOMMU_NUM,
 				    PKVM_QI_DESC_ALIGNED_SIZE,
@@ -83,6 +84,7 @@ static int divide_memory_pool(void)
 	iommu_mem_base = pkvm_early_alloc_contig(nr_pages);
 	if (!iommu_mem_base)
 		return -ENOMEM;
+#endif
 
 	nr_pages = pkvm_host_shadow_iommu_pgtable_pages(PKVM_MAX_PDEV_NUM);
 	shadow_ept_base = pkvm_early_alloc_contig(nr_pages);
