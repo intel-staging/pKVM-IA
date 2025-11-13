@@ -3,6 +3,7 @@
 #include <linux/kvm_host.h>
 #include "init_finalize.h"
 #include "lapic.h"
+#include "memory.h"
 #include "pkvm.h"
 #include "trace.h"
 
@@ -31,6 +32,9 @@ int pkvm_handle_host_hypercall(unsigned long nr, unsigned long a0,
 		break;
 	case __pkvm__enable_vmexit_trace:
 		pkvm_enable_vmexit_trace(a0);
+		break;
+	case __pkvm__dump_vmexit_trace:
+		ret = pkvm_dump_vmexit_trace(pkvm_host_gpa_to_phys(a0), a1);
 		break;
 	default:
 		ret = -EINVAL;

@@ -53,6 +53,7 @@ struct pkvm_mem_info {
 enum pkvm_hc {
 	__pkvm__init_finalize,
 	__pkvm__enable_vmexit_trace,
+	__pkvm__dump_vmexit_trace,
 };
 
 #define __pkvm_hypercall_0(f)		kvm_hypercall4(f, 0, 0, 0, 0)
