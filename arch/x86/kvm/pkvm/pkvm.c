@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <linux/types.h>
+#include "init_finalize.h"
 #include "pkvm.h"
 
 /*
@@ -13,3 +14,21 @@ __visible bool kvm_rebooting;
 struct pkvm_hyp *pkvm_hyp;
 DEFINE_PER_CPU(struct pkvm_pcpu *, phys_cpu);
 DEFINE_PER_CPU(struct kvm_vcpu *, host_vcpu);
+
+int pkvm_handle_host_hypercall(unsigned long nr, unsigned long a0,
+			       unsigned long a1, unsigned long a2,
+			       unsigned long a3)
+{
+	int ret;
+
+	switch (nr) {
+	case __pkvm__init_finalize:
+		ret = pkvm_init_finalize();
+		break;
+	default:
+		ret = -EINVAL;
+		break;
+	}
+
+	return ret;
+}

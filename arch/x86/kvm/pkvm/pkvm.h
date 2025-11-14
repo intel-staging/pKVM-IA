@@ -7,4 +7,8 @@
 DECLARE_PER_CPU(struct pkvm_pcpu *, phys_cpu);
 DECLARE_PER_CPU(struct kvm_vcpu *, host_vcpu);
 
+int pkvm_handle_host_hypercall(unsigned long nr, unsigned long a0,
+			       unsigned long a1, unsigned long a2,
+			       unsigned long a3);
+
 #endif /* __PKVM_X86_PKVM_H */

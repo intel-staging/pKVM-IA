@@ -624,6 +624,31 @@ static __init int pkvm_host_deprivilege_cpus(struct pkvm_hyp *pkvm)
 	return ret ? ret : p.ret;
 }
 
+static void do_pkvm_finalize(void *data)
+{
+	int ret = pkvm_hypercall(init_finalize);
+
+	if (data)
+		*(int *)data = ret;
+}
+
+static __init int pkvm_init_finalize(void)
+{
+	int ret, cpu, finalize_ret;
+
+	for_each_possible_cpu(cpu) {
+		ret = smp_call_function_single(cpu, do_pkvm_finalize,
+					       &finalize_ret, 1);
+		if (ret || finalize_ret) {
+			pr_err("Failed to finalize CPU%d: smp_call %d, finalize: %d\n",
+			       cpu, ret, finalize_ret);
+			break;
+		}
+	}
+
+	return ret ? ret : finalize_ret;
+}
+
 int __init vmx_pkvm_init(void)
 {
 	unsigned long nr_pages;
@@ -681,7 +706,13 @@ int __init vmx_pkvm_init(void)
 		goto out;
 	}
 
-	pr_info("All cpus are in guest mode!\n");
+	ret = pkvm_init_finalize();
+	if (ret) {
+		/* TODO: Re-privilege the deprivileged CPUs */
+		goto out;
+	}
+
+	pr_info("Hypervisor is up and running!\n");
 	return 0;
 out:
 	/*
