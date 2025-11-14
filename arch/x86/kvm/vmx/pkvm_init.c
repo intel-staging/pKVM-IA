@@ -685,8 +685,8 @@ static void do_pkvm_finalize(void *data)
 			.prot	= pgprot_val(PAGE_KERNEL),
 		},
 	};
-	int ret = pkvm_hypercall(init_finalize, (unsigned long)infos,
-				 ARRAY_SIZE(infos), NULL);
+	int ret = pkvm_hypercall(init_finalize, (unsigned long)infos, ARRAY_SIZE(infos),
+				 (unsigned long)pkvm_sym(pkvm_vmx_init_ops));
 
 	if (data)
 		*(int *)data = ret;

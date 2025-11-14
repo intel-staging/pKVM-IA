@@ -4,10 +4,28 @@
 #include <kvm_emulate.h>
 #include <vmx/x86_ops.h>
 #include "host_vmx.h"
+#include "init_finalize.h"
 #include "pkvm.h"
 
 #define CR4			4
 #define MOV_TO_CR		0
+
+static struct pkvm_init_ops vmx_init_ops;
+void *pkvm_vmx_init_ops = &vmx_init_ops;
+
+static int vmx_hyp_mmu_finalize(struct pkvm_pgtable *pgt)
+{
+	if (!pgt)
+		return -EINVAL;
+
+	vmcs_writel(HOST_CR3, pgt->root_pa);
+
+	return 0;
+}
+
+static struct pkvm_init_ops vmx_init_ops = {
+	.hyp_mmu_finalize = vmx_hyp_mmu_finalize,
+};
 
 static void skip_emulated_instruction(void)
 {

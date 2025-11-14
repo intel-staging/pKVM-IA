@@ -780,6 +780,7 @@ int __init vmx_pkvm_init(void);
 PKVM_DECLARE(void, pkvm_host_vmexit_entry, (void));
 PKVM_DECLARE(void, pkvm_vmx_register_excp_handlers, (void));
 extern struct vmx_capability pkvm_sym(vmx_capability);
+extern void *pkvm_sym(pkvm_vmx_init_ops);
 
 #endif /* CONFIG_PKVM_INTEL */
 
