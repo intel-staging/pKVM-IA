@@ -686,7 +686,7 @@ static void do_pkvm_finalize(void *data)
 		},
 	};
 	int ret = pkvm_hypercall(init_finalize, (unsigned long)infos,
-				 ARRAY_SIZE(infos));
+				 ARRAY_SIZE(infos), NULL);
 
 	if (data)
 		*(int *)data = ret;

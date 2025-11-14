@@ -23,7 +23,8 @@ int pkvm_handle_host_hypercall(unsigned long nr, unsigned long a0,
 
 	switch (nr) {
 	case __pkvm__init_finalize:
-		ret = pkvm_init_finalize((struct pkvm_mem_info *)a0, a1);
+		ret = pkvm_init_finalize((struct pkvm_mem_info *)a0, a1,
+					 (struct pkvm_init_ops *)a2);
 		break;
 	default:
 		ret = -EINVAL;

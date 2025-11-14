@@ -91,7 +91,8 @@ static int finalize_global(struct pkvm_mem_info infos[], int nr_infos)
 	return create_hyp_mmu(infos, nr_infos);
 }
 
-int pkvm_init_finalize(struct pkvm_mem_info infos[], int nr_infos)
+int pkvm_init_finalize(struct pkvm_mem_info infos[], int nr_infos,
+		       struct pkvm_init_ops *init_ops)
 {
 	static bool global_finalized;
 
