@@ -106,7 +106,7 @@ static unsigned long handle_vmcall(struct kvm_vcpu *vcpu)
 		pkvm_handle_set_vmexit_trace(a0);
 		break;
 	case __pkvm__dump_vmexit_trace:
-		pkvm_handle_dump_vmexit_trace(a0, a1, a2);
+		ret = pkvm_handle_dump_vmexit_trace(a0, a1, a2);
 		break;
 	case __pkvm__iommu_mmio_access:
 		ret = pkvm_access_iommu(a0, a1, a2, a3);

@@ -8,6 +8,7 @@
 #include <pkvm.h>
 #include "trace.h"
 #include "debug.h"
+#include "mem_protect.h"
 #include "pkvm/pkvm.h"
 
 /*
@@ -197,17 +198,22 @@ static void copy_guest_vm_trace(int vm_handle, void *dst, unsigned long size)
 	pkvm_walk_each_vm(copy_pkvm_vm_trace, &arg);
 }
 
-void pkvm_handle_dump_vmexit_trace(int vm_handle, unsigned long pa, unsigned long size)
+int pkvm_handle_dump_vmexit_trace(int vm_handle, unsigned long pa, unsigned long size)
 {
+	unsigned long aligned_size = PAGE_ALIGN(size);
 	void *dst;
+	int ret;
 
-	if (!VALID_PAGE(pa))
-		return;
+	if (!VALID_PAGE(pa) || !PAGE_ALIGNED(pa))
+		return -EINVAL;
 
-	/*
-	 * TODO: Assume the memory pages represented by pa is shared by
-	 * the host. Pin before accessing, and unpin after.
-	 */
+	ret = __pkvm_host_share_hyp(pa, aligned_size);
+	if (ret)
+		return ret;
+	ret = __pkvm_pin_shared_mem(pa, aligned_size);
+	if (ret)
+		goto unshare;
+
 	dst = __pkvm_va(pa);
 
 	/*
@@ -218,6 +224,12 @@ void pkvm_handle_dump_vmexit_trace(int vm_handle, unsigned long pa, unsigned lon
 		dst = copy_host_vm_trace(dst, &size);
 
 	copy_guest_vm_trace(vm_handle, dst, size);
+
+	__pkvm_unpin_shared_mem(pa, aligned_size);
+unshare:
+	__pkvm_host_unshare_hyp(pa, aligned_size);
+
+	return ret;
 }
 
 void pkvm_vcpu_perf_init(struct kvm_vcpu *vcpu)
