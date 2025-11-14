@@ -13,6 +13,7 @@
 #define PKVM_STACK_SIZE			SZ_16K
 /* Size of reserved space for private parameter in pKVM stack */
 #define PKVM_STACK_TOP_RESV		16
+#define PKVM_PGTABLE_MAX_LEVELS		5
 
 struct idt_page {
 	gate_desc idt[IDT_ENTRIES];
@@ -99,6 +100,37 @@ static inline unsigned long pkvm_data_pages(unsigned long extra_global,
 static inline unsigned long get_host_stack_top(struct pkvm_pcpu *pcpu)
 {
 	return (unsigned long) &pcpu->stack[sizeof(pcpu->stack)];
+}
+
+static inline unsigned long __pkvm_pgtable_max_pages(unsigned long nr_pages)
+{
+	unsigned long total = 0, i;
+
+	/* Provision the worst case */
+	for (i = 0; i < PKVM_PGTABLE_MAX_LEVELS; i++) {
+		nr_pages = DIV_ROUND_UP(nr_pages, PTRS_PER_PTE);
+		total += nr_pages;
+	}
+
+	return total;
+}
+
+static inline unsigned long __pkvm_pgtable_total_pages(void)
+{
+	unsigned long total = 0, i;
+
+	for (i = 0; i < pkvm_sym(pkvm_memblock_nr); i++) {
+		struct memblock_region *reg = &pkvm_sym(pkvm_memory)[i];
+
+		total += __pkvm_pgtable_max_pages(reg->size >> PAGE_SHIFT);
+	}
+
+	return total;
+}
+
+static inline unsigned long pkvm_hyp_pgtable_pages(void)
+{
+	return __pkvm_pgtable_total_pages();
 }
 
 #endif /* CONFIG_PKVM_X86 */
