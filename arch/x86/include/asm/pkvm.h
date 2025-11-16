@@ -163,6 +163,7 @@ static inline void pkvm_update_iommu_virtual_caps(u64 *cap, u64 *ecap)
 		*cap |= 1 << 7;
 
 	if (ecap) {
+#ifndef CONFIG_PKVM_INTEL_PVIOMMU
 		u64 tmp;
 
 		/*
@@ -183,7 +184,7 @@ static inline void pkvm_update_iommu_virtual_caps(u64 *cap, u64 *ecap)
 		 * when running at the bare metal if pkvm is enabled, to make it as a
 		 * pkvm-awared IOMMU kernel driver.
 		 *
-		 * So disable SLTS and Nest.
+		 * So disable SLTS and NEST.
 		 */
 		*ecap &= ~((1UL << 46) | (1UL << 26));
 
@@ -191,6 +192,18 @@ static inline void pkvm_update_iommu_virtual_caps(u64 *cap, u64 *ecap)
 		tmp = min_t(u64, (PKVM_MAX_PASID_BITS - 1),
 			    (*ecap & GENMASK_ULL(39, 35)) >> 35);
 		*ecap = (*ecap & ~GENMASK_ULL(39, 35)) | (tmp << 35);
+#else
+		/*
+		 * pviommu doesn't support Nested mode, disable NEST.
+		 */
+		*ecap &= ~(1UL << 26);
+#endif
+
+		/*
+		 * pkvm doesn't support PRS(Page Request Support), disable for simplicity.
+		 * TODO: Will revisit this later with device assignment feature.
+		 */
+		*ecap &= ~(1UL << 29);
 	}
 }
 #else /* CONFIG_PKVM_INTEL */
