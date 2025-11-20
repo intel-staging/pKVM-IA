@@ -1996,9 +1996,20 @@ static void handle_gcmd_te(struct pkvm_iommu *iommu, bool en)
 {
 	unsigned long vaddr = 0, vaddr_end = MAX_NUM_OF_ADDRESS_SPACE(iommu);
 	struct pkvm_viommu *viommu = &iommu->viommu;
+	struct viommu_reg *vreg = &viommu->vreg;
 
 	if (en) {
-		viommu->vreg.gsts |= DMA_GSTS_TES;
+		if (vreg->gsts & DMA_GSTS_TES) {
+			pkvm_err("pkvm: %s: iommu%d: TE allowed only once\n",
+					__func__, iommu->iommu.seq_id);
+			return;
+		} else if (!(vreg->gsts & DMA_GSTS_RTPS)) {
+			pkvm_err("pkvm: %s: iommu%d: TE not allowed before SRTP\n",
+					__func__, iommu->iommu.seq_id);
+			return;
+		}
+
+		vreg->gsts |= DMA_GSTS_TES;
 		/*
 		 * Sync shadow id table to emulate Translation enable.
 		 */
@@ -2018,7 +2029,7 @@ static void handle_gcmd_te(struct pkvm_iommu *iommu, bool en)
 	 * need to protect agains the device.
 	 */
 	free_shadow_id(iommu, vaddr, vaddr_end);
-	viommu->vreg.gsts &= ~DMA_GSTS_TES;
+	vreg->gsts &= ~DMA_GSTS_TES;
 	pkvm_dbg("pkvm: %s: disable TE\n", __func__);
 out:
 	flush_context_cache(iommu, 0, 0, 0, DMA_CCMD_GLOBAL_INVL);
@@ -2033,30 +2044,32 @@ static void handle_gcmd_srtp(struct pkvm_iommu *iommu)
 {
 	struct viommu_reg *vreg = &iommu->viommu.vreg;
 	struct pkvm_pgtable *vpgt = &iommu->viommu.pgt;
+	int ret;
 
-	vreg->gsts &= ~DMA_GSTS_RTPS;
+	if (!iommu->viommu.vreg.rta) {
+		pkvm_err("pkvm: %s: iommu%d: host RTADDR_REG not set",
+				__func__, iommu->iommu.seq_id);
+		return;
+	} else if (vreg->gsts & DMA_GSTS_RTPS) {
+		pkvm_err("pkvm: %s: iommu%d: SRTP allowed only once",
+				__func__, iommu->iommu.seq_id);
+		return;
+	} else if (vreg->gsts & DMA_GSTS_TES) {
+		pkvm_err("pkvm: %s: iommu%d: SRTP not allowed after TE",
+				__func__, iommu->iommu.seq_id);
+		return;
+	}
 
 	/* Set the root table phys address from vreg */
 	vpgt->root_pa = vreg->rta & VTD_PAGE_MASK;
 
 	pkvm_dbg("pkvm: %s: set SRTP val 0x%llx\n", __func__, vreg->rta);
 
-	if (!iommu->activated) {
-		if (activate_iommu(iommu)) {
-			pkvm_dbg("pkvm: %s: iommu%d failed to activate\n",
-					__func__, iommu->iommu.seq_id);
-		}
-	} else if (vreg->gsts & DMA_GSTS_TES) {
-		unsigned long vaddr = 0, vaddr_end = MAX_NUM_OF_ADDRESS_SPACE(iommu);
-
-		/* TE is already enabled, sync shadow */
-		if (sync_shadow_id(iommu, vaddr, vaddr_end, 0, NULL))
-			return;
-
-		flush_context_cache(iommu, 0, 0, 0, DMA_CCMD_GLOBAL_INVL);
-		if (sm_supported(&iommu->iommu))
-			flush_pasid_cache(iommu, 0, QI_PC_GLOBAL, 0);
-		flush_iotlb(iommu, 0, 0, 0, DMA_TLB_GLOBAL_FLUSH);
+	ret = activate_iommu(iommu);
+	if (ret) {
+		pkvm_err("pkvm: %s: iommu%d failed to activate(err=%d)\n",
+				__func__, iommu->iommu.seq_id, ret);
+		return;
 	}
 
 	vreg->gsts |= DMA_GSTS_RTPS;
