@@ -154,13 +154,18 @@ static inline void pkvm_update_iommu_virtual_caps(u64 *cap, u64 *ecap)
 		return;
 #endif
 
+	/*
+	 * When IOMMU is emulated in shadow mode, pkvm needs to intercept
+	 * translation structure modifications. So expose caching mode
+	 * (CM=1) to host. Host will trigger cache invalidations which
+	 * will be intercepted by pkvm to update shadow structures.
+	 * This is not needed for pv-iommu as host updates translation
+	 * structures through hypercalls.
+	 */
+#ifndef CONFIG_PKVM_INTEL_PVIOMMU
 	if (cap)
-		/*
-		 * Set caching mode as linux OS will runs in a VM
-		 * with controlling a virtual IOMMU device emulated
-		 * by pkvm.
-		 */
 		*cap |= 1 << 7;
+#endif
 
 	if (ecap) {
 #ifndef CONFIG_PKVM_INTEL_PVIOMMU
