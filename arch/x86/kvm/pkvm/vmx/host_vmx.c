@@ -70,15 +70,7 @@ static void handle_cpuid(struct kvm_vcpu *vcpu)
 
 static void handle_vmcall(struct kvm_vcpu *vcpu)
 {
-	u64 nr, a0, a1, a2, a3;
-
-	nr = vcpu->arch.regs[VCPU_REGS_RAX];
-	a0 = vcpu->arch.regs[VCPU_REGS_RBX];
-	a1 = vcpu->arch.regs[VCPU_REGS_RCX];
-	a2 = vcpu->arch.regs[VCPU_REGS_RDX];
-	a3 = vcpu->arch.regs[VCPU_REGS_RSI];
-
-	vcpu->arch.regs[VCPU_REGS_RAX] = pkvm_handle_host_hypercall(nr, a0, a1, a2, a3);
+	pkvm_handle_host_hypercall(vcpu);
 }
 
 static void handle_cr(struct kvm_vcpu *vcpu)
