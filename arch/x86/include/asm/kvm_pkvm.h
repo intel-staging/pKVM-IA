@@ -77,6 +77,27 @@ enum pkvm_hc {
 	ret;										\
 })
 
+static inline unsigned long pkvm_hc(struct kvm_vcpu *vcpu)
+{
+	return vcpu->arch.regs[VCPU_REGS_RAX];
+}
+
+#define DEFINE_PKVM_HC_INPUT(n, reg)							\
+static inline unsigned long pkvm_hc_input##n(struct kvm_vcpu *vcpu)			\
+{											\
+	return vcpu->arch.regs[VCPU_REGS_##reg];					\
+}
+
+DEFINE_PKVM_HC_INPUT(1, RBX)
+DEFINE_PKVM_HC_INPUT(2, RCX)
+DEFINE_PKVM_HC_INPUT(3, RDX)
+DEFINE_PKVM_HC_INPUT(4, RSI)
+
+static inline void pkvm_hc_set_ret(struct kvm_vcpu *vcpu, int ret)
+{
+	vcpu->arch.regs[VCPU_REGS_RAX] = ret;
+}
+
 extern unsigned long pkvm_sym(page_offset_base);
 extern unsigned long pkvm_sym(phys_base);
 extern struct pkvm_hyp *pkvm_sym(pkvm_hyp);

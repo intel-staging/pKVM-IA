@@ -148,22 +148,23 @@ unshare:
 	return ret;
 }
 
-int pkvm_handle_host_hypercall(unsigned long nr, unsigned long a0,
-			       unsigned long a1, unsigned long a2,
-			       unsigned long a3)
+void pkvm_handle_host_hypercall(struct kvm_vcpu *vcpu)
 {
+	enum pkvm_hc hc = pkvm_hc(vcpu);
 	int ret = 0;
 
-	switch (nr) {
+	switch (hc) {
 	case __pkvm__init_finalize:
-		ret = pkvm_init_finalize((struct pkvm_mem_info *)a0, a1,
-					 (struct pkvm_init_ops *)a2);
+		ret = pkvm_init_finalize((struct pkvm_mem_info *)pkvm_hc_input1(vcpu),
+					 pkvm_hc_input2(vcpu),
+					 (struct pkvm_init_ops *)pkvm_hc_input3(vcpu));
 		break;
 	case __pkvm__enable_vmexit_trace:
-		pkvm_enable_vmexit_trace(a0);
+		pkvm_enable_vmexit_trace(pkvm_hc_input1(vcpu));
 		break;
 	case __pkvm__dump_vmexit_trace:
-		ret = pkvm_dump_vmexit_trace(pkvm_host_gpa_to_phys(a0), a1);
+		ret = pkvm_dump_vmexit_trace(pkvm_host_gpa_to_phys(pkvm_hc_input1(vcpu)),
+					     pkvm_hc_input2(vcpu));
 		break;
 	case __pkvm__check_processor_compatibility:
 		ret = kvm_x86_call(check_processor_compatibility)();
@@ -172,15 +173,15 @@ int pkvm_handle_host_hypercall(unsigned long nr, unsigned long a0,
 		ret = pkvm_enable_virtualization_cpu();
 		break;
 	case __pkvm__vm_init:
-		ret = pkvm_vm_init(pkvm_host_gpa_to_phys(a0),
-				   pkvm_host_gpa_to_phys(a1));
+		ret = pkvm_vm_init(pkvm_host_gpa_to_phys(pkvm_hc_input1(vcpu)),
+				   pkvm_host_gpa_to_phys(pkvm_hc_input2(vcpu)));
 		break;
 	default:
 		ret = -EINVAL;
 		break;
 	}
 
-	return ret;
+	pkvm_hc_set_ret(vcpu, ret);
 }
 
 void pkvm_kick_vcpu(struct kvm_vcpu *vcpu)
