@@ -60,30 +60,22 @@ enum pkvm_hc {
 	MAX_PKVM_HYPERCALLS,
 };
 
-#define __pkvm_hypercall_0(f)		kvm_hypercall4(f, 0, 0, 0, 0)
-#define __pkvm_hypercall_1(f, p1)							\
-	({										\
-		kvm_hypercall4(f, (unsigned long)(p1), 0, 0, 0);			\
-	})
-#define __pkvm_hypercall_2(f, p1, p2)							\
-	({										\
-		kvm_hypercall4(f, (unsigned long)(p1), (unsigned long)(p2), 0, 0);	\
-	})
-#define __pkvm_hypercall_3(f, p1, p2, p3)						\
-	({										\
-		kvm_hypercall4(f, (unsigned long)(p1), (unsigned long)(p2),		\
-			       (unsigned long)(p3), 0);					\
-	})
-#define __pkvm_hypercall_4(f, p1, p2, p3, p4)						\
-	({										\
-		kvm_hypercall4(f, (unsigned long)(p1), (unsigned long)(p2),		\
-			       (unsigned long)(p3), (unsigned long)(p4));		\
-	})
+#define PKVM_HC_IN_0()
+#define PKVM_HC_IN_1(a1)		, "b"(a1)
+#define PKVM_HC_IN_2(a1, a2)		PKVM_HC_IN_1(a1), "c"(a2)
+#define PKVM_HC_IN_3(a1, a2, a3)	PKVM_HC_IN_2(a1, a2), "d"(a3)
+#define PKVM_HC_IN_4(a1, a2, a3, a4)	PKVM_HC_IN_3(a1, a2, a3), "S"(a4)
+
 #define pkvm_hypercall(f, ...)								\
-	({										\
-		CONCATENATE(__pkvm_hypercall_,						\
-			    COUNT_ARGS(__VA_ARGS__))(TO_PKVM_HC(f), ##__VA_ARGS__);	\
-	})
+({											\
+	int ret;									\
+	asm volatile(KVM_HYPERCALL							\
+		     : "=a"(ret)							\
+		     : "a"(TO_PKVM_HC(f))						\
+		       CONCATENATE(PKVM_HC_IN_, COUNT_ARGS(__VA_ARGS__))(__VA_ARGS__)	\
+		     : "memory");							\
+	ret;										\
+})
 
 extern unsigned long pkvm_sym(page_offset_base);
 extern unsigned long pkvm_sym(phys_base);
