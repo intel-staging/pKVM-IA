@@ -353,10 +353,12 @@ extern void root_tbl_walk(struct pkvm_iommu *iommu);
 
 bool is_dev_in_satc(u16 bdf);
 
+#ifndef CONFIG_PKVM_INTEL_PVIOMMU
 int initialize_iommu_pgt(struct pkvm_iommu *iommu);
 int handle_descriptor(struct pkvm_iommu *iommu, struct qi_desc *desc);
 int free_shadow_id(struct pkvm_iommu *iommu, unsigned long vaddr,
 		       unsigned long vaddr_end);
 int sync_shadow_id(struct pkvm_iommu *iommu, unsigned long vaddr,
 		       unsigned long vaddr_end, u16 did);
+#endif
 #endif

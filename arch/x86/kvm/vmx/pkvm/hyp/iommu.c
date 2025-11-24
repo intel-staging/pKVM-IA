@@ -114,6 +114,12 @@ int pkvm_init_iommu(unsigned long mem_base, unsigned long nr_pages)
 	if (ret)
 		return ret;
 
+#ifdef CONFIG_PKVM_INTEL_PVIOMMU
+	pkvm_dbg("pkvm: %s: Initializing iommus in paravirt mode\n", __func__);
+#else
+	pkvm_dbg("pkvm: %s: Initializing iommus in shadow mode\n", __func__);
+#endif
+
 	for (i = 0; i < PKVM_MAX_IOMMU_NUM; piommu++, info++, i++) {
 		u32 gsts;
 
@@ -568,28 +574,33 @@ static void enable_translation(struct pkvm_iommu *iommu)
  */
 static int activate_iommu(struct pkvm_iommu *iommu)
 {
-	unsigned long vaddr = 0, vaddr_end = IOMMU_MAX_VADDR;
 	int ret;
 
+	ret = initialize_qi(iommu);
+	if (ret)
+		return ret;
+
+#ifndef CONFIG_PKVM_INTEL_PVIOMMU
 	ret = initialize_iommu_pgt(iommu);
 	if (ret)
 		return ret;
 
-	ret = sync_shadow_id(iommu, vaddr, vaddr_end, 0);
+	ret = sync_shadow_id(iommu, 0, IOMMU_MAX_VADDR, 0);
 	if (ret)
 		return ret;
-
-	ret = initialize_qi(iommu);
-	if (ret)
-		goto free_shadow;
+#endif
 
 	set_root_table(iommu);
 
 	ret = pkvm_host_ept_unmap((unsigned long)iommu->iommu.reg_phys,
 			     (unsigned long)iommu->iommu.reg_phys,
 			     iommu->iommu.reg_size);
-	if (ret)
-		goto free_shadow;
+	if (ret) {
+#ifndef CONFIG_PKVM_INTEL_PVIOMMU
+		free_shadow_id(iommu, 0, IOMMU_MAX_VADDR);
+#endif
+		return ret;
+	}
 
 	iommu->activated = true;
 	root_tbl_walk(iommu);
@@ -597,10 +608,6 @@ static int activate_iommu(struct pkvm_iommu *iommu)
 	pkvm_dbg("pkvm: %s: iommu%d activated\n", __func__, iommu->iommu.seq_id);
 
 	return 0;
-
-free_shadow:
-	free_shadow_id(iommu, vaddr, vaddr_end);
-	return ret;
 }
 
 static void handle_qi_submit(struct pkvm_iommu *iommu, void *vdesc, int vhead, int count)
@@ -659,7 +666,7 @@ static int handle_qi_invalidation(struct pkvm_iommu *iommu, unsigned long val)
 	int len = IQ_DESC_LEN(viommu_iqa);
 	int shift = IQ_DESC_SHIFT(viommu_iqa);
 	int head = viommu->vreg.iq_head >> shift;
-	int count, i, ret = 0;
+	int count, ret = 0;
 	int *desc_status;
 	void *desc;
 
@@ -667,12 +674,14 @@ static int handle_qi_invalidation(struct pkvm_iommu *iommu, unsigned long val)
 	desc = pkvm_phys_to_virt(IQ_DESC_BASE_PHYS(viommu_iqa));
 	count = ((val >> shift) + len - head) % len;
 
-	for (i = 0; i < count; i++) {
+#ifndef CONFIG_PKVM_INTEL_PVIOMMU
+	for (int i = 0; i < count; i++) {
 		viommu->vreg.iq_head = ((head + i) % len) << shift;
 		ret = handle_descriptor(iommu, desc + viommu->vreg.iq_head);
 		if (ret)
 			break;
 	}
+#endif
 	/* update iq_head */
 	viommu->vreg.iq_head = val;
 
@@ -700,7 +709,6 @@ static int handle_qi_invalidation(struct pkvm_iommu *iommu, unsigned long val)
 
 static void handle_gcmd_te(struct pkvm_iommu *iommu, bool en)
 {
-	unsigned long vaddr = 0, vaddr_end = MAX_NUM_OF_ADDRESS_SPACE(iommu);
 	struct pkvm_viommu *viommu = &iommu->viommu;
 	struct viommu_reg *vreg = &viommu->vreg;
 
@@ -716,11 +724,13 @@ static void handle_gcmd_te(struct pkvm_iommu *iommu, bool en)
 		}
 
 		vreg->gsts |= DMA_GSTS_TES;
+#ifndef CONFIG_PKVM_INTEL_PVIOMMU
 		/*
 		 * Sync shadow id table to emulate Translation enable.
 		 */
-		if (sync_shadow_id(iommu, vaddr, vaddr_end, 0))
+		if (sync_shadow_id(iommu, 0, MAX_NUM_OF_ADDRESS_SPACE(iommu), 0))
 			return;
+#endif
 
 		enable_translation(iommu);
 
@@ -728,13 +738,15 @@ static void handle_gcmd_te(struct pkvm_iommu *iommu, bool en)
 		goto out;
 	}
 
+#ifndef CONFIG_PKVM_INTEL_PVIOMMU
 	/*
 	 * Free shadow to emulate Translation disable.
 	 *
 	 * Not really disable translation as still
 	 * need to protect agains the device.
 	 */
-	free_shadow_id(iommu, vaddr, vaddr_end);
+	free_shadow_id(iommu, 0, MAX_NUM_OF_ADDRESS_SPACE(iommu));
+#endif
 	vreg->gsts &= ~DMA_GSTS_TES;
 	pkvm_dbg("pkvm: %s: disable TE\n", __func__);
 out:
@@ -767,7 +779,17 @@ static void handle_gcmd_srtp(struct pkvm_iommu *iommu)
 	}
 
 	/* Set the root table phys address from vreg */
-	vpgt->root_pa = vreg->rta & VTD_PAGE_MASK;
+	if (IS_ENABLED(CONFIG_PKVM_INTEL_PVIOMMU)) {
+		iommu->pgt.root_pa = vreg->rta & VTD_PAGE_MASK;
+		ret = __pkvm_host_donate_hyp_share_ro(iommu->pgt.root_pa, VTD_PAGE_SIZE);
+		if (ret) {
+			pkvm_err("pkvm: %s: iommu%d: failed to write protect root table(err=%d)\n",
+					__func__, iommu->iommu.seq_id, ret);
+			return;
+		}
+	} else {
+		vpgt->root_pa = vreg->rta & VTD_PAGE_MASK;
+	}
 
 	pkvm_dbg("pkvm: %s: set SRTP val 0x%llx\n", __func__, vreg->rta);
 
@@ -1061,6 +1083,7 @@ static struct pkvm_iommu *bdf_pasid_to_iommu(u16 bdf, u32 pasid)
 	return find;
 }
 
+#ifndef CONFIG_PKVM_INTEL_PVIOMMU
 /*
  * pkvm_iommu_sync() - Sync IOMMU context/pasid entry according to a ptdev
  *
@@ -1116,6 +1139,7 @@ int pkvm_iommu_sync(u16 bdf, u32 pasid)
 	pkvm_put_ptdev(ptdev);
 	return ret;
 }
+#endif
 
 bool pkvm_iommu_coherency(u16 bdf, u32 pasid)
 {

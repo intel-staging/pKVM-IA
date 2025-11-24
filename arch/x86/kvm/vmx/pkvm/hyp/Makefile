@@ -15,7 +15,7 @@ asflags-y += -include $(srctree)/arch/x86/kvm/pkvm/def.h
 
 pkvm-hyp-y	:= vmx_asm.o vmexit.o memory.o page_alloc.o early_alloc.o pgtable.o mmu.o pkvm.o \
 		   init_finalise.o ept.o idt.o irq.o vmx.o vmsr.o mem_protect.o lapic.o \
-		   iommu.o iommu_debug.o ptdev.o iommu_spgt.o trace.o reprivilege.o shadow_iommu.o
+		   iommu.o iommu_debug.o ptdev.o iommu_spgt.o trace.o reprivilege.o
 
 pkvm		:= ../../../pkvm
 pkvm-hyp-y	+= $(pkvm)/cpu.o $(pkvm)/pkvm.o $(pkvm)/x86.o $(pkvm)/vmx/vmx.o $(pkvm)/vmx/ept.o \
@@ -34,6 +34,10 @@ pkvm-hyp-y	+= $(lib2-dir)/hweight.o
 pkvm-hyp-y	+= $(lib2-dir)/ctype.o $(lib2-dir)/string.o
 pkvm-hyp-$(CONFIG_MITIGATION_RETPOLINE)	+= $(lib-dir)/retpoline.o
 pkvm-hyp-$(CONFIG_LIST_HARDENED)	+= $(lib-dir)/list_debug.o
+
+ifndef CONFIG_PKVM_INTEL_PVIOMMU
+pkvm-hyp-y += shadow_iommu.o
+endif
 
 pkvm-obj 	:= $(patsubst %.o,%.pkvm.o,$(pkvm-hyp-y))
 obj-$(CONFIG_PKVM_INTEL)	+= pkvm.o

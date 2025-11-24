@@ -132,6 +132,18 @@ config PKVM_INTEL
 
 	  If unsure, say N.
 
+config PKVM_INTEL_PVIOMMU
+	bool "Paravirt IOMMU"
+	depends on PKVM_INTEL
+	help
+	  paravirt IOMMU support for pkvm
+
+	  Enable paravirtualized iommu. pkvm takes ownership of iommu hardware
+	  and manages iommu registers and translation structures. Host accesses
+	  iommu through specialized hypercalls.
+
+	  Shadow iommu translation structures are disabled.
+
 config PKVM_INTEL_DEBUG
 	bool "Debug pKVM"
 	depends on PKVM_INTEL
