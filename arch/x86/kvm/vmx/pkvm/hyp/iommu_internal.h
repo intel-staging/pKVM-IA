@@ -55,6 +55,9 @@ enum sm_level {
 	IOMMU_SM_LEVEL_NUM,
 };
 
+extern const struct pkvm_mm_ops iommu_pw_coherency_mm_ops;
+extern const struct pkvm_mm_ops iommu_pw_noncoherency_mm_ops;
+
 #define LAST_LEVEL(level)	\
 	(((level) == 1) ? true : false)
 
@@ -340,6 +343,20 @@ static inline bool pasid_copy_entry(struct pasid_entry *to, struct pasid_entry *
 	return updated;
 }
 
+static inline bool iommu_coherency(struct intel_iommu *iommu)
+{
+	return sm_supported(iommu) ?
+		ecap_smpwc(iommu->ecap) : ecap_coherent(iommu->ecap);
+}
+
 extern void root_tbl_walk(struct pkvm_iommu *iommu);
 
+bool is_dev_in_satc(u16 bdf);
+
+int initialize_iommu_pgt(struct pkvm_iommu *iommu);
+int handle_descriptor(struct pkvm_iommu *iommu, struct qi_desc *desc);
+int free_shadow_id(struct pkvm_iommu *iommu, unsigned long vaddr,
+		       unsigned long vaddr_end);
+int sync_shadow_id(struct pkvm_iommu *iommu, unsigned long vaddr,
+		       unsigned long vaddr_end, u16 did);
 #endif
