@@ -109,6 +109,7 @@ static inline unsigned long __pkvm_hypercall(unsigned long nr, unsigned long p1,
 struct pkvm_clear_translation_param {
 	u64 phys;
 	u16 bdf;
+	u32 pasid;
 	u8 ats_qdep;
 };
 
@@ -128,6 +129,18 @@ struct pkvm_sm_context_param {
 	u32 max_pasid;
 	u64 pasid_dir_gpa;
 	u64 context_gpa;
+};
+
+struct pkvm_pasid_table_param {
+	u64 phys;
+	u16 bdf;
+	u16 did;
+	u32 pasid;
+	u8 dirty_tracking;
+	u32 max_pasid;
+	u64 pasid_dir_gpa;
+	u64 pasid_table_gpa;
+	u64 domain_pgd_gpa;
 };
 
 #ifndef __PKVM_HYP__

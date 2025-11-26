@@ -618,7 +618,7 @@ static bool sync_shadow_pasid_table_entry(struct id_sync_data *sdata)
 	}
 
 	guest_pte = sdata->guest_ptep;
-	type = pasid_pte_get_pgtt(guest_pte);
+	type = pasid_get_translation_type(guest_pte);
 	if (type == PASID_ENTRY_PGTT_FL_ONLY) {
 		struct pkvm_pgtable_cap cap;
 

@@ -83,6 +83,9 @@ PKVM_HC(iommu_iec_flush)
 PKVM_HC(iommu_clear_ce)
 PKVM_HC(iommu_set_lm_ce)
 PKVM_HC(iommu_set_sm_ce)
+PKVM_HC(iommu_clear_pasid_entry)
+PKVM_HC(iommu_set_pasid_fl)
+PKVM_HC(iommu_set_pasid_sl)
 
 /* pKVM vmexit tracing/profiling */
 PKVM_HC(set_vmexit_trace)

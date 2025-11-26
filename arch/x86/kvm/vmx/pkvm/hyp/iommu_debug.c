@@ -39,22 +39,6 @@ static inline struct pasid_dir_entry *context_entry_present(struct context_entry
 	return pkvm_phys_to_virt(READ_ONCE(ce->lo) & VTD_PAGE_MASK);
 }
 
-/* Get PRESENT bit of a PASID directory entry. */
-static inline bool pasid_pde_is_present(struct pasid_dir_entry *pde)
-{
-	return READ_ONCE(pde->val) & 1;
-}
-
-/* Get PASID table from a PASID directory entry. */
-static inline struct pasid_entry *
-get_pasid_table_from_pde(struct pasid_dir_entry *pde)
-{
-	if (!pasid_pde_is_present(pde))
-		return NULL;
-
-	return pkvm_phys_to_virt(READ_ONCE(pde->val) & VTD_PAGE_MASK);
-}
-
 static struct context_entry *context_addr(struct pkvm_iommu *iommu, u8 bus, u8 devfn)
 {
 	struct root_entry *root_entry = pkvm_phys_to_virt(iommu->pgt.root_pa);

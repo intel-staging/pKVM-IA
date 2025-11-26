@@ -514,7 +514,7 @@ void flush_context_cache(struct pkvm_iommu *iommu, u16 did,
 	submit_qi(iommu, &desc, 1);
 }
 
-static void flush_pasid_cache(struct pkvm_iommu *iommu, u16 did,
+void flush_pasid_cache(struct pkvm_iommu *iommu, u16 did,
 			      u64 granu, u32 pasid)
 {
 	struct qi_desc desc = {.qw1 = 0, .qw2 = 0, .qw3 = 0};
@@ -572,6 +572,42 @@ void flush_dev_iotlb(struct pkvm_iommu *iommu, u16 sid, u16 pfsid,
 		return;
 
 	qi_desc_dev_iotlb(sid, pfsid, qdep, addr, mask, &desc);
+	submit_qi(iommu, &desc, 1);
+}
+
+/*
+ * PASID-based device IOTLB Invalidate
+ * Copied from drivers/iommu/intel/dmar.c:qi_flush_dev_iotlb_pasid()
+ */
+void flush_dev_iotlb_pasid(struct pkvm_iommu *iommu, u16 sid, u16 pfsid, u16 pasid,
+			   u16 qdep, u64 addr, unsigned int size_order)
+{
+	struct qi_desc desc = { 0 };
+
+	/*
+	 * VT-d spec, section 4.3:
+	 *
+	 * Software is recommended to not submit any Device-TLB invalidation
+	 * requests while address remapping hardware is disabled.
+	 */
+	if (!(iommu->iommu.gcmd & DMA_GCMD_TE))
+		return;
+
+	qi_desc_dev_iotlb_pasid(sid, pfsid, pasid, qdep, addr,
+			size_order, &desc);
+	submit_qi(iommu, &desc, 1);
+}
+
+/*
+ * PASID-based IOTLB invalidation
+ * Copied from drivers/iommu/intel/dmar.c:qi_flush_piotlb()
+ */
+void flush_piotlb(struct pkvm_iommu *iommu, u16 did, u32 pasid, u64 addr,
+		  unsigned long npages, bool ih)
+{
+	struct qi_desc desc;
+
+	qi_desc_piotlb(did, pasid, addr, npages, ih, &desc);
 	submit_qi(iommu, &desc, 1);
 }
 

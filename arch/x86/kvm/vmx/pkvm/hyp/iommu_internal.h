@@ -10,6 +10,7 @@
 #include <asm/pkvm_spinlock.h>
 #include "pgtable.h"
 #include "pkvm_iommu_types.h"
+#include "pv_pasid.h"
 
 struct viommu_reg {
 	u64 cap;
@@ -81,16 +82,6 @@ static inline u16 level_to_agaw(int level)
 #define LM_BUS_SHIFT	8
 #define IOMMU_LM_MAX_VADDR         BIT(16)
 
-#define PASID_PTE_PRESENT	1
-#define PASID_PTE_FPD		2
-#define MAX_NR_PASID_BITS	PKVM_MAX_PASID_BITS
-
-#define PASIDTAB_BITS		6
-#define PASIDTAB_SHIFT		0
-
-#define PASIDDIR_BITS		(MAX_NR_PASID_BITS - PASIDTAB_BITS)
-#define PASIDDIR_SHIFT		PASIDTAB_BITS
-
 #define DEVFN_BITS		8
 #define DEVFN_SHIFT		(PASIDDIR_SHIFT + PASIDDIR_BITS)
 
@@ -157,22 +148,6 @@ do {									\
 
 #define pgt_to_pkvm_iommu(_pgt) container_of(_pgt, struct pkvm_iommu, pgt)
 
-struct pasid_dir_entry {
-	u64 val;
-};
-
-struct pasid_entry {
-	u64 val[8];
-};
-
-static inline void entry_set_bits(u64 *ptr, u64 mask, u64 bits)
-{
-	u64 old;
-
-	old = READ_ONCE(*ptr);
-	WRITE_ONCE(*ptr, (old & ~mask) | bits);
-}
-
 static inline void context_sm_clear_dte(struct context_entry *ce)
 {
 	entry_set_bits(&ce->lo, 1 << 2, 0);
@@ -218,151 +193,6 @@ static inline void context_lm_set_aw(struct context_entry *ce, u8 value)
 	entry_set_bits(&ce->hi, 0x7, value);
 }
 
-/* Get PRESENT bit of a PASID table entry. */
-static inline bool pasid_pte_is_present(struct pasid_entry *pte)
-{
-	return READ_ONCE(pte->val[0]) & PASID_PTE_PRESENT;
-}
-
-/* Get PGTT field of a PASID table entry */
-static inline u16 pasid_pte_get_pgtt(struct pasid_entry *pte)
-{
-	return (u16)((READ_ONCE(pte->val[0]) >> 6) & 0x7);
-}
-
-/*
- * Interfaces for PASID table entry manipulation:
- */
-static inline void pasid_clear_entry(struct pasid_entry *pe)
-{
-	WRITE_ONCE(pe->val[0], 0);
-	WRITE_ONCE(pe->val[1], 0);
-	WRITE_ONCE(pe->val[2], 0);
-	WRITE_ONCE(pe->val[3], 0);
-	WRITE_ONCE(pe->val[4], 0);
-	WRITE_ONCE(pe->val[5], 0);
-	WRITE_ONCE(pe->val[6], 0);
-	WRITE_ONCE(pe->val[7], 0);
-}
-
-/*
- * Get domain ID value of a scalable mode PASID entry.
- */
-static inline u16
-pasid_get_domain_id(struct pasid_entry *pe)
-{
-	return (u16)(READ_ONCE(pe->val[1]) & GENMASK_ULL(15, 0));
-}
-
-/*
- * Get the FLPTPTR(First Level Page Table Pointer) field (Bit 140 ~ 191)
- * of a scalable mode PASID entry.
- */
-static inline u64
-pasid_get_flptr(struct pasid_entry *pe)
-{
-	return (u64)(READ_ONCE(pe->val[2]) & VTD_PAGE_MASK);
-}
-
-/*
- * Get the First Level Paging Mode field (Bit 130~131) of a
- * scalable mode PASID entry.
- */
-static inline u8
-pasid_get_flpm(struct pasid_entry *pe)
-{
-	return (u8)((READ_ONCE(pe->val[2]) & GENMASK_ULL(3, 2)) >> 2);
-}
-
-/*
- * Setup the SLPTPTR(Second Level Page Table Pointer) field (Bit 12~63)
- * of a scalable mode PASID entry.
- */
-static inline void
-pasid_set_slptr(struct pasid_entry *pe, u64 value)
-{
-	entry_set_bits(&pe->val[0], VTD_PAGE_MASK, value);
-}
-
-/*
- * Setup the AW(Address Width) field (Bit 2~4) of a scalable mode PASID
- * entry.
- */
-static inline void
-pasid_set_address_width(struct pasid_entry *pe, u64 value)
-{
-	entry_set_bits(&pe->val[0], GENMASK_ULL(4, 2), value << 2);
-}
-
-/*
- * Setup the PGTT(PASID Granular Translation Type) field (Bit 6~8)
- * of a scalable mode PASID entry.
- */
-static inline void
-pasid_set_translation_type(struct pasid_entry *pe, u64 value)
-{
-	entry_set_bits(&pe->val[0], GENMASK_ULL(8, 6), value << 6);
-}
-
-/*
- * Setup Page Walk Snoop bit (Bit 87) of a scalable mode PASID
- * entry.
- */
-static inline void pasid_set_page_snoop(struct pasid_entry *pe, bool value)
-{
-	entry_set_bits(&pe->val[1], 1 << 23, value << 23);
-}
-
-/*
- * Setup the Page Snoop (PGSNP) field (Bit 88) of a scalable mode
- * PASID entry.
- */
-static inline void
-pasid_set_pgsnp(struct pasid_entry *pe)
-{
-	entry_set_bits(&pe->val[1], 1ULL << 24, 1ULL << 24);
-}
-
-#define PASID_ENTRY_PGTT_FL_ONLY        (1)
-#define PASID_ENTRY_PGTT_SL_ONLY        (2)
-#define PASID_ENTRY_PGTT_NESTED         (3)
-#define PASID_ENTRY_PGTT_PT             (4)
-
-/*
- * Set the Second Stage Execute Enable field (Bit 5) of a scalable mode
- * PASID entry.
- */
-static inline void pasid_set_ssee(struct pasid_entry *pe, bool value)
-{
-	entry_set_bits(&pe->val[0], 1 << 5, value << 5);
-}
-
-/*
- * Set the Second Stage Access/Dirty bit Enable field (Bit 9) of a scalable mode
- * PASID entry.
- */
-static inline void pasid_set_ssade(struct pasid_entry *pe, bool value)
-{
-	entry_set_bits(&pe->val[0], 1 << 9, value << 9);
-}
-
-static inline bool pasid_copy_entry(struct pasid_entry *to, struct pasid_entry *from)
-{
-	bool updated = false;
-	int i;
-
-	for (i = 0; i < 8; i++) {
-		u64 new = READ_ONCE(from->val[i]);
-
-		if (READ_ONCE(to->val[i]) != new) {
-			WRITE_ONCE(to->val[i], new);
-			updated = true;
-		}
-	}
-
-	return updated;
-}
-
 /*
  * Copied from drivers/iommu/intel/iommu.h:__iommu_flush_cache()
  */
@@ -389,6 +219,12 @@ void flush_iotlb(struct pkvm_iommu *iommu, u16 did, u64 addr,
 			unsigned int size_order, u64 type);
 void flush_dev_iotlb(struct pkvm_iommu *iommu, u16 sid, u16 pfsid,
 			u16 qdep, u64 addr, unsigned int mask);
+void flush_dev_iotlb_pasid(struct pkvm_iommu *iommu, u16 sid, u16 pfsid, u16 pasid,
+			   u16 qdep, u64 addr, unsigned int size_order);
+void flush_piotlb(struct pkvm_iommu *iommu, u16 did, u32 pasid, u64 addr,
+		  unsigned long npages, bool ih);
+void flush_pasid_cache(struct pkvm_iommu *iommu, u16 did,
+		       u64 granu, u32 pasid);
 
 struct pkvm_iommu *find_iommu_by_reg_phys(unsigned long phys);
 
@@ -397,6 +233,8 @@ int pkvm_iommu_iec_flush(u64 phys, bool global, u64 index, u64 mask);
 int pkvm_iommu_clear_ce(u64 param_va);
 int pkvm_iommu_set_lm_ce(u64 param_va);
 int pkvm_iommu_set_sm_ce(u64 param_va);
+struct context_entry *pkvm_iommu_context_addr(struct intel_iommu *iommu, u8 bus,
+					      u8 devfn, u64 *context_phys);
 #else
 int initialize_iommu_pgt(struct pkvm_iommu *iommu);
 int handle_descriptor(struct pkvm_iommu *iommu, struct qi_desc *desc);
