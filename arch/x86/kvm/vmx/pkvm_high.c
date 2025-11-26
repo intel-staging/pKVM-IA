@@ -17,12 +17,16 @@
 
 static DEFINE_PER_CPU(union pkvm_pv_param, pv_param);
 
-#define get_this_pv_param(f)		(&per_cpu(pv_param, get_cpu()).f)
-#define put_this_pv_param(ptr)		\
+#define get_this_pv_param(f, flags)		\
+({						\
+	local_irq_save(flags);			\
+	&this_cpu_ptr(&pv_param)->f;		\
+})
+#define put_this_pv_param(ptr, flags)	\
 ({					\
 	memset(ptr, 0, sizeof(*ptr));	\
 	ptr = NULL;			\
-	put_cpu();			\
+	local_irq_restore(flags);	\
 })
 
 static void free_pml_buffer(struct vcpu_vmx *vmx)
@@ -1042,13 +1046,14 @@ static int pkvm_get_msr(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 		return kvm_get_msr_common(vcpu, msr_info);
 
 	if (!vcpu->arch.guest_state_protected) {
-		struct msr_data *msr = get_this_pv_param(msr);
+		unsigned long flags;
+		struct msr_data *msr = get_this_pv_param(msr, flags);
 		int ret;
 
 		*msr = *msr_info;
 		ret = pkvm_hypercall(get_msr, vcpu, msr);
 		msr_info->data = msr->data;
-		put_this_pv_param(msr);
+		put_this_pv_param(msr, flags);
 
 		return ret;
 	}
@@ -1062,12 +1067,13 @@ static int pkvm_set_msr(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 		return kvm_set_msr_common(vcpu, msr_info);
 
 	if (!vcpu->arch.guest_state_protected) {
-		struct msr_data *msr = get_this_pv_param(msr);
+		unsigned long flags;
+		struct msr_data *msr = get_this_pv_param(msr, flags);
 		int ret;
 
 		*msr = *msr_info;
 		ret = pkvm_hypercall(set_msr, vcpu, msr);
-		put_this_pv_param(msr);
+		put_this_pv_param(msr, flags);
 
 		return ret;
 	}
@@ -1108,13 +1114,14 @@ static void pkvm_get_segment(struct kvm_vcpu *vcpu, struct kvm_segment *var, int
 	    !pkvm_segment_cache_test(vmx, seg, SEG_FIELD_BASE) ||
 	    !pkvm_segment_cache_test(vmx, seg, SEG_FIELD_LIMIT) ||
 	    !pkvm_segment_cache_test(vmx, seg, SEG_FIELD_AR)) {
-		struct kvm_segment *pkvm_var = get_this_pv_param(seg);
+		unsigned long flags;
+		struct kvm_segment *pkvm_var = get_this_pv_param(seg, flags);
 
 		pkvm_hypercall(get_segment, vcpu, pkvm_var, seg);
 
 		pkvm_cache_segment(vmx, pkvm_var, seg);
 
-		put_this_pv_param(pkvm_var);
+		put_this_pv_param(pkvm_var, flags);
 	}
 
 	segment = &vmx->segment_cache.seg[seg];
@@ -1143,14 +1150,15 @@ static void pkvm_get_segment(struct kvm_vcpu *vcpu, struct kvm_segment *var, int
 static void pkvm_set_segment(struct kvm_vcpu *vcpu, struct kvm_segment *var, int seg)
 {
 	struct kvm_segment *pkvm_var;
+	unsigned long flags;
 
 	if (vcpu->arch.guest_state_protected)
 		return;
 
-	pkvm_var = get_this_pv_param(seg);
+	pkvm_var = get_this_pv_param(seg, flags);
 	*pkvm_var = *var;
 	pkvm_hypercall(set_segment, vcpu, pkvm_var, seg);
-	put_this_pv_param(pkvm_var);
+	put_this_pv_param(pkvm_var, flags);
 }
 
 static int pkvm_get_cpl(struct kvm_vcpu *vcpu)
@@ -1237,6 +1245,7 @@ static void pkvm_access_idt_gdt(struct kvm_vcpu *vcpu, struct desc_ptr *dt,
 				bool set, bool idt)
 {
 	struct desc_ptr *desc;
+	unsigned long flags;
 
 	if (vcpu->arch.guest_state_protected) {
 		if (!set)
@@ -1244,7 +1253,7 @@ static void pkvm_access_idt_gdt(struct kvm_vcpu *vcpu, struct desc_ptr *dt,
 		return;
 	}
 
-	desc = get_this_pv_param(desc);
+	desc = get_this_pv_param(desc, flags);
 
 	if (set) {
 		desc->size = dt->size;
@@ -1262,7 +1271,7 @@ static void pkvm_access_idt_gdt(struct kvm_vcpu *vcpu, struct desc_ptr *dt,
 		dt->address = desc->address;
 	}
 
-	put_this_pv_param(desc);
+	put_this_pv_param(desc, flags);
 }
 
 static void pkvm_get_idt(struct kvm_vcpu *vcpu, struct desc_ptr *dt)
@@ -1659,12 +1668,13 @@ static void pkvm_refresh_apicv_exec_ctrl(struct kvm_vcpu *vcpu)
 
 static void pkvm_load_eoi_exitmap(struct kvm_vcpu *vcpu, u64 *eoi_exit_bitmap)
 {
+	unsigned long flags;
 	u64 *exitmap;
 
 	if (!kvm_vcpu_apicv_active(vcpu))
 		return;
 
-	exitmap = get_this_pv_param(eoi_exit_bitmap[0]);
+	exitmap = get_this_pv_param(eoi_exit_bitmap[0], flags);
 
 	exitmap[0] = eoi_exit_bitmap[0];
 	exitmap[1] = eoi_exit_bitmap[1];
@@ -1673,7 +1683,7 @@ static void pkvm_load_eoi_exitmap(struct kvm_vcpu *vcpu, u64 *eoi_exit_bitmap)
 
 	pkvm_hypercall(load_eoi_exitmap, vcpu, exitmap);
 
-	put_this_pv_param(exitmap);
+	put_this_pv_param(exitmap, flags);
 }
 
 static void pkvm_hwapic_irr_update(struct kvm_vcpu *vcpu, int max_irr)
