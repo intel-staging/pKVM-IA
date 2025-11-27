@@ -1314,11 +1314,25 @@ static void enable_qi(struct pkvm_iommu *iommu)
 			   readl, (sts & DMA_GSTS_QIES), sts);
 }
 
-static int create_qi_desc(struct pkvm_iommu *iommu)
+static int initialize_qi(struct pkvm_iommu *iommu)
 {
 	struct pkvm_viommu *viommu = &iommu->viommu;
 	struct q_inval *qi = &iommu->qi;
 	void __iomem *reg = iommu->iommu.reg;
+
+	if (qi->desc) {
+		pkvm_dbg("pkvm: %s: QI already initialized\n", __func__);
+		return 0;
+	}
+
+	if (!viommu->vreg.iqa) {
+		/*
+		 * QI was enabled before pkvm and hence we could not
+		 * intercept IQA update. Read it from hardware.
+		 */
+		viommu->vreg.iqa = readq(reg + DMAR_IQA_REG);
+	}
+	viommu->iqa = viommu->vreg.iqa;
 
 	pkvm_spin_lock_init(&iommu->qi_lock);
 	/*
@@ -1333,7 +1347,6 @@ static int create_qi_desc(struct pkvm_iommu *iommu)
 		readq(reg + DMAR_IQT_REG))
 		cpu_relax();
 
-	viommu->vreg.iqa = viommu->iqa = readq(reg + DMAR_IQA_REG);
 	viommu->vreg.iq_head = readq(reg + DMAR_IQH_REG);
 	viommu->vreg.iq_tail = readq(reg + DMAR_IQT_REG);
 
@@ -1637,7 +1650,7 @@ static int activate_iommu(struct pkvm_iommu *iommu)
 	if (ret)
 		return ret;
 
-	ret = create_qi_desc(iommu);
+	ret = initialize_qi(iommu);
 	if (ret)
 		goto free_shadow;
 
@@ -2038,10 +2051,15 @@ static void handle_gcmd_qie(struct pkvm_iommu *iommu, bool en)
 		if (vreg->iq_tail != 0) {
 			pkvm_err("pkvm: Queue invalidation descriptor tail is not zero\n");
 			return;
+		} else if (vreg->gsts & DMA_GSTS_QIES) {
+			pkvm_err("pkvm: QIE allowed only once\n");
+			return;
 		}
 
-		/* Update the iqa from vreg */
-		iommu->viommu.iqa = vreg->iqa;
+		if (initialize_qi(iommu)) {
+			pkvm_err("pkvm: Failed to initialize QI\n");
+			return;
+		}
 		vreg->iq_head = 0;
 		vreg->gsts |= DMA_GSTS_QIES;
 		pkvm_dbg("pkvm: %s: enabled QI\n", __func__);
