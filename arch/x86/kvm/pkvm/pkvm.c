@@ -2,6 +2,8 @@
 #include <linux/types.h>
 #include <linux/kvm_host.h>
 #include <asm/fpu/xcr.h>
+#include <asm/pkvm_spinlock.h>
+#include "debug.h"
 #include "init_finalize.h"
 #include "lapic.h"
 #include "mem_protect.h"
@@ -28,11 +30,73 @@ struct pkvm_hyp *pkvm_hyp;
 DEFINE_PER_CPU(struct pkvm_pcpu *, phys_cpu);
 DEFINE_PER_CPU(struct kvm_vcpu *, host_vcpu);
 
+/* The maximum number of VMs under pkvm. */
+#define MAX_PKVM_VMS		64
+
+static DECLARE_BITMAP(pkvm_vms_bitmap, MAX_PKVM_VMS);
+static DEFINE_PKVM_SPINLOCK(pkvm_vms_lock);
+static struct pkvm_vm_ref {
+	/* Reference counter to indicate if pkvm_vm is in use */
+	atomic_t refcount;
+	/* Point to pkvm_vm in pkvm */
+	struct pkvm_vm *pkvm_vm;
+} pkvm_vms_ref[MAX_PKVM_VMS];
+
 static int pkvm_enable_virtualization_cpu(void)
 {
 	kvm_user_return_msr_cpu_online();
 
 	return kvm_x86_call(enable_virtualization_cpu)();
+}
+
+static int allocate_pkvm_vm_handle(struct pkvm_vm *pkvm_vm)
+{
+	struct pkvm_vm_ref *pkvm_vm_ref;
+	int idx;
+
+	pkvm_spin_lock(&pkvm_vms_lock);
+
+	idx = find_first_zero_bit(pkvm_vms_bitmap, MAX_PKVM_VMS);
+	if (idx == MAX_PKVM_VMS) {
+		pkvm_spin_unlock(&pkvm_vms_lock);
+		return -ENOMEM;
+	}
+	__set_bit(idx, pkvm_vms_bitmap);
+
+	pkvm_vm_ref = &pkvm_vms_ref[idx];
+	pkvm_vm_ref->pkvm_vm = pkvm_vm;
+	atomic_set(&pkvm_vm_ref->refcount, 1);
+
+	pkvm_spin_unlock(&pkvm_vms_lock);
+
+	return idx;
+}
+
+static struct pkvm_vm *free_pkvm_vm_handle(int handle)
+{
+	struct pkvm_vm_ref *pkvm_vm_ref;
+	struct pkvm_vm *pkvm_vm = NULL;
+	int idx = handle;
+
+	if (idx < 0 || idx >= MAX_PKVM_VMS)
+		return NULL;
+
+	pkvm_spin_lock(&pkvm_vms_lock);
+
+	pkvm_vm_ref = &pkvm_vms_ref[idx];
+	if (atomic_cmpxchg(&pkvm_vm_ref->refcount, 1, 0) != 1) {
+		pkvm_err("VM%d is busy, refcount %d\n", handle,
+			 atomic_read(&pkvm_vm_ref->refcount));
+		goto out;
+	}
+
+	pkvm_vm = pkvm_vm_ref->pkvm_vm;
+	pkvm_vm_ref->pkvm_vm = NULL;
+
+	__clear_bit(idx, pkvm_vms_bitmap);
+out:
+	pkvm_spin_unlock(&pkvm_vms_lock);
+	return pkvm_vm;
 }
 
 static int pkvm_vm_init(phys_addr_t host_kvm_pa, phys_addr_t pkvm_vm_pa)
@@ -63,12 +127,20 @@ static int pkvm_vm_init(phys_addr_t host_kvm_pa, phys_addr_t pkvm_vm_pa)
 
 	pkvm_vm->kvm.arch.vm_type = vm_type;
 
-	ret = kvm_x86_call(vm_init)(&pkvm_vm->kvm);
-	if (ret)
+	ret = allocate_pkvm_vm_handle(pkvm_vm);
+	if (ret < 0)
 		goto undonate;
 
-	return 0;
+	pkvm_vm->kvm.arch.pkvm.handle = ret;
 
+	ret = kvm_x86_call(vm_init)(&pkvm_vm->kvm);
+	if (ret)
+		goto free_handle;
+
+	return pkvm_vm->kvm.arch.pkvm.handle;
+
+free_handle:
+	free_pkvm_vm_handle(pkvm_vm->kvm.arch.pkvm.handle);
 undonate:
 	pkvm_hyp_donate_host(__pkvm_pa(pkvm_vm), size, false);
 unshare:
