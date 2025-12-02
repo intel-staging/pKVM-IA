@@ -21,6 +21,7 @@ PKVM_HC(check_processor_compatibility)
 PKVM_HC(vm_init)
 PKVM_HC_OUT(vm_destroy)
 PKVM_HC(vcpu_create)
+PKVM_HC_OUT(vcpu_free)
 
 #undef PKVM_HC
 #undef PKVM_HC_OUT
