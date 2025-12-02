@@ -243,6 +243,16 @@ static __init int check_and_init_iommu(struct pkvm_hyp *pkvm)
 		ecap = readq(drhd->iommu->reg + DMAR_ECAP_REG);
 
 		/*
+		 * Since pkvm is not expected to be supported on ancient hardware which
+		 * requires write buffer flushing, require cap_rwbf=0 for simplicity.
+		 */
+		if (cap_rwbf(cap)) {
+			pr_warn("pkvm: drhd reg_base 0x%llx: CAP.RWBF=1 is not supported\n",
+					drhd->reg_base_addr);
+			return -EINVAL;
+		}
+
+		/*
 		 * pkvm expects Queued Invalidation support for simplicity and efficiency.
 		 */
 		if (!ecap_qis(ecap)) {
