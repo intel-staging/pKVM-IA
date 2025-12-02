@@ -786,6 +786,28 @@ static int pkvm_vcpu_put(int vm_handle, int vcpu_handle)
 	return ret;
 }
 
+static int pkvm_vcpu_handle_host_hypercall(struct kvm_vcpu *hvcpu, enum pkvm_hc hc,
+					   union pkvm_hc_data *out)
+{
+	struct kvm_vcpu *vcpu = this_cpu_read(cur_guest_vcpu);
+	int ret = 0;
+
+	BUG_ON(hvcpu != this_cpu_read(host_vcpu));
+
+	if (!vcpu)
+		return -EINVAL;
+
+	guard(switch_vcpu)(vcpu);
+
+	switch (hc) {
+	default:
+		ret = -EINVAL;
+		break;
+	}
+
+	return ret;
+}
+
 void pkvm_handle_host_hypercall(struct kvm_vcpu *vcpu)
 {
 	enum pkvm_hc hc = pkvm_hc(vcpu);
@@ -834,7 +856,7 @@ void pkvm_handle_host_hypercall(struct kvm_vcpu *vcpu)
 				    pkvm_hc_input2(vcpu));
 		break;
 	default:
-		ret = -EINVAL;
+		ret = pkvm_vcpu_handle_host_hypercall(vcpu, hc, &out);
 		break;
 	}
 
