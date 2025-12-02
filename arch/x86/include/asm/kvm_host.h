@@ -1816,6 +1816,7 @@ extern phys_addr_t pkvm_mem_base;
 extern phys_addr_t pkvm_mem_size;
 void __init pkvm_reserve(void);
 void pkvm_init_debugfs(void);
+void kvm_free_pkvm_memcache(struct pkvm_memcache *mc);
 #else
 #define enable_pkvm		false
 static inline void __init pkvm_reserve(void) {}
