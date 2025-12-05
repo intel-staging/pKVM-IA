@@ -160,6 +160,7 @@ unshare:
 void pkvm_handle_host_hypercall(struct kvm_vcpu *vcpu)
 {
 	enum pkvm_hc hc = pkvm_hc(vcpu);
+	union pkvm_hc_data out;
 	int ret = 0;
 
 	switch (hc) {
@@ -189,6 +190,8 @@ void pkvm_handle_host_hypercall(struct kvm_vcpu *vcpu)
 		ret = -EINVAL;
 		break;
 	}
+
+	pkvm_hc_set_output(vcpu, hc, &out);
 
 	pkvm_hc_set_ret(vcpu, ret);
 }
