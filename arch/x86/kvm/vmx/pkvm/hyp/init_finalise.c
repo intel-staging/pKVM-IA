@@ -100,8 +100,12 @@ static int pkvm_back_vmemmap(phys_addr_t back_pa)
 	struct memblock_region *reg;
 	int ret;
 
-	/* vmemmap region map to virtual address 0 */
-	__hyp_vmemmap = 0;
+	/*
+	 * Map the vmemmap region to virtual address at page 1.
+	 * Keep page 0 unmapped, to catch NULL dereference bugs in the
+	 * hypervisor code.
+	 */
+	__hyp_vmemmap = PAGE_SIZE;
 
 	for (i = 0; i < hyp_memblock_nr; i++) {
 		reg = &hyp_memory[i];
