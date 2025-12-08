@@ -51,6 +51,7 @@ struct pkvm_iommu {
 };
 
 struct pkvm_cache_tag {
+	unsigned int index;
 	struct list_head node;
 	enum cache_tag_type type;
 	struct pkvm_iommu *iommu;
@@ -60,6 +61,7 @@ struct pkvm_cache_tag {
 	u8 ats_qdep;
 	u16 domain_id;
 	ioasid_t pasid;
+	unsigned int users;
 };
 
 enum lm_level {
@@ -172,6 +174,11 @@ do {									\
 static inline void context_sm_clear_dte(struct context_entry *ce)
 {
 	entry_set_bits(&ce->lo, 1 << 2, 0);
+}
+
+static inline bool context_get_sm_dte(struct context_entry *ce)
+{
+	return READ_ONCE(ce->lo) & BIT_ULL(2);
 }
 
 static inline bool context_lm_is_present(struct context_entry *ce)
@@ -287,6 +294,10 @@ struct context_entry *pkvm_iommu_context_addr(struct intel_iommu *iommu, u8 bus,
 					      u8 devfn, u64 *context_phys);
 int pkvm_iommu_domain_alloc(u64 param_va);
 int pkvm_iommu_domain_free(u64 pgd_gpa);
+int pkvm_iommu_cache_assign_domain(struct pkvm_iommu *iommu, struct pkvm_iommu_domain *domain,
+				   u16 did, u16 bdf, u8 ats_qdep, ioasid_t pasid, bool dte);
+void pkvm_iommu_cache_unassign_domain(struct pkvm_iommu *iommu, struct pkvm_iommu_domain *domain,
+				      u16 did, u16 bdf, ioasid_t pasid, bool dte);
 #else
 int initialize_iommu_pgt(struct pkvm_iommu *iommu);
 int handle_descriptor(struct pkvm_iommu *iommu, struct qi_desc *desc);

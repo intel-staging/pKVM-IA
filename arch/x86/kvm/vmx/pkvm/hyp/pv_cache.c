@@ -3,8 +3,44 @@
 
 #include <linux/pci.h>
 #include <../drivers/iommu/intel/iommu.h>
+#include <asm/pkvm_spinlock.h>
+#include <pkvm.h>
+#include <linux/bits.h>
 #include "iommu_internal.h"
 #include "iommu_domain.h"
+#include "memory.h"
+#include "debug.h"
+
+#define MAX_CACHETAG_NUM 1024
+static DECLARE_BITMAP(cache_tag_bitmap, MAX_CACHETAG_NUM);
+static struct pkvm_cache_tag cache_tags[MAX_CACHETAG_NUM];
+static pkvm_spinlock_t cache_tag_lock = __PKVM_SPINLOCK_UNLOCKED;
+
+static struct pkvm_cache_tag *pkvm_alloc_cache_tag(void)
+{
+	struct pkvm_cache_tag *cache_tag = NULL;
+	unsigned long index;
+
+	pkvm_spin_lock(&cache_tag_lock);
+	index = find_first_zero_bit(cache_tag_bitmap, MAX_CACHETAG_NUM);
+	if (index < MAX_CACHETAG_NUM) {
+		__set_bit(index, cache_tag_bitmap);
+		cache_tag = &cache_tags[index];
+		cache_tag->index = index;
+		INIT_LIST_HEAD(&cache_tag->node);
+	}
+	pkvm_spin_unlock(&cache_tag_lock);
+
+	return cache_tag;
+}
+
+static void pkvm_free_cache_tag(struct pkvm_cache_tag *cache_tag)
+{
+	pkvm_spin_lock(&cache_tag_lock);
+	__clear_bit(cache_tag->index, cache_tag_bitmap);
+	memset(cache_tag, 0, sizeof(struct pkvm_cache_tag));
+	pkvm_spin_unlock(&cache_tag_lock);
+}
 
 /*
  * Copied from drivers/iommu/intel/cache.c:qi_batch_flush_descs()
@@ -262,4 +298,124 @@ void pkvm_cache_tag_flush_range_np(struct pkvm_iommu_domain *domain, unsigned lo
 	}
 	qi_batch_flush_descs(iommu, &domain->qi_batch);
 	pkvm_spin_unlock(&domain->cache_lock);
+}
+
+/*
+ * Copied from drivers/iommu/intel/cache.c:cache_tage_match()
+ */
+static bool cache_tag_match(struct pkvm_cache_tag *tag, u16 domain_id,
+			     struct pkvm_iommu *iommu, u8 bus, u8 devfn,
+			     u32 pasid, enum cache_tag_type type)
+{
+	if (tag->type != type)
+		return false;
+
+	if (tag->domain_id != domain_id || tag->pasid != pasid)
+		return false;
+
+	if (type == CACHE_TAG_IOTLB)
+		return tag->iommu == iommu;
+
+	if (type == CACHE_TAG_DEVTLB)
+		return tag->bus == bus && tag->devfn == devfn;
+
+	return false;
+}
+
+static unsigned long iommu_cache_assign(struct pkvm_iommu *iommu,
+					struct pkvm_iommu_domain *domain,
+					u16 did, u16 bdf, u8 ats_qdep,
+					ioasid_t pasid, enum cache_tag_type type)
+{
+	struct pkvm_cache_tag *cache_tag, *temp;
+	u8 bus = PCI_BUS_NUM(bdf);
+	u8 devfn = PCI_DEV_FN(bdf);
+
+	if (ats_qdep > PCI_ATS_MAX_QDEP)
+		return -EINVAL;
+
+	cache_tag = pkvm_alloc_cache_tag();
+	if (!cache_tag)
+		return -ENOMEM;
+
+	cache_tag->type = type;
+	cache_tag->iommu = iommu;
+	cache_tag->domain_id = did;
+	cache_tag->pasid = pasid;
+	cache_tag->users = 1;
+
+	if (type == CACHE_TAG_DEVTLB) {
+		cache_tag->bus = bus;
+		cache_tag->devfn = devfn;
+		/*
+		 * Only devices in SATC are allowed to have ats enabled, and
+		 * assuming a well crafted SATC would contain only physical
+		 * functions, it's safe to set pfsid = bdf.
+		 */
+		cache_tag->pfsid = bdf;
+		cache_tag->ats_qdep = ats_qdep;
+	}
+
+	pkvm_spin_lock(&domain->cache_lock);
+	list_for_each_entry(temp, &domain->cache_tags, node) {
+		if (cache_tag_match(temp, did, iommu, bus, devfn, pasid, type)) {
+			temp->users++;
+			pkvm_free_cache_tag(cache_tag);
+			goto out;
+		}
+	}
+	pkvm_dbg("pkvm: %s: dev[%x] did:%u, pasid: %u, ats_qdep: %u, type: %s\n",
+		 __func__, PCI_DEVID(bus, devfn), did, pasid, cache_tag->ats_qdep,
+		 type == CACHE_TAG_IOTLB ? "IOTLB" : "DEVTLB");
+	list_add_tail(&cache_tag->node, &domain->cache_tags);
+
+out:
+	pkvm_spin_unlock(&domain->cache_lock);
+	return 0;
+}
+
+static void iommu_cache_unassign(struct pkvm_iommu *iommu, struct pkvm_iommu_domain *domain,
+				 u16 did, u16 bdf, ioasid_t pasid, enum cache_tag_type type)
+{
+	struct pkvm_cache_tag *cache_tag;
+	u8 bus = PCI_BUS_NUM(bdf);
+	u8 devfn = PCI_DEV_FN(bdf);
+
+	pkvm_spin_lock(&domain->cache_lock);
+	list_for_each_entry(cache_tag, &domain->cache_tags, node) {
+		if (cache_tag_match(cache_tag, did, iommu, bus, devfn, pasid, type)) {
+			if (--cache_tag->users == 0) {
+				pkvm_dbg("pkvm: %s: dev[%x] did:%u, pasid: %u, type: %s\n",
+					 __func__, PCI_DEVID(bus, devfn), did, pasid,
+					 type == CACHE_TAG_IOTLB ? "IOTLB" : "DEVTLB");
+				list_del(&cache_tag->node);
+				pkvm_free_cache_tag(cache_tag);
+			}
+			break;
+		}
+	}
+	pkvm_spin_unlock(&domain->cache_lock);
+}
+
+int pkvm_iommu_cache_assign_domain(struct pkvm_iommu *iommu, struct pkvm_iommu_domain *domain,
+				   u16 did, u16 bdf, u8 ats_qdep, ioasid_t pasid, bool dte)
+{
+	int ret = iommu_cache_assign(iommu, domain, did, bdf, ats_qdep, pasid, CACHE_TAG_IOTLB);
+
+	if (!ret && dte) {
+		ret = iommu_cache_assign(iommu, domain, did, bdf, ats_qdep,
+					 pasid, CACHE_TAG_DEVTLB);
+		if (ret)
+			iommu_cache_unassign(iommu, domain, did, bdf, pasid, CACHE_TAG_IOTLB);
+	}
+
+	return ret;
+}
+
+void pkvm_iommu_cache_unassign_domain(struct pkvm_iommu *iommu, struct pkvm_iommu_domain *domain,
+				      u16 did, u16 bdf, ioasid_t pasid, bool dte)
+{
+	iommu_cache_unassign(iommu, domain, did, bdf, pasid, CACHE_TAG_IOTLB);
+	if (dte)
+		iommu_cache_unassign(iommu, domain, did, bdf, pasid, CACHE_TAG_DEVTLB);
 }

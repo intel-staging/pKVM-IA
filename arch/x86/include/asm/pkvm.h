@@ -120,6 +120,7 @@ struct pkvm_lm_context_param {
 	u16 ats_supported;
 	u64 domain_pgd_gpa;
 	u64 context_gpa;
+	u8 ats_qdep;
 };
 
 struct pkvm_sm_context_param {
@@ -137,6 +138,7 @@ struct pkvm_pasid_table_param {
 	u16 did;
 	u32 pasid;
 	u8 dirty_tracking;
+	u8 ats_qdep;
 	u32 max_pasid;
 	u64 pasid_dir_gpa;
 	u64 pasid_table_gpa;

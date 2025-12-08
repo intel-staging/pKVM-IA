@@ -105,6 +105,7 @@ struct pkvm_iommu_domain *pkvm_alloc_iommu_domain(struct pkvm_domain_param *para
 	if (index < MAX_IOMMU_DOMAIN_NUM) {
 		__set_bit(index, iommu_domains_bitmap);
 		domain = &iommu_domains[index];
+		INIT_LIST_HEAD(&domain->cache_tags);
 		domain->pgd = pgd;
 		domain->use_first_level = param->use_first_level;
 		domain->iommu_superpage = param->iommu_superpage;
@@ -115,6 +116,7 @@ struct pkvm_iommu_domain *pkvm_alloc_iommu_domain(struct pkvm_domain_param *para
 		domain->index = index;
 		atomic_set(&domain->refcount, 1);
 		pkvm_spin_lock_init(&domain->lock);
+		pkvm_spin_lock_init(&domain->cache_lock);
 		hash_add(iommu_domain_hasht, &domain->hnode, pgd);
 		pkvm_dbg("pkvm: %s: allocated domain pgd: %llx\n", __func__, pgd);
 	} else {
