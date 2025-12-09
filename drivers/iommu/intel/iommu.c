@@ -1080,10 +1080,12 @@ static void iommu_set_root_entry(struct intel_iommu *iommu)
 	if (cap_esrtps(iommu->cap))
 		return;
 
-	iommu->flush.flush_context(iommu, 0, 0, 0, DMA_CCMD_GLOBAL_INVL);
-	if (sm_supported(iommu))
-		qi_flush_pasid_cache(iommu, 0, QI_PC_GLOBAL, 0);
-	iommu->flush.flush_iotlb(iommu, 0, 0, 0, DMA_TLB_GLOBAL_FLUSH);
+	if (!pkvm_pviommu_enabled()) {
+		iommu->flush.flush_context(iommu, 0, 0, 0, DMA_CCMD_GLOBAL_INVL);
+		if (sm_supported(iommu))
+			qi_flush_pasid_cache(iommu, 0, QI_PC_GLOBAL, 0);
+		iommu->flush.flush_iotlb(iommu, 0, 0, 0, DMA_TLB_GLOBAL_FLUSH);
+	}
 }
 
 void iommu_flush_write_buffer(struct intel_iommu *iommu)
