@@ -6,6 +6,7 @@
 #include <asm/percpu.h>
 #include <asm/processor.h>
 #include <asm/sections.h>
+#include "cpu.h"
 #include "pkvm.h"
 
 unsigned long __per_cpu_offset[NR_CPUS];
@@ -54,3 +55,5 @@ unsigned long pkvm_per_cpu_offset(int cpu)
 
 	return __per_cpu_offset[cpu];
 }
+
+void warn_thunk_thunk(void) {}
