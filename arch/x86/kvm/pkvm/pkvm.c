@@ -1199,24 +1199,29 @@ static u64 pkvm_get_segment_base(struct pkvm_vcpu *pkvm_vcpu, int seg)
 
 static void pkvm_get_segment(struct pkvm_vcpu *pkvm_vcpu, struct kvm_segment *var, int seg)
 {
+	struct kvm_segment segment;
+
 	if (WARN_ON_ONCE(!pkvm_vcpu))
 		return;
 
-	if (WARN_ON_ONCE(var != this_pv_param(seg) || !var))
+	if (WARN_ON_ONCE(copy_pv_param_from_host(seg, var, segment)))
 		return;
 
-	kvm_x86_call(get_segment)(to_kvm_vcpu(pkvm_vcpu), var, seg);
+	kvm_x86_call(get_segment)(to_kvm_vcpu(pkvm_vcpu), &segment, seg);
+	copy_pv_param_to_host(seg, var, segment);
 }
 
 static void pkvm_set_segment(struct pkvm_vcpu *pkvm_vcpu, struct kvm_segment *var, int seg)
 {
+	struct kvm_segment segment;
+
 	if (WARN_ON_ONCE(!pkvm_vcpu))
 		return;
 
-	if (WARN_ON_ONCE(var != this_pv_param(seg) || !var))
+	if (WARN_ON_ONCE(copy_pv_param_from_host(seg, var, segment)))
 		return;
 
-	kvm_x86_call(set_segment)(to_kvm_vcpu(pkvm_vcpu), var, seg);
+	kvm_x86_call(set_segment)(to_kvm_vcpu(pkvm_vcpu), &segment, seg);
 }
 
 static void pkvm_set_cr0(struct pkvm_vcpu *pkvm_vcpu, unsigned long cr0)
@@ -1235,14 +1240,15 @@ static void pkvm_set_cr4(struct pkvm_vcpu *pkvm_vcpu, unsigned long cr4)
 	kvm_x86_call(set_cr4)(to_kvm_vcpu(pkvm_vcpu), cr4);
 }
 
-static int pkvm_set_msr(struct pkvm_vcpu *pkvm_vcpu, struct msr_data *msr)
+static int pkvm_set_msr(struct pkvm_vcpu *pkvm_vcpu, struct msr_data *msr_ptr)
 {
 	struct kvm_vcpu *vcpu;
+	struct msr_data msr;
 
 	if (WARN_ON_ONCE(!pkvm_vcpu))
 		return -EINVAL;
 
-	if (WARN_ON_ONCE(msr != this_pv_param(msr) || !msr))
+	if (WARN_ON_ONCE(copy_pv_param_from_host(msr, msr_ptr, msr)))
 		return -EINVAL;
 
 	vcpu = to_kvm_vcpu(pkvm_vcpu);
@@ -1260,50 +1266,57 @@ static int pkvm_set_msr(struct pkvm_vcpu *pkvm_vcpu, struct msr_data *msr)
 		 * that are currently tweaked by crosvm, and only those.
 		 * The allowed set can be extended as needed.
 		 */
-		switch (msr->index) {
+		switch (msr.index) {
 		case MTRRphysBase_MSR(0) ... MSR_MTRRfix4K_F8000:
 		case MSR_MTRRdefType:
 			break;
 		case MSR_IA32_MISC_ENABLE:
-			if (msr->data & ~(MSR_IA32_MISC_ENABLE_FAST_STRING |
-					  MSR_IA32_MISC_ENABLE_PEBS_UNAVAIL |
-					  MSR_IA32_MISC_ENABLE_BTS_UNAVAIL))
+			if (msr.data & ~(MSR_IA32_MISC_ENABLE_FAST_STRING |
+					 MSR_IA32_MISC_ENABLE_PEBS_UNAVAIL |
+					 MSR_IA32_MISC_ENABLE_BTS_UNAVAIL))
 				return -EPERM;
 
 			/*
 			 * vPMU is not supported by pKVM yet. Don't trick the pVM
 			 * that it is.
 			 */
-			msr->data |= MSR_IA32_MISC_ENABLE_PEBS_UNAVAIL |
-				     MSR_IA32_MISC_ENABLE_BTS_UNAVAIL;
+			msr.data |= MSR_IA32_MISC_ENABLE_PEBS_UNAVAIL |
+				    MSR_IA32_MISC_ENABLE_BTS_UNAVAIL;
 			break;
 		default:
 			/*
 			 * Allow the host to set an MSR to a value to which it is
 			 * already set by pKVM anyway, i.e. if setting is a no-op.
 			 */
-			ret = __kvm_get_msr(vcpu, msr->index, &cur_data, true);
+			ret = __kvm_get_msr(vcpu, msr.index, &cur_data, true);
 			if (ret)
 				return ret;
-			if (msr->data == cur_data)
+			if (msr.data == cur_data)
 				return 0;
 
 			return -EPERM;
 		}
 	}
 
-	return kvm_x86_call(set_msr)(vcpu, msr);
+	return kvm_x86_call(set_msr)(vcpu, &msr);
 }
 
-static int pkvm_get_msr(struct pkvm_vcpu *pkvm_vcpu, struct msr_data *msr)
+static int pkvm_get_msr(struct pkvm_vcpu *pkvm_vcpu, struct msr_data *msr_ptr)
 {
+	struct msr_data msr;
+	int ret;
+
 	if (WARN_ON_ONCE(!pkvm_vcpu))
 		return -EINVAL;
 
-	if (WARN_ON_ONCE(msr != this_pv_param(msr) || !msr))
+	if (WARN_ON_ONCE(copy_pv_param_from_host(msr, msr_ptr, msr)))
 		return -EINVAL;
 
-	return kvm_x86_call(get_msr)(to_kvm_vcpu(pkvm_vcpu), msr);
+	ret = kvm_x86_call(get_msr)(to_kvm_vcpu(pkvm_vcpu), &msr);
+	if (!ret)
+		copy_pv_param_to_host(msr, msr_ptr, msr);
+
+	return ret;
 }
 
 static int pkvm_set_efer(struct pkvm_vcpu *pkvm_vcpu, u64 efer)
@@ -1314,26 +1327,30 @@ static int pkvm_set_efer(struct pkvm_vcpu *pkvm_vcpu, u64 efer)
 	return kvm_x86_call(set_efer)(to_kvm_vcpu(pkvm_vcpu), efer);
 }
 
-static void pkvm_access_idt_gdt(struct pkvm_vcpu *pkvm_vcpu, struct desc_ptr *desc,
+static void pkvm_access_idt_gdt(struct pkvm_vcpu *pkvm_vcpu, struct desc_ptr *desc_ptr,
 				bool set, bool idt)
 {
+	struct desc_ptr desc;
+
 	if (WARN_ON_ONCE(!pkvm_vcpu))
 		return;
 
-	if (WARN_ON_ONCE(desc != this_pv_param(desc) || !desc))
+	if (WARN_ON_ONCE(copy_pv_param_from_host(desc, desc_ptr, desc)))
 		return;
 
 	if (idt) {
 		if (set)
-			kvm_x86_call(set_idt)(to_kvm_vcpu(pkvm_vcpu), desc);
+			kvm_x86_call(set_idt)(to_kvm_vcpu(pkvm_vcpu), &desc);
 		else
-			kvm_x86_call(get_idt)(to_kvm_vcpu(pkvm_vcpu), desc);
+			kvm_x86_call(get_idt)(to_kvm_vcpu(pkvm_vcpu), &desc);
 	} else {
 		if (set)
-			kvm_x86_call(set_gdt)(to_kvm_vcpu(pkvm_vcpu), desc);
+			kvm_x86_call(set_gdt)(to_kvm_vcpu(pkvm_vcpu), &desc);
 		else
-			kvm_x86_call(get_gdt)(to_kvm_vcpu(pkvm_vcpu), desc);
+			kvm_x86_call(get_gdt)(to_kvm_vcpu(pkvm_vcpu), &desc);
 	}
+	if (!set)
+		copy_pv_param_to_host(desc, desc_ptr, desc);
 }
 
 static void pkvm_set_dr7(struct pkvm_vcpu *pkvm_vcpu, unsigned long val)
@@ -1616,15 +1633,14 @@ static void pkvm_refresh_apicv_exec_ctrl(struct pkvm_vcpu *pkvm_vcpu, bool apicv
 	kvm_x86_call(refresh_apicv_exec_ctrl)(to_kvm_vcpu(pkvm_vcpu));
 }
 
-static void pkvm_load_eoi_exitmap(struct pkvm_vcpu *pkvm_vcpu, u64 *eoi_exit_bitmap)
+static void pkvm_load_eoi_exitmap(struct pkvm_vcpu *pkvm_vcpu, struct eoi_exitmap *exitmap_ptr)
 {
-	if (WARN_ON_ONCE(!pkvm_vcpu))
+	struct eoi_exitmap exitmap;
+
+	if (WARN_ON_ONCE(copy_pv_param_from_host(eoi_exit_bitmap, exitmap_ptr, exitmap)))
 		return;
 
-	if (WARN_ON_ONCE(eoi_exit_bitmap != this_pv_param(eoi_exit_bitmap[0]) || !eoi_exit_bitmap))
-		return;
-
-	kvm_x86_call(load_eoi_exitmap)(to_kvm_vcpu(pkvm_vcpu), eoi_exit_bitmap);
+	kvm_x86_call(load_eoi_exitmap)(to_kvm_vcpu(pkvm_vcpu), exitmap.bitmap);
 }
 
 static void pkvm_hwapic_irr_update(struct pkvm_vcpu *pkvm_vcpu, int max_irr)
@@ -2001,7 +2017,7 @@ static unsigned long pkvm_vcpu_handle_kvm_call(unsigned long fn,
 		pkvm_refresh_apicv_exec_ctrl(pkvm_vcpu, (bool)p2);
 		break;
 	case __pkvm__load_eoi_exitmap:
-		pkvm_load_eoi_exitmap(pkvm_vcpu, (u64 *)p2);
+		pkvm_load_eoi_exitmap(pkvm_vcpu, (struct eoi_exitmap *)p2);
 		break;
 	case __pkvm__hwapic_irr_update:
 		pkvm_hwapic_irr_update(pkvm_vcpu, (int)p2);

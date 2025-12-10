@@ -1655,19 +1655,19 @@ static void pkvm_refresh_apicv_exec_ctrl(struct kvm_vcpu *vcpu)
 static void pkvm_load_eoi_exitmap(struct kvm_vcpu *vcpu, u64 *eoi_exit_bitmap)
 {
 	unsigned long flags;
-	u64 *exitmap;
+	struct eoi_exitmap *exitmap;
 
 	if (!kvm_vcpu_apicv_active(vcpu))
 		return;
 
-	exitmap = get_this_pv_param(eoi_exit_bitmap[0], flags);
+	exitmap = get_this_pv_param(eoi_exit_bitmap, flags);
 
-	exitmap[0] = eoi_exit_bitmap[0];
-	exitmap[1] = eoi_exit_bitmap[1];
-	exitmap[2] = eoi_exit_bitmap[2];
-	exitmap[3] = eoi_exit_bitmap[3];
+	exitmap->bitmap[0] = eoi_exit_bitmap[0];
+	exitmap->bitmap[1] = eoi_exit_bitmap[1];
+	exitmap->bitmap[2] = eoi_exit_bitmap[2];
+	exitmap->bitmap[3] = eoi_exit_bitmap[3];
 
-	pkvm_hypercall(load_eoi_exitmap, vcpu, exitmap);
+	pkvm_hypercall(load_eoi_exitmap, vcpu, exitmap->bitmap);
 
 	put_this_pv_param(exitmap, flags);
 }

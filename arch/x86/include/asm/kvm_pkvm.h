@@ -247,20 +247,53 @@ static inline void pkvm_create_vm_debugfs(struct kvm *kvm) {}
 #define HOST_INIT_MMU			2
 #define HOST_HANDLE_GUESTDBG_SINGLESTEP	3
 
+
+/*
+ * Wrapper structure used in pv_param for passing
+ * EOI_EXIT_BITMAP array to load_eoi_exitmap hypercall
+ */
+struct eoi_exitmap {
+	u64 bitmap[4];
+};
+
 union pkvm_pv_param {
 	struct kvm_segment seg;
 	struct msr_data msr;
 	struct desc_ptr desc;
-	u64 eoi_exit_bitmap[4];
+	struct eoi_exitmap eoi_exit_bitmap;
 } __aligned(PAGE_SIZE);
 
 #ifdef __PKVM_HYP__
 DECLARE_PER_CPU(union pkvm_pv_param *, pv_param);
 
-#define this_pv_param(f)						\
+/*
+ * Validate param_ptr = pv_param->f and copy pv_param->f(*param_ptr) to param.
+ *
+ * There is no real need for param_ptr in this macro. But all hypercalls that
+ * use pv_param passes in a pointer to pv_param->f. To avoid changing all those
+ * hypercall arguments, we take param_ptr and validate it to be pv_param->f before
+ * copying the contents.
+ */
+#define copy_pv_param_from_host(f, param_ptr, param)			\
 	({								\
 		union pkvm_pv_param *p = this_cpu_read(pv_param);	\
-		p ? &p->f : NULL;					\
+		BUILD_BUG_ON(!__same_type(*(param_ptr), (param)));	\
+		BUILD_BUG_ON(!__same_type((param), p->f));		\
+		if (p && (param_ptr) && (param_ptr) == &p->f) {		\
+			(param) = p->f;					\
+		}							\
+		p && (param_ptr) && (param_ptr) == &p->f ?  0 : -1;	\
+	})
+
+/* Similar to copy_pv_param_from_host, but copies param back to pv_param->f */
+#define copy_pv_param_to_host(f, param_ptr, param)			\
+	({								\
+		union pkvm_pv_param *p = this_cpu_read(pv_param);	\
+		BUILD_BUG_ON(!__same_type(*(param_ptr), (param)));	\
+		BUILD_BUG_ON(!__same_type((param), p->f));		\
+		if (p && (param_ptr) && (param_ptr) == &p->f) {		\
+			p->f = (param);					\
+		}							\
 	})
 #else
 DECLARE_PER_CPU(union pkvm_pv_param, pv_param);
