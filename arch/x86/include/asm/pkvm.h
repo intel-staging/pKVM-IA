@@ -143,6 +143,18 @@ struct pkvm_pasid_table_param {
 	u64 domain_pgd_gpa;
 };
 
+struct pkvm_domain_param {
+	u64 phys;
+	u16 bdf;
+	u16 gaw;
+	u8 agaw;
+	u8 iommu_superpage;
+	u8 iommu_coherency;
+	u8 use_first_level;
+	u64 max_addr;
+	u64 pgd_gpa;
+};
+
 #ifndef __PKVM_HYP__
 
 extern bool __read_mostly enable_pkvm;	/* kernel command-line flag */

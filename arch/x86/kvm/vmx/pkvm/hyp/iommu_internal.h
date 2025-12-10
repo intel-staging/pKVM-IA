@@ -78,6 +78,8 @@ static inline u16 level_to_agaw(int level)
 	return (level == 3) ? 1 : (level == 4) ? 2 : 3;
 }
 
+#define __DOMAIN_MAX_ADDR(gaw) ((((uint64_t)1) << (gaw)) - 1)
+
 #define LAST_LEVEL(level)	\
 	(((level) == 1) ? true : false)
 
@@ -241,6 +243,8 @@ int pkvm_iommu_set_lm_ce(u64 param_va);
 int pkvm_iommu_set_sm_ce(u64 param_va);
 struct context_entry *pkvm_iommu_context_addr(struct intel_iommu *iommu, u8 bus,
 					      u8 devfn, u64 *context_phys);
+int pkvm_iommu_domain_alloc(u64 param_va);
+int pkvm_iommu_domain_free(u64 pgd_gpa);
 #else
 int initialize_iommu_pgt(struct pkvm_iommu *iommu);
 int handle_descriptor(struct pkvm_iommu *iommu, struct qi_desc *desc);

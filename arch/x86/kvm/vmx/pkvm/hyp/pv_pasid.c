@@ -18,6 +18,7 @@
 #include "iommu_spgt.h"
 #include "bug.h"
 #include "iommu.h"
+#include "iommu_domain.h"
 
 static void __pasid_setup_fl(struct intel_iommu *iommu, struct pasid_entry *pe, u64 flptr,
 			     u16 did, bool force_snoop)
@@ -190,9 +191,11 @@ static void pkvm_pasid_flush_caches(struct pkvm_iommu *hyp_iommu,
 int pkvm_iommu_clear_pasid_entry(u64 param_va)
 {
 	struct pkvm_clear_translation_param param, *param_ptr;
+	struct pkvm_iommu_domain *domain;
 	struct pkvm_iommu *hyp_iommu;
 	struct intel_iommu *iommu;
 	struct pasid_entry *pte;
+	u64 pgd_pa = 0;
 	u16 did, pgtt;
 	int ret;
 
@@ -226,8 +229,28 @@ int pkvm_iommu_clear_pasid_entry(u64 param_va)
 
 	did = pasid_get_domain_id(pte);
 	pgtt = pasid_get_translation_type(pte);
-	pkvm_dbg("pkvm: %s: clear_pe: dev[%x] pasid: %x, did: %u\n",
-		 __func__, param.bdf, param.pasid, did);
+	if (pgtt == PASID_ENTRY_PGTT_FL_ONLY)
+		pgd_pa = pasid_get_flptr(pte);
+	else if (pgtt == PASID_ENTRY_PGTT_SL_ONLY)
+		pgd_pa = pasid_get_slptr(pte);
+
+	if (did != FLPT_DEFAULT_DID) {
+		/*
+		 * We are guaranteed to have a reference on domain
+		 * if the domain exists. So get the domain without
+		 * incrementing reference count. We are retrieving
+		 * the domain to decrement its reference count we
+		 * took during pasid entry update.
+		 */
+		domain = pkvm_get_iommu_domain_noref(pgd_pa);
+		if (WARN_ON(!domain)) {
+			ret = -EFAULT;
+			goto out_unlock;
+		}
+	}
+	pkvm_dbg("pkvm: %s: dev[%x] pasid: %u, did: %u, pgd: %llx\n",
+		 __func__, param.bdf, param.pasid, did, pgd_pa);
+
 	pasid_clear_entry(pte);
 	ret = 0;
 
@@ -262,6 +285,8 @@ out_unlock:
 
 	if (did == FLPT_DEFAULT_DID)
 		atomic_dec(&hyp_iommu->pt_cnt);
+	else
+		pkvm_put_iommu_domain(domain);
 
 	return 0;
 }
@@ -306,6 +331,14 @@ int pkvm_iommu_set_pasid_fl(u64 param_va)
 
 	if (pasid_pte_is_present(pte)) {
 		ret = -EBUSY;
+		goto out_unlock;
+	}
+
+	/* Verify the domain is present and take a reference. */
+	if (!pkvm_get_iommu_domain(pgd_pa)) {
+		pkvm_err("pkvm: %s: Failed to locate domain with pgd: %llx\n",
+			 __func__, pgd_pa);
+		ret = -EFAULT;
 		goto out_unlock;
 	}
 
@@ -384,6 +417,14 @@ int pkvm_iommu_set_pasid_sl(u64 param_va)
 	} else {
 		agaw = iommu->agaw;
 		pgd_pa = host_gpa2hpa(param.domain_pgd_gpa);
+
+		/* Verify the domain is present and take a reference. */
+		if (!pkvm_get_iommu_domain(pgd_pa)) {
+			pkvm_err("pkvm: %s: Failed to locate domain with pgd: %llx\n",
+				 __func__, pgd_pa);
+			ret = -EFAULT;
+			goto out_unlock;
+		}
 	}
 	__pasid_setup_sl(iommu, pte, pgd_pa, param.did,
 			 agaw, param.dirty_tracking);

@@ -134,6 +134,12 @@ static unsigned long handle_vmcall(struct kvm_vcpu *vcpu)
 	case __pkvm__iommu_set_pasid_sl:
 		ret = pkvm_iommu_set_pasid_sl(a0);
 		break;
+	case __pkvm__iommu_domain_alloc:
+		ret = pkvm_iommu_domain_alloc(a0);
+		break;
+	case __pkvm__iommu_domain_free:
+		ret = pkvm_iommu_domain_free(a0);
+		break;
 #endif
 	case __pkvm__add_ptdev:
 		ret = pkvm_add_ptdev(a0, a1, a2);

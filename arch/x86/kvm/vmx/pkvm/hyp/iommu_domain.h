@@ -30,7 +30,7 @@ struct pkvm_iommu_domain {
 	struct hlist_node hnode;
 };
 
-struct pkvm_iommu_domain *pkvm_alloc_iommu_domain(u64 pgd);
+struct pkvm_iommu_domain *pkvm_alloc_iommu_domain(struct pkvm_domain_param *param);
 struct pkvm_iommu_domain *pkvm_get_iommu_domain(u64 pgd);
 struct pkvm_iommu_domain *pkvm_get_iommu_domain_noref(u64 pgd);
 void pkvm_put_iommu_domain(struct pkvm_iommu_domain *domain);
