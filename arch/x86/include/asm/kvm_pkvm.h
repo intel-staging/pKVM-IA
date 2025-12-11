@@ -54,6 +54,8 @@ struct pkvm_mem_info {
 	u64 prot;
 };
 
+#define PKVM_HOST_VM_HANDLE	INT_MAX
+
 #define TO_PKVM_HC(f)		CONCATENATE(__pkvm__, f)
 
 enum pkvm_hc {
