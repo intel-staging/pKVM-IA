@@ -77,6 +77,23 @@ struct pkvm_vm {
 /* The pkvm_vm structure size w/o struct kvm */
 #define PKVM_VM_BASE_SIZE		offsetof(struct pkvm_vm, kvm)
 
+/**
+ * for_each_pkvm_guest_vcpu - iterate over non-NULL guest vCPUs
+ * @i: loop counter
+ * @_vcpu: struct kvm_vcpu pointer, assigned by macro and guaranteed non-NULL.
+ * @vm: struct pkvm_vm pointer, evaluated multiple times. Don't use expressions.
+ *
+ * Iterates over all vCPUs in the VM, automatically skipping if vCPU pointer is
+ * NULL.
+ */
+#define for_each_pkvm_guest_vcpu(i, _vcpu, vm)							\
+	for ((i) = 0; (i) < (vm)->kvm.created_vcpus &&						\
+		      ({ (_vcpu) = (vm)->vcpus[(i)] ?						\
+				  &(vm)->vcpus[(i)]->vcpu : NULL; true; }); (i)++)		\
+		if (!(_vcpu))									\
+			continue;								\
+		else
+
 static inline struct pkvm_vm *to_pkvm(struct kvm *kvm)
 {
 	/*
@@ -165,5 +182,7 @@ int pkvm_vcpu_enter_guest(struct kvm_vcpu *vcpu, bool force_immediate_exit,
 			  unsigned long *reqs_to_host);
 void pkvm_x86_ops_init(struct pkvm_x86_ops *ops);
 int pkvm_emulate_hypercall(struct kvm_vcpu *vcpu);
+typedef int (*pkvm_vm_func_t)(struct pkvm_vm *vm, void *arg);
+int pkvm_walk_each_vm(pkvm_vm_func_t func, void *arg);
 
 #endif /* __PKVM_X86_PKVM_H */
