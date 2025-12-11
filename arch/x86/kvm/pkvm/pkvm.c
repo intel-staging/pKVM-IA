@@ -621,6 +621,8 @@ static int __vcpu_create(struct kvm *kvm, struct kvm_vcpu *vcpu, struct fpstate 
 	if (ret)
 		goto unsetup_lapic;
 
+	pkvm_vcpu_perf_init(vcpu);
+
 	/* Load guest vCPU to post-set after it is created. */
 	scoped_guard(switch_vcpu, vcpu) {
 		kvm_vcpu_after_set_cpuid(vcpu);

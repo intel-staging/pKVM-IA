@@ -5,6 +5,7 @@
 #include <linux/kvm_host.h>
 #include <asm/kvm_pkvm.h>
 #include <asm/pkvm_spinlock.h>
+#include <asm/pkvm_trace.h>
 
 DECLARE_PER_CPU(struct pkvm_pcpu *, phys_cpu);
 DECLARE_PER_CPU(struct kvm_vcpu *, host_vcpu);
@@ -28,6 +29,8 @@ struct pkvm_vcpu {
 	 * structure wrapping the kvm_vcpu structure (see below).
 	 */
 	size_t size;
+	/* Vmexit perf data on this vcpu */
+	struct vmexit_perf perf;
 	/*
 	 * The struct kvm_vcpu should be the last element. In cases where struct
 	 * kvm_vcpu is wrapped by a vendor specific structure, putting it as the
