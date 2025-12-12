@@ -8603,12 +8603,14 @@ void vmx_vm_destroy(struct kvm *kvm)
 #ifndef __PKVM_HYP__
 	free_pages((unsigned long)kvm_vmx->pid_table, vmx_get_pid_table_order(kvm));
 #else
-	/*
-	 * No need to clear the pid_table as its contents is following the SDM
-	 * which is not a secret.
-	 */
-	pkvm_hyp_donate_host(__pkvm_pa(kvm_vmx->pid_table),
-			     PAGE_SIZE << vmx_get_pid_table_order(kvm), false);
+	if (kvm_vmx->pid_table) {
+		/*
+		 * No need to clear the pid_table as its contents is following the SDM
+		 * which is not a secret.
+		 */
+		pkvm_hyp_donate_host(__pkvm_pa(kvm_vmx->pid_table),
+				     PAGE_SIZE << vmx_get_pid_table_order(kvm), false);
+	}
 #endif
 }
 
