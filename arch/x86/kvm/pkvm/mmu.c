@@ -538,18 +538,18 @@ unlock:
  * permission and WB memory type in the host mmu, with the page states being
  * updated to PKVM_PAGE_OWNED to indicate the ownership has been transferred to
  * the host.
- *
- * Returns: 0 on success, or a negative error code on failure.
  */
-int pkvm_hyp_donate_host(unsigned long phys, unsigned long size, bool clear)
+void pkvm_hyp_donate_host(unsigned long phys, unsigned long size, bool clear)
 {
 	u64 prot = host_mmu.pgt_ops->calc_pte_perm(true, true, true) |
 		   host_mmu.pgt_ops->calc_pte_memtype(false);
 	void *va = __pkvm_va(phys);
 	int ret;
 
-	if (!PAGE_ALIGNED(phys) || !PAGE_ALIGNED(size) || size == 0)
-		return -EINVAL;
+	if (!PAGE_ALIGNED(phys) || !PAGE_ALIGNED(size) || size == 0) {
+		ret = -EINVAL;
+		goto out;
+	}
 
 	if (clear)
 		pkvm_clear_memory(va, size);
@@ -578,8 +578,14 @@ int pkvm_hyp_donate_host(unsigned long phys, unsigned long size, bool clear)
 	set_host_mem_pgstate(phys, size, PKVM_PAGE_OWNED);
 unlock:
 	pkvm_host_mmu_unlock();
-
-	return ret;
+out:
+	/*
+	 * pkvm_hyp_donate_host() is only used by the pKVM hypervisor itself,
+	 * not on the host behalf, so it is supposed to be called with correct
+	 * parameters, and only for pages that are known to be owned by the
+	 * hypervisor. So any error here means a pKVM bug.
+	 */
+	BUG_ON(ret);
 }
 
 /**
