@@ -91,6 +91,72 @@ static inline unsigned long __pkvm_hypercall(unsigned long nr, unsigned long p1,
 
 #ifdef CONFIG_PKVM_INTEL
 
+struct pkvm_memcache {
+	phys_addr_t head;
+	unsigned long nr_pages;
+#define PKVM_MC_ACCOUNT_PGTABLE_PAGES BIT(1)
+	unsigned long flags;
+};
+
+static inline void push_pkvm_memcache(struct pkvm_memcache *mc,
+				      phys_addr_t *p,
+				      phys_addr_t (*to_pa)(void *virt))
+{
+	*p = mc->head;
+	mc->head = to_pa(p);
+	mc->nr_pages++;
+}
+
+static inline void *pop_pkvm_memcache(struct pkvm_memcache *mc,
+				      void *(*to_va)(phys_addr_t phys))
+{
+	phys_addr_t *p = to_va(mc->head);
+
+	if (!mc->nr_pages)
+		return NULL;
+
+	mc->head = *p;
+	mc->nr_pages--;
+
+	return p;
+}
+
+static inline int __topup_pkvm_memcache(struct pkvm_memcache *mc,
+					unsigned long min_pages,
+					void *(*alloc_fn)(void *arg),
+					phys_addr_t (*to_pa)(void *virt),
+					void *arg)
+{
+	while (mc->nr_pages < min_pages) {
+		phys_addr_t *p = alloc_fn(arg);
+
+		if (!p)
+			return -ENOMEM;
+
+		push_pkvm_memcache(mc, p, to_pa);
+	}
+
+	return 0;
+}
+
+static inline void __free_pkvm_memcache(struct pkvm_memcache *mc,
+					void (*free_fn)(void *virt, void *arg),
+					void *(*to_va)(phys_addr_t phys),
+					void *arg)
+{
+	while (mc->nr_pages)
+		free_fn(pop_pkvm_memcache(mc, to_va), arg);
+}
+
+void free_pkvm_memcache(struct pkvm_memcache *mc);
+int topup_pkvm_memcache(struct pkvm_memcache *mc, unsigned long min_pages);
+
+static inline void init_pkvm_mmu_memcache(struct pkvm_memcache *mc)
+{
+	memset(mc, 0, sizeof(*mc));
+	mc->flags = PKVM_MC_ACCOUNT_PGTABLE_PAGES;
+}
+
 /* pviommu Hypercall structures */
 /*
  * With pviommu, iommu driver do not have full control over the iommu hardware and
