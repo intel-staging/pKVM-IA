@@ -61,9 +61,20 @@ static inline long pkvm_hc_iommu_domain_alloc(struct pkvm_domain_param *param)
 	return pkvm_iommu_hypercall(iommu_domain_alloc, domain_param, param);
 }
 
-static inline long pkvm_hc_iommu_domain_free(u64 pgd_gpa)
+static inline long pkvm_hc_iommu_domain_free(struct pkvm_domain_param *param)
 {
-	return pkvm_hypercall(iommu_domain_free, pgd_gpa);
+	return pkvm_iommu_hypercall(iommu_domain_free, domain_param, param);
 
+}
+
+static inline long pkvm_hc_iommu_map_pages(struct pkvm_iommu_map_param *param)
+{
+	return pkvm_iommu_hypercall(iommu_map_pages, iommu_map_param, param);
+}
+
+static inline long pkvm_hc_iommu_unmap_pages(unsigned long pgd_gpa,
+					     unsigned long start_pfn, unsigned long last_pfn)
+{
+	return pkvm_hypercall(iommu_unmap_pages, pgd_gpa, start_pfn, last_pfn);
 }
 #endif
