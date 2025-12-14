@@ -93,8 +93,6 @@ static inline u16 level_to_agaw(int level)
 	return (level == 3) ? 1 : (level == 4) ? 2 : 3;
 }
 
-#define __DOMAIN_MAX_ADDR(gaw) ((((uint64_t)1) << (gaw)) - 1)
-
 #define LAST_LEVEL(level)	\
 	(((level) == 1) ? true : false)
 
