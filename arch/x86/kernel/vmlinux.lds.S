@@ -148,6 +148,9 @@ PHDRS {
 		AT(ADDR(PKVM_SECTION_NAME(.rodata)) - LOAD_OFFSET) {	\
 	. = ALIGN(PAGE_SIZE);						\
 	pkvm_sym(rodata_start) = .;					\
+	pkvm_sym(__start___ex_table) = .;				\
+	*(PKVM_SECTION_NAME(__ex_table))				\
+	pkvm_sym(__stop___ex_table) = .;				\
 	*(PKVM_SECTION_NAME(.rodata))					\
 	*(PKVM_SECTION_NAME(.data..ro_after_init))			\
 	. = ALIGN(PAGE_SIZE);						\
