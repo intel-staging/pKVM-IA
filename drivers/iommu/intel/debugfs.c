@@ -416,6 +416,16 @@ static int domain_translation_struct_show(struct seq_file *m,
 				goto iommu_unlock;
 
 			/*
+			 * Host uses FLPT_DEFAULT_DID as did for passthrough mode. pKVM switches
+			 * it to second level translation and uses host EPT as the page table to
+			 * enforce security guarantees by pKVM. Hoset EPT is not accessible to
+			 * host and hence do not try to walk the page table in that case.
+			 */
+			if (pkvm_pviommu_enabled() &&
+					pasid_get_domain_id(pasid_tbl_entry) == FLPT_DEFAULT_DID)
+				goto iommu_unlock;
+
+			/*
 			 * According to PASID Granular Translation Type(PGTT),
 			 * get the page table pointer.
 			 */
@@ -435,6 +445,16 @@ static int domain_translation_struct_show(struct seq_file *m,
 			}
 			pgd &= VTD_PAGE_MASK;
 		} else { /* legacy mode */
+			/*
+			 * Host uses FLPT_DEFAULT_DID as did for passthrough mode. pKVM switches
+			 * it to second level translation and uses host EPT as the page table to
+			 * enforce security guarantees by pKVM. Hoset EPT is not accessible to
+			 * host and hence do not try to walk the page table in that case.
+			 */
+			if (pkvm_pviommu_enabled() &&
+					context_domain_id(context) == FLPT_DEFAULT_DID)
+				goto iommu_unlock;
+
 			pgd = context->lo & VTD_PAGE_MASK;
 			agaw = context->hi & 7;
 		}
