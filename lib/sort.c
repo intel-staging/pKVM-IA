@@ -264,8 +264,18 @@ static void __sort_r(void *base, size_t num, size_t size,
 			do_swap(base + b, base + c, size, swap_func, priv);
 		}
 
+#ifndef __PKVM_HYP__
 		if (may_schedule)
 			cond_resched();
+#else
+		/*
+		 * The pKVM hypervisor runs in the interrupt disabled context
+		 * and doesn't own scheduling. It doesn't have a capability to
+		 * preempt itself and return back to the host for rescheduling
+		 * so just warn on for this case.
+		 */
+		WARN_ON_ONCE(may_schedule);
+#endif
 	}
 
 	n -= size;
