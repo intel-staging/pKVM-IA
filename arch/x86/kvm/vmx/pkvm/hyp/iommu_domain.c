@@ -88,7 +88,8 @@ int pkvm_free_iommu_domain(struct pkvm_iommu_domain *domain)
 	return 0;
 }
 
-struct pkvm_iommu_domain *pkvm_alloc_iommu_domain(struct pkvm_domain_param *param)
+struct pkvm_iommu_domain *pkvm_alloc_iommu_domain(struct pkvm_domain_param *param,
+						  bool need_iotlb_sync_map)
 {
 	u64 pgd = host_gpa2hpa(param->pgd_gpa);
 	struct pkvm_iommu_domain *domain;
@@ -110,6 +111,7 @@ struct pkvm_iommu_domain *pkvm_alloc_iommu_domain(struct pkvm_domain_param *para
 		domain->use_first_level = param->use_first_level;
 		domain->iommu_superpage = param->iommu_superpage;
 		domain->iommu_coherency = param->iommu_coherency;
+		domain->need_iotlb_sync_map = need_iotlb_sync_map;
 		domain->agaw = param->agaw;
 		domain->gaw = param->gaw;
 		domain->max_addr = param->max_addr;

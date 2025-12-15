@@ -540,6 +540,7 @@ int pkvm_iommu_domain_alloc(u64 param_va)
 	struct pkvm_domain_param param, *param_ptr;
 	struct pkvm_iommu_domain *domain;
 	struct pkvm_iommu *hyp_iommu;
+	bool need_iotlb_sync_map;
 	struct intel_iommu *iommu;
 	void *pgdptr;
 	u64 pgd;
@@ -573,7 +574,8 @@ int pkvm_iommu_domain_alloc(u64 param_va)
 	memset(pgdptr, 0, VTD_PAGE_SIZE);
 	__pkvm_iommu_flush_cache(iommu, pgdptr, VTD_PAGE_SIZE);
 
-	domain = pkvm_alloc_iommu_domain(&param);
+	need_iotlb_sync_map = cap_caching_mode(iommu->cap) && !param.use_first_level;
+	domain = pkvm_alloc_iommu_domain(&param, need_iotlb_sync_map);
 	if (IS_ERR(domain)) {
 		pkvm_err("pkvm: %s: domain alloc failed for device[%x] (err=%ld)\n",
 			 __func__, param.bdf, PTR_ERR(domain));

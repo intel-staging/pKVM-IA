@@ -18,6 +18,7 @@ struct pkvm_iommu_domain {
 	u8 iommu_superpage: 4;
 	u8 iommu_coherency: 1;
 	u8 use_first_level: 1;
+	u8 need_iotlb_sync_map: 1;
 	u16 gaw;
 	u8 agaw;
 	struct qi_batch qi_batch;
@@ -33,7 +34,8 @@ struct pkvm_iommu_domain {
 	struct hlist_node hnode;
 };
 
-struct pkvm_iommu_domain *pkvm_alloc_iommu_domain(struct pkvm_domain_param *param);
+struct pkvm_iommu_domain *pkvm_alloc_iommu_domain(struct pkvm_domain_param *param,
+						  bool need_iotlb_sync_map);
 struct pkvm_iommu_domain *pkvm_get_iommu_domain(u64 pgd);
 struct pkvm_iommu_domain *pkvm_get_iommu_domain_noref(u64 pgd);
 void pkvm_put_iommu_domain(struct pkvm_iommu_domain *domain);
