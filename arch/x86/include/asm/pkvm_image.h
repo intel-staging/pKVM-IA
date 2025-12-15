@@ -44,7 +44,11 @@
 #ifndef __ASSEMBLER__
 
 #ifdef CONFIG_PKVM_X86
+#include <asm/extable.h>
+
 extern char pkvm_sym(text_start)[], pkvm_sym(text_end)[];
+extern const struct exception_table_entry __start___ex_table[];
+extern const struct exception_table_entry __stop___ex_table[];
 
 static inline bool is_pkvm_text(void *addr)
 {
