@@ -715,18 +715,18 @@ void pkvm_host_unshare_hyp(unsigned long phys, unsigned long size)
 {
 	unsigned long end = PAGE_ALIGN(phys + size);
 	struct pkvm_page *page;
+	int ret;
 
-	BUG_ON(size == 0);
+	if (size == 0) {
+		ret = -EINVAL;
+		goto out;
+	}
 
 	pkvm_host_mmu_lock();
 
-	/*
-	 * The input range [phys, phys + size) is from the pKVM hypervisor which
-	 * is a trusted source, and suppose the pKVM hypervisor will only unshare
-	 * a memory range which was shared via pkvm_host_share_hyp(), thus the
-	 * page states should be shared-owned. Otherwise it means a pKVM bug.
-	 */
-	BUG_ON(check_host_mem_pgstate(phys, size, PKVM_PAGE_SHARED_OWNED));
+	ret = check_host_mem_pgstate(phys, size, PKVM_PAGE_SHARED_OWNED);
+	if (ret)
+		goto unlock;
 
 	for (phys = PAGE_ALIGN_DOWN(phys); phys < end; phys += PAGE_SIZE) {
 		page = pkvm_phys_to_page(phys);
@@ -744,6 +744,14 @@ void pkvm_host_unshare_hyp(unsigned long phys, unsigned long size)
 
 		page->host_state = PKVM_PAGE_OWNED;
 	}
-
+unlock:
 	pkvm_host_mmu_unlock();
+out:
+	/*
+	 * pkvm_host_unshare_hyp() is only used by the pKVM hypervisor itself,
+	 * not on the host behalf, so it is supposed to be called with correct
+	 * parameters, and only for pages that are known to be shared with the
+	 * hypervisor. So any error here means a pKVM bug.
+	 */
+	BUG_ON(ret);
 }
