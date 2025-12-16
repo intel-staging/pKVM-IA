@@ -88,6 +88,8 @@ PKVM_HC(iommu_set_pasid_fl)
 PKVM_HC(iommu_set_pasid_sl)
 PKVM_HC(iommu_domain_alloc)
 PKVM_HC(iommu_domain_free)
+PKVM_HC(iommu_map_pages)
+PKVM_HC(iommu_unmap_pages)
 
 /* pKVM vmexit tracing/profiling */
 PKVM_HC(set_vmexit_trace)

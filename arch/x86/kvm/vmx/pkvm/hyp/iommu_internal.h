@@ -291,7 +291,7 @@ int pkvm_iommu_set_sm_ce(u64 param_va);
 struct context_entry *pkvm_iommu_context_addr(struct intel_iommu *iommu, u8 bus,
 					      u8 devfn, u64 *context_phys);
 int pkvm_iommu_domain_alloc(u64 param_va);
-int pkvm_iommu_domain_free(u64 pgd_gpa);
+int pkvm_iommu_domain_free(u64 param_va);
 int pkvm_iommu_cache_assign_domain(struct pkvm_iommu *iommu, struct pkvm_iommu_domain *domain,
 				   u16 did, u16 bdf, u8 ats_qdep, ioasid_t pasid, bool dte);
 void pkvm_iommu_cache_unassign_domain(struct pkvm_iommu *iommu, struct pkvm_iommu_domain *domain,

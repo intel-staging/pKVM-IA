@@ -221,6 +221,16 @@ struct pkvm_domain_param {
 	u8 use_first_level;
 	u64 max_addr;
 	u64 pgd_gpa;
+	struct pkvm_memcache mc;
+};
+
+struct pkvm_iommu_map_param {
+	u64 pgd_gpa;
+	u64 iov_pfn;
+	u64 phys_pfn;
+	u64 nr_pages;
+	u64 prot;
+	struct pkvm_memcache mc;
 };
 
 #ifndef __PKVM_HYP__
