@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <linux/kvm_host.h>
+#include <linux/extable.h>
 #include <asm/kvm_pkvm.h>
 #include "early_alloc.h"
 #include "init_finalize.h"
@@ -218,6 +219,17 @@ static int finalize_global(struct pkvm_mem_info infos[], int nr_infos,
 
 	if (!PAGE_ALIGNED(mem_base) || !mem_size)
 		return -EINVAL;
+
+	/*
+	 * The exception table is in the pKVM's rodata section. Once switch
+	 * to the pKVM's MMU, the rodata section is mapped with read-only thus
+	 * sorting the exception table cannot be done as it requires read-write
+	 * permission. So sorting the exception table with the host MMU which
+	 * still maps the pKVM's rodata section with read-write permission
+	 * before switching to the pKVM's MMU.
+	 */
+	if (&__stop___ex_table > &__start___ex_table)
+		sort_extable(__start___ex_table, __stop___ex_table);
 
 	ret = divide_memory_pool(mem_base, mem_size);
 	if (ret)
