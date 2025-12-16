@@ -7,6 +7,7 @@
 #include "ept.h"
 #include "host_vmx.h"
 #include "init_finalize.h"
+#include "pkvm/lapic.h"
 #include "pkvm.h"
 
 #define CR4			4
@@ -182,6 +183,11 @@ static int handle_write_msr(struct kvm_vcpu *vcpu)
 		}
 		break;
 	}
+	case MSR_IA32_APICBASE:
+	case APIC_BASE_MSR ... APIC_BASE_MSR + 0xff:
+		if (!pkvm_lapic_msr_write(msr, val))
+			break;
+		fallthrough;
 	default:
 		/*
 		 * The MSRs intercepted by the writing bitmap should be
