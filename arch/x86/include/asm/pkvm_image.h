@@ -45,6 +45,9 @@
 
 #ifdef CONFIG_PKVM_X86
 extern char pkvm_sym(text_start)[], pkvm_sym(text_end)[];
+extern char pkvm_sym(rodata_start)[], pkvm_sym(rodata_end)[];
+extern char pkvm_sym(data_start)[], pkvm_sym(data_end)[];
+extern char pkvm_sym(bss_start)[], pkvm_sym(bss_end)[];
 static inline bool is_pkvm_text(void *addr)
 {
 	return addr >= (void *)pkvm_sym(text_start) && addr < (void *)pkvm_sym(text_end);
