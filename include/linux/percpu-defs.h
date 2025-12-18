@@ -311,7 +311,7 @@ do {									\
 
 extern void __bad_size_call_parameter(void);
 
-#ifdef CONFIG_DEBUG_PREEMPT
+#if defined(CONFIG_DEBUG_PREEMPT) && !defined(__PKVM_HYP__)
 extern void __this_cpu_preempt_check(const char *op);
 #else
 static __always_inline void __this_cpu_preempt_check(const char *op) { }
