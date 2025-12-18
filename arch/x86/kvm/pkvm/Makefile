@@ -32,7 +32,8 @@ kernel-lib			:= ../../../../lib
 pkvm-hyp-$(CONFIG_LIST_HARDENED) += $(kernel-lib)/list_debug.o
 pkvm-hyp-y			+= $(kernel-lib)/sort.o $(kernel-lib)/bsearch.o \
 				   $(kernel-lib)/extable.o $(kernel-lib)/find_bit.o \
-				   $(kernel-lib)/hweight.o
+				   $(kernel-lib)/hweight.o $(kernel-lib)/string.o \
+				   $(kernel-lib)/ctype.o
 
 kvm				:= ..
 pkvm-hyp-y			+= $(kvm)/x86.o $(kvm)/cpuid.o
