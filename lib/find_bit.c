@@ -293,6 +293,7 @@ EXPORT_SYMBOL(_find_next_bit_le);
 
 #endif /* __BIG_ENDIAN */
 
+#ifndef __PKVM_HYP__
 /**
  * find_random_bit - find a set bit at random position
  * @addr: The address to base the search on
@@ -315,3 +316,4 @@ unsigned long find_random_bit(const unsigned long *addr, unsigned long size)
 	}
 }
 EXPORT_SYMBOL(find_random_bit);
+#endif /* !__PKVM_HYP__ */

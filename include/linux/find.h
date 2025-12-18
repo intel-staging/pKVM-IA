@@ -44,7 +44,16 @@ unsigned long _find_next_bit_le(const unsigned long *addr, unsigned
 				long size, unsigned long offset);
 #endif
 
+#ifndef __PKVM_HYP__
 unsigned long find_random_bit(const unsigned long *addr, unsigned long size);
+#else
+static inline unsigned long find_random_bit(const unsigned long *addr, unsigned long size)
+{
+	BUILD_BUG_ON(1);
+
+	return 0;
+}
+#endif
 
 #ifndef find_next_bit
 /**
