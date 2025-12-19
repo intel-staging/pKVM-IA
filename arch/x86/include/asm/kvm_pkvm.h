@@ -45,6 +45,15 @@ static inline unsigned long __pkvm_pgtable_max_pages(unsigned long nr_pages)
 		total += nr_pages;
 	}
 
+	/*
+	 * For each level except the last one, may need an extra page table
+	 * if the VA range is not aligned to the next level's page size.
+	 * For example, range [0x1ff000, 0x201000) consists of just two
+	 * 4K pages, however need not one but two page tables at the first
+	 * level to contiguously map it, since it crosses the 2M boundary.
+	 */
+	total += PKVM_PGTABLE_MAX_LEVELS - 1;
+
 	return total;
 }
 
