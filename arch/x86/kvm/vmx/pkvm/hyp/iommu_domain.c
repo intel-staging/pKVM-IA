@@ -358,6 +358,7 @@ static void dma_pte_clear_range(struct pkvm_iommu_domain *domain,
 			continue;
 		}
 		do {
+			WARN_ON_ONCE(dma_pte_present(pte));
 			dma_clear_pte(pte);
 			start_pfn += lvl_to_nr_pages(large_page);
 			pte++;
