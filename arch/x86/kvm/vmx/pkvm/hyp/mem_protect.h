@@ -72,6 +72,26 @@ static inline void pkvm_clear_memory(void *va, size_t size)
 }
 
 /*
+ * __pkvm_use_dma() - Pin the pages to be used for DMA.
+ *
+ * @phys:	Starting physical address of the memory range to be used for DMA.
+ * @size:	Size of the memory range.
+ *
+ * Pin the range of pages [phys, size) that is to be mapped for DMA. Pinning
+ * is to disallow host from donating the pages mapped for DMA. Before pinning,
+ * validate that the memory range is owned by the host.
+ */
+int __pkvm_use_dma(u64 phys, u64 size);
+
+/*
+ * __pkvm_unuse_dma() - Unpin the pages that was previously pinned for DMA.
+ *
+ * @phys:	Starting physical address of the memory range to be unmapped.
+ * @size:	Size of the memory range.
+ */
+void __pkvm_unuse_dma(u64 phys, u64 size);
+
+/*
  * __pkvm_host_donate_hyp() - Donate pages from host to hyp, then host cannot
  * access these donated pages.
  *

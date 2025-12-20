@@ -1286,3 +1286,39 @@ int __pkvm_hyp_donate_host_unshare_ro(u64 phys, u64 size)
 
 	return ret;
 }
+
+int __pkvm_use_dma(u64 phys, u64 size)
+{
+	u64 end = phys + size;
+	u64 cur;
+
+	host_ept_lock();
+	if (__host_check_page_state_range(NULL, phys, size, PKVM_PAGE_OWNED)) {
+		host_ept_unlock();
+		return -EPERM;
+	}
+	for (cur = phys; cur < end; cur += PAGE_SIZE) {
+		struct hyp_page *page = hyp_phys_to_page_safe(cur);
+
+		if (page)
+			hyp_page_ref_inc(page);
+	}
+	host_ept_unlock();
+
+	return 0;
+}
+
+void __pkvm_unuse_dma(u64 phys, u64 size)
+{
+	u64 end = phys + size;
+	u64 cur;
+
+	host_ept_lock();
+	for (cur = phys; cur < end; cur += PAGE_SIZE) {
+		struct hyp_page *page = hyp_phys_to_page_safe(cur);
+
+		if (page)
+			hyp_page_ref_dec(page);
+	}
+	host_ept_unlock();
+}
