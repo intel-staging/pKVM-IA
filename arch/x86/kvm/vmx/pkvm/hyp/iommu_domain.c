@@ -279,6 +279,7 @@ static struct dma_pte *pfn_to_dma_pte(struct pkvm_iommu_domain *domain,
 			memset(tmp_page, 0, VTD_PAGE_SIZE);
 			domain_flush_cache(domain, tmp_page, VTD_PAGE_SIZE);
 			pteval = pkvm_virt_to_phys(tmp_page) | DMA_PTE_READ | DMA_PTE_WRITE;
+			pteval |= DMA_PTE_MAPPED;
 			if (domain->use_first_level)
 				pteval |= DMA_FL_PTE_US | DMA_FL_PTE_ACCESS;
 
@@ -486,6 +487,7 @@ static int domain_map(struct pkvm_iommu_domain *domain, struct pkvm_iommu_map_pa
 
 	attr = prot & (DMA_PTE_READ | DMA_PTE_WRITE | DMA_PTE_SNP);
 	attr |= DMA_FL_PTE_PRESENT;
+	attr |= DMA_PTE_MAPPED;
 
 	if (domain->use_first_level) {
 		attr |= DMA_FL_PTE_US | DMA_FL_PTE_ACCESS;
@@ -692,12 +694,6 @@ next:
 /*
  * Release(unpin) physical pages reachable by pte that were previously
  * mapped for DMA. Free the page if all PTEs in the page is released.
- *
- * Since this function is called after unpresenting, we can't use
- * dma_pte_present() to check if a PTE has mapping. But it still
- * has a valid address which we can check for - assuming that 0 is
- * not a valid mapped physical address. So use dma_pte_addr() instead
- * of dma_pte_present().
  */
 static void dma_unuse_pte(struct pkvm_iommu_domain *domain,
 			  int level, struct dma_pte *pte)
@@ -708,7 +704,7 @@ static void dma_unuse_pte(struct pkvm_iommu_domain *domain,
 	pte = (struct dma_pte *)pte_addr;
 	if (level == 1) {
 		do {
-			if (dma_pte_addr(pte)) {
+			if (dma_pte_mapped(pte)) {
 				__pkvm_unuse_dma(dma_pte_addr(pte), VTD_PAGE_SIZE);
 				dma_clear_pte(pte);
 			}
@@ -716,7 +712,7 @@ static void dma_unuse_pte(struct pkvm_iommu_domain *domain,
 		} while (!first_pte_in_page(pte));
 	} else {
 		do {
-			if (dma_pte_addr(pte)) {
+			if (dma_pte_mapped(pte)) {
 				if (!dma_pte_superpage(pte))
 					dma_unuse_pte(domain, level - 1, pte);
 				else
@@ -735,12 +731,6 @@ static void dma_unuse_pte(struct pkvm_iommu_domain *domain,
  * the range and free the entries in the page table. Free the pages
  * in the page table if all the entries are released as part of this
  * process.
- *
- * Since this function is called after unpresenting, we can't use
- * dma_pte_present() to check if a PTE has mapping. But it still
- * has a valid address which we can check for - assuming that 0 is
- * not a valid mapped physical address. So use dma_pte_addr() instead
- * of dma_pte_present().
  */
 static void dma_unuse_range(struct pkvm_iommu_domain *domain, int level,
 			    struct dma_pte *pte, unsigned long pfn,
@@ -754,7 +744,7 @@ static void dma_unuse_range(struct pkvm_iommu_domain *domain, int level,
 	do {
 		unsigned long level_pfn = pfn & level_mask(level);
 
-		if (!dma_pte_addr(pte))
+		if (!dma_pte_mapped(pte))
 			goto next;
 
 		if (start_pfn <= level_pfn &&
