@@ -99,6 +99,8 @@ static bool pkvm_fixup_exception(struct pt_regs *regs)
 	reg  = FIELD_GET(EX_DATA_REG_MASK,  e->data);
 
 	switch (type) {
+	case EX_TYPE_DEFAULT:
+		return ex_handler_default(e, regs);
 	case EX_TYPE_WRMSR_SAFE:
 		return ex_handler_msr(e, regs, true, reg);
 	case EX_TYPE_RDMSR_SAFE:
