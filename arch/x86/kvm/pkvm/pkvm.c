@@ -877,6 +877,7 @@ static bool is_guest_vcpu_accessible(struct kvm_vcpu *vcpu, enum pkvm_hc hc)
 	case __pkvm__update_cr8_intercept:
 	case __pkvm__refresh_apicv_exec_ctrl:
 	case __pkvm__load_eoi_exitmap:
+	case __pkvm__hwapic_isr_update:
 		/*
 		 * The host is responsible for running vCPU, injecting
 		 * interrupts, emulating lapic etc. Always allow the related PV
@@ -1212,6 +1213,54 @@ static void pkvm_load_eoi_exitmap(struct kvm_vcpu *vcpu, u64 eoi_exit_bitmap0,
 	kvm_x86_call(load_eoi_exitmap)(vcpu, eoi_exit_bitmap);
 }
 
+static int pkvm_hwapic_isr_update(struct kvm_vcpu *vcpu, int max_isr)
+{
+	if (!lapic_in_kernel(vcpu))
+		return -EOPNOTSUPP;
+
+	/*
+	 * When APICv gets re-activated, the host updates the ISR via
+	 * kvm_apic_update_apicv() before refresh_apicv_exec_ctrl() tells
+	 * pKVM that APICv is active. Ignore the update in that case; SVI is
+	 * recomputed when pKVM handles the KVM_REQ_APICV_UPDATE raised by
+	 * refresh_apicv_exec_ctrl().
+	 */
+	if (!vcpu->arch.apic->apicv_active)
+		return 0;
+
+	/*
+	 * The value -1/0 represents no interrupt, thus always allow the host to
+	 * update the ISR in this case. For the other values, should do proper
+	 * checks.
+	 */
+	if (max_isr != -1 && max_isr != 0) {
+		/* A valid max_isr should be in [0-255]. */
+		if (max_isr & ~0xff)
+			return -EINVAL;
+
+		/*
+		 * For a protected APIC, the ISR state is protected so don't allow the
+		 * host to update it. But the host will recognize the protected apic
+		 * after the vCPU starts running. Before that the host may still use
+		 * this PV interface with value -1 for the protected apic to indicate no
+		 * interrupts when reset the vCPU. So don't allow for any other max_isr
+		 * values for the protected apic.
+		 *
+		 * For pVMs which don't have protected apic, also needs to validate the
+		 * max_isr value to make sure the host cannot inject an exception vector
+		 * for the same security reason with the PV interface __pkvm__inject_irq.
+		 * See comments in the function pkvm_inject_irq.
+		 */
+		if (vcpu->arch.apic->guest_apic_protected ||
+		    (pkvm_is_protected_vcpu(vcpu) && max_isr < 32))
+			return -EPERM;
+	}
+
+	kvm_x86_call(hwapic_isr_update)(vcpu, max_isr);
+
+	return 0;
+}
+
 static int pkvm_vcpu_handle_host_hypercall(struct kvm_vcpu *hvcpu, enum pkvm_hc hc,
 					   union pkvm_hc_data *in, union pkvm_hc_data *out)
 {
@@ -1365,6 +1414,9 @@ static int pkvm_vcpu_handle_host_hypercall(struct kvm_vcpu *hvcpu, enum pkvm_hc 
 	case __pkvm__load_eoi_exitmap:
 		pkvm_load_eoi_exitmap(vcpu, pkvm_hc_input1(hvcpu), pkvm_hc_input2(hvcpu),
 				      pkvm_hc_input3(hvcpu), pkvm_hc_input4(hvcpu));
+		break;
+	case __pkvm__hwapic_isr_update:
+		ret = pkvm_hwapic_isr_update(vcpu, pkvm_hc_input1(hvcpu));
 		break;
 	default:
 		ret = -EINVAL;
