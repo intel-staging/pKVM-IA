@@ -861,6 +861,9 @@ static bool is_guest_vcpu_accessible(struct kvm_vcpu *vcpu, enum pkvm_hc hc)
 	switch (hc) {
 	case __pkvm__enable_nmi_window:
 	case __pkvm__enable_irq_window:
+	case __pkvm__interrupt_allowed:
+	case __pkvm__nmi_allowed:
+	case __pkvm__get_nmi_mask:
 		/*
 		 * The host is responsible for running vCPU, injecting
 		 * interrupts, emulating lapic etc. Always allow the related PV
@@ -1171,6 +1174,18 @@ static int pkvm_vcpu_handle_host_hypercall(struct kvm_vcpu *hvcpu, enum pkvm_hc 
 		break;
 	case __pkvm__enable_irq_window:
 		kvm_x86_call(enable_irq_window)(vcpu);
+		break;
+	case __pkvm__interrupt_allowed:
+		ret = kvm_x86_call(interrupt_allowed)(vcpu, pkvm_hc_input1(hvcpu));
+		break;
+	case __pkvm__nmi_allowed:
+		ret = kvm_x86_call(nmi_allowed)(vcpu, pkvm_hc_input1(hvcpu));
+		break;
+	case __pkvm__get_nmi_mask:
+		out->get_nmi_mask.data = kvm_x86_call(get_nmi_mask)(vcpu);
+		break;
+	case __pkvm__set_nmi_mask:
+		kvm_x86_call(set_nmi_mask)(vcpu, pkvm_hc_input1(hvcpu));
 		break;
 	default:
 		ret = -EINVAL;
