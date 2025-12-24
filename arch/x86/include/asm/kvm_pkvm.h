@@ -108,6 +108,9 @@ union pkvm_hc_data {
 		struct desc_ptr desc;
 	} get_gdt;
 	struct {
+		bool full;
+	} flush_tlb_gva;
+	struct {
 		u64 data[PKVM_HC_DATA_MAX_NUM];
 	} raw;
 };
