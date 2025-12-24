@@ -712,6 +712,8 @@ static bool is_guest_vcpu_accessible(struct kvm_vcpu *vcpu, enum pkvm_hc hc)
 	case __pkvm__interrupt_allowed:
 	case __pkvm__nmi_allowed:
 	case __pkvm__get_nmi_mask:
+	case __pkvm__inject_irq:
+	case __pkvm__inject_nmi:
 		/*
 		 * The host is responsible for running vCPU, injecting
 		 * interrupts, emulating lapic etc. Always allow the related PV
@@ -917,20 +919,61 @@ static inline bool pkvm_event_injection_allowed(struct kvm_vcpu *vcpu)
 	return !kvm_event_needs_reinjection(vcpu) && !vcpu->arch.exception.pending;
 }
 
-static int pkvm_interrupt_allowed(struct kvm_vcpu *vcpu, bool for_injection)
+static int pkvm_inject_irq(struct kvm_vcpu *vcpu)
 {
-	if (for_injection && !pkvm_event_injection_allowed(vcpu))
+	struct kvm_vcpu *shared_vcpu = to_pkvm_vcpu(vcpu)->shared_vcpu;
+	bool soft = READ_ONCE(shared_vcpu->arch.interrupt.soft);
+	u8 irq = READ_ONCE(shared_vcpu->arch.interrupt.nr);
+
+	if (kvm_x86_call(interrupt_allowed)(vcpu, true) <= 0 ||
+	    !pkvm_event_injection_allowed(vcpu))
 		return -EBUSY;
 
-	return kvm_x86_call(interrupt_allowed)(vcpu, for_injection);
+	/*
+	 * Injecting software interrupts will change the guest's RIP. As there
+	 * is no usage to require the host to do so for a pVM, disallow the host
+	 * to inject software interrupts to a pVM for security reason.
+	 *
+	 * As the pVM's exceptions are emulated and injected by the pKVM itself,
+	 * the host is not allowed to inject exceptions to the pVM. So validate
+	 * the interrupt vector number to make sure it won't be a reserved
+	 * vector number by the Intel 64 and IA-32 architectures for
+	 * architecture-defined exceptions.
+	 */
+	if (pkvm_is_protected_vcpu(vcpu) && (soft || irq < 32))
+		return -EPERM;
+
+	kvm_queue_interrupt(vcpu, irq, soft);
+	kvm_x86_call(inject_irq)(vcpu, false);
+
+	return 0;
 }
 
-static int pkvm_nmi_allowed(struct kvm_vcpu *vcpu, bool for_injection)
+static void pkvm_inject_nmi(struct kvm_vcpu *vcpu)
 {
-	if (for_injection && !pkvm_event_injection_allowed(vcpu))
-		return -EBUSY;
+	if (kvm_x86_call(nmi_allowed)(vcpu, true) <= 0 ||
+	    !pkvm_event_injection_allowed(vcpu))
+		return;
 
-	return kvm_x86_call(nmi_allowed)(vcpu, for_injection);
+	vcpu->arch.nmi_injected = true;
+	kvm_x86_call(inject_nmi)(vcpu);
+}
+
+static void pkvm_inject_exception(struct kvm_vcpu *vcpu)
+{
+	struct kvm_vcpu *shared_vcpu = to_pkvm_vcpu(vcpu)->shared_vcpu;
+	/*
+	 * As the __pkvm__inject_exception is always denied for the pVM,
+	 * it must be a code bug if the vcpu is protected.
+	 */
+	BUG_ON(pkvm_is_protected_vcpu(vcpu));
+
+	vcpu->arch.exception =
+		*(volatile typeof(shared_vcpu->arch.exception) *)&shared_vcpu->arch.exception;
+	vcpu->arch.exception.pending = false;
+	vcpu->arch.exception.injected = true;
+
+	kvm_x86_call(inject_exception)(vcpu);
 }
 
 static int pkvm_vcpu_handle_host_hypercall(struct kvm_vcpu *hvcpu, enum pkvm_hc hc,
@@ -1046,16 +1089,25 @@ static int pkvm_vcpu_handle_host_hypercall(struct kvm_vcpu *hvcpu, enum pkvm_hc 
 		kvm_x86_call(enable_irq_window)(vcpu);
 		break;
 	case __pkvm__interrupt_allowed:
-		ret = pkvm_interrupt_allowed(vcpu, pkvm_hc_input1(hvcpu));
+		ret = kvm_x86_call(interrupt_allowed)(vcpu, pkvm_hc_input1(hvcpu));
 		break;
 	case __pkvm__nmi_allowed:
-		ret = pkvm_nmi_allowed(vcpu, pkvm_hc_input1(hvcpu));
+		ret = kvm_x86_call(nmi_allowed)(vcpu, pkvm_hc_input1(hvcpu));
 		break;
 	case __pkvm__get_nmi_mask:
 		out->get_nmi_mask.data = kvm_x86_call(get_nmi_mask)(vcpu);
 		break;
 	case __pkvm__set_nmi_mask:
 		kvm_x86_call(set_nmi_mask)(vcpu, pkvm_hc_input1(hvcpu));
+		break;
+	case __pkvm__inject_irq:
+		ret = pkvm_inject_irq(vcpu);
+		break;
+	case __pkvm__inject_nmi:
+		pkvm_inject_nmi(vcpu);
+		break;
+	case __pkvm__inject_exception:
+		pkvm_inject_exception(vcpu);
 		break;
 	default:
 		ret = -EINVAL;
