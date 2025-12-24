@@ -868,6 +868,7 @@ static int kvm_set_msr_ignored_check(struct kvm_vcpu *vcpu,
 	return kvm_do_msr_access(vcpu, index, &data, host_initiated, MSR_TYPE_W,
 				 _kvm_set_msr);
 }
+#endif /* !__PKVM_HYP__ */
 
 /*
  * Read the MSR specified by @index into @data.  Select MSR specific fault
@@ -916,6 +917,7 @@ static int __kvm_get_msr(struct kvm_vcpu *vcpu, u32 index, u64 *data,
 	return ret;
 }
 
+#ifndef __PKVM_HYP__
 static int kvm_get_msr_ignored_check(struct kvm_vcpu *vcpu,
 				     u32 index, u64 *data, bool host_initiated)
 {
@@ -929,12 +931,12 @@ int kvm_msr_write(struct kvm_vcpu *vcpu, u32 index, u64 data)
 	return __kvm_set_msr(vcpu, index, data, true);
 }
 
-#ifndef __PKVM_HYP__
 int kvm_msr_read(struct kvm_vcpu *vcpu, u32 index, u64 *data)
 {
 	return __kvm_get_msr(vcpu, index, data, true);
 }
 
+#ifndef __PKVM_HYP__
 int __kvm_emulate_msr_read(struct kvm_vcpu *vcpu, u32 index, u64 *data)
 {
 	return kvm_get_msr_ignored_check(vcpu, index, data, false);
