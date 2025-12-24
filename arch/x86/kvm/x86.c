@@ -5605,9 +5605,9 @@ static int vcpu_ioctl_tpr_access_reporting(struct kvm_vcpu *vcpu,
 	vcpu->arch.tpr_access_reporting = !!tac->enabled;
 	return 0;
 }
+#endif /* !__PKVM_HYP__ */
 
-static int kvm_vcpu_ioctl_x86_setup_mce(struct kvm_vcpu *vcpu,
-					u64 mcg_cap)
+int kvm_vcpu_x86_setup_mce(struct kvm_vcpu *vcpu, u64 mcg_cap)
 {
 	int r;
 	unsigned bank_num = mcg_cap & 0xff, bank;
@@ -5634,6 +5634,13 @@ static int kvm_vcpu_ioctl_x86_setup_mce(struct kvm_vcpu *vcpu,
 	kvm_x86_call(setup_mce)(vcpu);
 out:
 	return r;
+}
+
+#ifndef __PKVM_HYP__
+static int kvm_vcpu_ioctl_x86_setup_mce(struct kvm_vcpu *vcpu,
+					u64 mcg_cap)
+{
+	return kvm_vcpu_x86_setup_mce(vcpu, mcg_cap);
 }
 
 /*
