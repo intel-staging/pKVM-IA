@@ -714,6 +714,7 @@ static bool is_guest_vcpu_accessible(struct kvm_vcpu *vcpu, enum pkvm_hc hc)
 	case __pkvm__get_nmi_mask:
 	case __pkvm__inject_irq:
 	case __pkvm__inject_nmi:
+	case __pkvm__cancel_injection:
 		/*
 		 * The host is responsible for running vCPU, injecting
 		 * interrupts, emulating lapic etc. Always allow the related PV
@@ -976,6 +977,47 @@ static void pkvm_inject_exception(struct kvm_vcpu *vcpu)
 	kvm_x86_call(inject_exception)(vcpu);
 }
 
+static void pkvm_share_injection_with_host(struct kvm_vcpu *vcpu)
+{
+	struct kvm_vcpu *shared_vcpu = to_pkvm_vcpu(vcpu)->shared_vcpu;
+
+	if (!pkvm_is_protected_vcpu(vcpu) && vcpu->arch.exception.injected) {
+		/*
+		 * For the pVM, the exception can only be injected by the pKVM
+		 * thus the pending exception should not be handed over to the
+		 * host.
+		 * For the npVM, the exception can be injected by both sides.
+		 */
+		shared_vcpu->arch.exception = vcpu->arch.exception;
+		kvm_clear_exception_queue(vcpu);
+	} else if (vcpu->arch.nmi_injected) {
+		shared_vcpu->arch.nmi_injected = true;
+		vcpu->arch.nmi_injected = false;
+	} else if (vcpu->arch.interrupt.injected) {
+		/*
+		 * The npVM's injected software and external interrupts can be
+		 * pending as the host is allowed to inject both. But the host
+		 * is not allowed to inject the pVM's software interrupt, and
+		 * the pending pVM's software interrupt (exits during delivering
+		 * a software interrupt) should be injected by the pKVM, thus
+		 * the pending software interrupt should not be handed over to
+		 * the host.
+		 */
+		if (!pkvm_is_protected_vcpu(vcpu) || !vcpu->arch.interrupt.soft) {
+			kvm_queue_interrupt(shared_vcpu, vcpu->arch.interrupt.nr,
+					    vcpu->arch.interrupt.soft);
+			kvm_clear_interrupt_queue(vcpu);
+		}
+	}
+}
+
+static void pkvm_cancel_injection(struct kvm_vcpu *vcpu)
+{
+	kvm_x86_call(cancel_injection)(vcpu);
+
+	pkvm_share_injection_with_host(vcpu);
+}
+
 static int pkvm_vcpu_handle_host_hypercall(struct kvm_vcpu *hvcpu, enum pkvm_hc hc,
 					   union pkvm_hc_data *in, union pkvm_hc_data *out)
 {
@@ -1108,6 +1150,9 @@ static int pkvm_vcpu_handle_host_hypercall(struct kvm_vcpu *hvcpu, enum pkvm_hc 
 		break;
 	case __pkvm__inject_exception:
 		pkvm_inject_exception(vcpu);
+		break;
+	case __pkvm__cancel_injection:
+		pkvm_cancel_injection(vcpu);
 		break;
 	default:
 		ret = -EINVAL;
