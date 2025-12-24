@@ -1324,6 +1324,11 @@ static int pkvm_vcpu_handle_host_hypercall(struct kvm_vcpu *hvcpu, enum pkvm_hc 
 		kvm_x86_call(update_cr8_intercept)(vcpu, pkvm_hc_input1(hvcpu),
 						   pkvm_hc_input2(hvcpu));
 		break;
+	case __pkvm__set_virtual_apic_mode:
+		ret = kvm_apic_set_base(vcpu,
+					READ_ONCE(to_pkvm_vcpu(vcpu)->shared_vcpu->arch.apic_base),
+					true);
+		break;
 	default:
 		ret = -EINVAL;
 		break;
