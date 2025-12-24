@@ -720,6 +720,7 @@ static bool is_guest_vcpu_accessible(struct kvm_vcpu *vcpu, enum pkvm_hc hc)
 	case __pkvm__refresh_apicv_exec_ctrl:
 	case __pkvm__load_eoi_exitmap:
 	case __pkvm__hwapic_isr_update:
+	case __pkvm__sync_pir_to_irr:
 		/*
 		 * The host is responsible for running vCPU, injecting
 		 * interrupts, emulating lapic etc. Always allow the related PV
@@ -1086,6 +1087,12 @@ static int pkvm_hwapic_isr_update(struct kvm_vcpu *vcpu, int max_isr)
 	return 0;
 }
 
+static void pkvm_sync_pir_to_irr(struct kvm_vcpu *vcpu, int pir)
+{
+	to_pkvm_vcpu(vcpu)->max_irr = pir;
+	kvm_x86_call(sync_pir_to_irr)(vcpu);
+}
+
 static int pkvm_vcpu_handle_host_hypercall(struct kvm_vcpu *hvcpu, enum pkvm_hc hc,
 					   union pkvm_hc_data *in, union pkvm_hc_data *out)
 {
@@ -1238,6 +1245,9 @@ static int pkvm_vcpu_handle_host_hypercall(struct kvm_vcpu *hvcpu, enum pkvm_hc 
 		break;
 	case __pkvm__hwapic_isr_update:
 		ret = pkvm_hwapic_isr_update(vcpu, pkvm_hc_input1(hvcpu));
+		break;
+	case __pkvm__sync_pir_to_irr:
+		pkvm_sync_pir_to_irr(vcpu, pkvm_hc_input1(hvcpu));
 		break;
 	default:
 		ret = -EINVAL;
