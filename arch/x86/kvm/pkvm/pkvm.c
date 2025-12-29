@@ -633,6 +633,8 @@ static int __vcpu_create(struct kvm *kvm, struct kvm_vcpu *vcpu, struct fpstate 
 		vcpu->arch.perf_capabilities = kvm_caps.supported_perf_cap;
 	}
 
+	vcpu->arch.mmu = &vcpu->arch.root_mmu;
+
 	ret = kvm_x86_call(vcpu_create)(vcpu);
 	if (ret)
 		goto unsetup_lapic;
@@ -891,6 +893,7 @@ static bool is_guest_vcpu_accessible(struct kvm_vcpu *vcpu, enum pkvm_hc hc)
 	case __pkvm__protected_apic_has_interrupt:
 	case __pkvm__write_tsc_offset:
 	case __pkvm__write_tsc_multiplier:
+	case __pkvm__load_mmu_pgd:
 		/*
 		 * The host is responsible for running vCPU, injecting
 		 * interrupts, emulating lapic etc. Always allow the related PV
@@ -1448,6 +1451,43 @@ static int pkvm_write_tsc_multiplier(struct kvm_vcpu *vcpu)
 	return 0;
 }
 
+static int pkvm_load_mmu_pgd(struct kvm_vcpu *vcpu, hpa_t root_hpa, int root_level)
+{
+	struct kvm_vcpu *shared_vcpu = to_pkvm_vcpu(vcpu)->shared_vcpu;
+
+	/*
+	 * The guest CR3/PDPTR may be updated by the load_mmu_pgd. Sync the
+	 * guest CR3/PDPTR from the host for both npVMs or pVMs (if pVMs are not
+	 * starting to run yet).
+	 */
+	if (!pkvm_is_protected_vcpu(vcpu) || !kvm_vcpu_has_run(vcpu)) {
+		if (kvm_register_is_dirty(shared_vcpu, VCPU_REG_CR3)) {
+			vcpu->arch.cr3 = shared_vcpu->arch.cr3;
+			kvm_register_mark_dirty(vcpu, VCPU_REG_CR3);
+		}
+
+		if (kvm_register_is_dirty(shared_vcpu, VCPU_REG_PDPTR)) {
+			vcpu->arch.pdptrs[0] = shared_vcpu->arch.pdptrs[0];
+			vcpu->arch.pdptrs[1] = shared_vcpu->arch.pdptrs[1];
+			vcpu->arch.pdptrs[2] = shared_vcpu->arch.pdptrs[2];
+			vcpu->arch.pdptrs[3] = shared_vcpu->arch.pdptrs[3];
+			kvm_register_mark_dirty(vcpu, VCPU_REG_PDPTR);
+		}
+	}
+
+	/*
+	 * TODO: Implement guest memory protection rather than directly using
+	 * the EPT controlled by the host.
+	 */
+	vcpu->arch.mmu->root.hpa = root_hpa;
+	vcpu->arch.mmu->root_role.level = root_level;
+
+	kvm_x86_call(load_mmu_pgd)(vcpu, vcpu->arch.mmu->root.hpa,
+				   vcpu->arch.mmu->root_role.level);
+
+	return 0;
+}
+
 static int pkvm_vcpu_handle_host_hypercall(struct kvm_vcpu *hvcpu, enum pkvm_hc hc,
 					   union pkvm_hc_data *in, union pkvm_hc_data *out)
 {
@@ -1622,6 +1662,9 @@ static int pkvm_vcpu_handle_host_hypercall(struct kvm_vcpu *hvcpu, enum pkvm_hc 
 		break;
 	case __pkvm__write_tsc_multiplier:
 		ret = pkvm_write_tsc_multiplier(vcpu);
+		break;
+	case __pkvm__load_mmu_pgd:
+		ret = pkvm_load_mmu_pgd(vcpu, pkvm_hc_input1(hvcpu), pkvm_hc_input2(hvcpu));
 		break;
 	default:
 		ret = -EINVAL;
