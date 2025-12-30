@@ -12,9 +12,9 @@
 #include "xen.h"
 #include "x86.h"
 
-#ifdef __PKVM_HYP__
 #include <asm/kvm_pkvm.h>
 
+#ifdef __PKVM_HYP__
 #undef module_param_named
 #define module_param_named(...)
 #endif
@@ -2298,6 +2298,54 @@ int kvm_get_msr_common(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 	return 0;
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_get_msr_common);
+
+#ifdef CONFIG_PKVM_X86
+bool pkvm_host_has_emulated_msr(struct kvm *kvm, u32 msr)
+{
+	switch (msr) {
+	case MSR_IA32_APICBASE:
+	case APIC_BASE_MSR ... APIC_BASE_MSR + 0xff:
+	case MSR_IA32_TSC_DEADLINE:
+	case MSR_IA32_TSC_ADJUST:
+	case MSR_IA32_TSC:
+		return true;
+	case MSR_KVM_WALL_CLOCK:
+	case MSR_KVM_WALL_CLOCK_NEW:
+	case MSR_KVM_SYSTEM_TIME:
+	case MSR_KVM_SYSTEM_TIME_NEW:
+	case MSR_KVM_ASYNC_PF_EN:
+	case MSR_KVM_ASYNC_PF_INT:
+	case MSR_KVM_ASYNC_PF_ACK:
+	case MSR_KVM_STEAL_TIME:
+	case MSR_KVM_PV_EOI_EN:
+	case MSR_KVM_POLL_CONTROL:
+#if defined(CONFIG_KVM_HYPERV)
+	case HV_X64_MSR_GUEST_OS_ID ... HV_X64_MSR_SINT15:
+	case HV_X64_MSR_SYNDBG_CONTROL ... HV_X64_MSR_SYNDBG_PENDING_BUFFER:
+	case HV_X64_MSR_SYNDBG_OPTIONS:
+	case HV_X64_MSR_CRASH_P0 ... HV_X64_MSR_CRASH_P4:
+	case HV_X64_MSR_CRASH_CTL:
+	case HV_X64_MSR_STIMER0_CONFIG ... HV_X64_MSR_STIMER3_COUNT:
+	case HV_X64_MSR_REENLIGHTENMENT_CONTROL:
+	case HV_X64_MSR_TSC_EMULATION_CONTROL:
+	case HV_X64_MSR_TSC_EMULATION_STATUS:
+	case HV_X64_MSR_TSC_INVARIANT_CONTROL:
+#endif
+	case MSR_IA32_U_CET:
+	case MSR_IA32_PL0_SSP ... MSR_IA32_PL3_SSP:
+		return !pkvm_is_protected_vm(kvm);
+	default:
+		/*
+		 * All other emulated MSRs are directly emulated by the pKVM
+		 * hypervisor.
+		 */
+		break;
+	}
+
+	return false;
+}
+EXPORT_SYMBOL_FOR_KVM_INTERNAL(pkvm_host_has_emulated_msr);
+#endif
 
 #ifndef __PKVM_HYP__
 static int do_get_msr(struct kvm_vcpu *vcpu, unsigned index, u64 *data)
