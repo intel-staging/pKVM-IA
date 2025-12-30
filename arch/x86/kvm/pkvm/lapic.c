@@ -61,9 +61,9 @@ void pkvm_lapic_send_init(int cpu)
 	/*
 	 * Pairs with the smp_store_release() in the setup_lapic().
 	 * If remote lapic is not ready, it means the remote CPU is not
-	 * finalized yet. In this case, it is not necessary to send INIT to kick
-	 * as this remote CPU will handle all the pending requests before being
-	 * finalized.
+	 * initialized yet(by pkvm_init()). In this case, it is not
+	 * necessary to send INIT to kick as this remote CPU will handle
+	 * all the pending requests before being initialized.
 	 */
 	if (unlikely(!smp_load_acquire(&remote->ready)))
 		return;

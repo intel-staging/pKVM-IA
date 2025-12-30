@@ -6,7 +6,7 @@
 #include "debug.h"
 #include "ept.h"
 #include "host_vmx.h"
-#include "init_finalize.h"
+#include "pkvm/init.h"
 #include "pkvm/lapic.h"
 #include "pkvm/trace.h"
 #include "pkvm.h"
@@ -33,7 +33,7 @@ static struct pkvm_init_ops vmx_init_ops = {
 	.hyp_mmu_finalize = vmx_hyp_mmu_finalize,
 	.host_mmu_init = pkvm_host_ept_init,
 	.host_mmu_finalize = pkvm_host_ept_finalize,
-	.hyp_g_finalize = pkvm_vmx_init,
+	.hyp_global_init = pkvm_vmx_init,
 };
 
 static void skip_emulated_instruction(void)

@@ -1049,7 +1049,7 @@ static __init int pkvm_host_deprivilege_cpus(struct pkvm_hyp *pkvm)
 	return ret ? ret : p.ret;
 }
 
-static void do_pkvm_finalize(void *data)
+static void do_pkvm_hyp_init(void *data)
 {
 	unsigned long data_size = data_pages << PAGE_SHIFT;
 	struct pkvm_mem_info infos[] = {
@@ -1096,28 +1096,28 @@ static void do_pkvm_finalize(void *data)
 			.prot	= pgprot_val(PAGE_KERNEL),
 		},
 	};
-	int ret = pkvm_hypercall(init_finalize, (unsigned long)infos, ARRAY_SIZE(infos),
+	int ret = pkvm_hypercall(init, (unsigned long)infos, ARRAY_SIZE(infos),
 				 (unsigned long)pkvm_sym(pkvm_vmx_init_ops));
 
 	if (data)
 		*(int *)data = ret;
 }
 
-static __init int pkvm_init_finalize(void)
+static __init int pkvm_hyp_init(void)
 {
-	int ret, cpu, finalize_ret;
+	int ret, cpu, init_ret;
 
 	for_each_possible_cpu(cpu) {
-		ret = smp_call_function_single(cpu, do_pkvm_finalize,
-					       &finalize_ret, 1);
-		if (ret || finalize_ret) {
-			pr_err("Failed to finalize CPU%d: smp_call %d, finalize: %d\n",
-			       cpu, ret, finalize_ret);
+		ret = smp_call_function_single(cpu, do_pkvm_hyp_init,
+					       &init_ret, 1);
+		if (ret || init_ret) {
+			pr_err("Failed to initialize CPU%d: smp_call %d, initialize: %d\n",
+			       cpu, ret, init_ret);
 			break;
 		}
 	}
 
-	return ret ? ret : finalize_ret;
+	return ret ? ret : init_ret;
 }
 
 int __init vmx_pkvm_init(void)
@@ -1192,7 +1192,7 @@ int __init vmx_pkvm_init(void)
 		goto out;
 	}
 
-	ret = pkvm_init_finalize();
+	ret = pkvm_hyp_init();
 	if (ret) {
 		/* TODO: Re-privilege the deprivileged CPUs */
 		goto out;

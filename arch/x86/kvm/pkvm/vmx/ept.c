@@ -281,7 +281,7 @@ int pkvm_host_ept_finalize(struct pkvm_pgtable *pgt)
 	ept_sync_global();
 	/*
 	 * Clear the pending TLB flush request left after updating host EPT
-	 * mappings in finalize_global(), as EPT has just been flushed with
+	 * mappings in initialize_global(), as EPT has just been flushed with
 	 * global context anyway.
 	 */
 	kvm_clear_request(KVM_REQ_TLB_FLUSH_CURRENT, hvcpu);

@@ -3,7 +3,7 @@
 #define __PKVM_X86_MMU_H
 
 #include <asm/pkvm_spinlock.h>
-#include "init_finalize.h"
+#include "init.h"
 
 extern pkvm_spinlock_t host_mmu_lock;
 

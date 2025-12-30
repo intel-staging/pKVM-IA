@@ -5,7 +5,7 @@
 #include <asm/pkvm_spinlock.h>
 #include "debug.h"
 #include "fpu.h"
-#include "init_finalize.h"
+#include "init.h"
 #include "lapic.h"
 #include "mem_protect.h"
 #include "memory.h"
@@ -480,10 +480,9 @@ void pkvm_handle_host_hypercall(struct kvm_vcpu *vcpu)
 	int ret = 0;
 
 	switch (hc) {
-	case __pkvm__init_finalize:
-		ret = pkvm_init_finalize((struct pkvm_mem_info *)pkvm_hc_input1(vcpu),
-					 pkvm_hc_input2(vcpu),
-					 (struct pkvm_init_ops *)pkvm_hc_input3(vcpu));
+	case __pkvm__init:
+		ret = pkvm_init((struct pkvm_mem_info *)pkvm_hc_input1(vcpu), pkvm_hc_input2(vcpu),
+				(struct pkvm_init_ops *)pkvm_hc_input3(vcpu));
 		break;
 	case __pkvm__enable_vmexit_trace:
 		pkvm_enable_vmexit_trace(pkvm_hc_input1(vcpu));

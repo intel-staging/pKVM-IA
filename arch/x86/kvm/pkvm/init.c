@@ -3,7 +3,7 @@
 #include <asm/kvm_pkvm.h>
 #include "early_alloc.h"
 #include "fpu.h"
-#include "init_finalize.h"
+#include "init.h"
 #include "lapic.h"
 #include "memory.h"
 #include "mmu.h"
@@ -13,7 +13,7 @@
 static void *hyp_pgt_base;
 static void *host_pgt_base;
 static void *pkvm_vmemmap_base;
-static DEFINE_PER_CPU(bool, cpu_finalized);
+static DEFINE_PER_CPU(bool, cpu_initialized);
 
 static int divide_memory_pool(phys_addr_t phys, unsigned long size)
 {
@@ -193,11 +193,11 @@ static int create_host_mmu(const struct pkvm_mem_info infos[], int nr_infos,
 }
 
 #define TMP_NR_INFOS	16
-static int finalize_global(struct pkvm_mem_info infos[], int nr_infos,
-			   struct pkvm_init_ops *init_ops)
+static int initialize_global(struct pkvm_mem_info infos[], int nr_infos,
+			     struct pkvm_init_ops *init_ops)
 {
 	host_mmu_init_fn_t host_mmu_init_fn = init_ops ? init_ops->host_mmu_init : NULL;
-	hyp_g_finalize_fn_t hyp_g_finalize = init_ops ? init_ops->hyp_g_finalize : NULL;
+	hyp_global_init_fn_t hyp_global_init = init_ops ? init_ops->hyp_global_init : NULL;
 	struct pkvm_mem_info tmp_infos[TMP_NR_INFOS];
 	phys_addr_t mem_base = INVALID_PAGE;
 	unsigned long mem_size = 0;
@@ -238,33 +238,32 @@ static int finalize_global(struct pkvm_mem_info infos[], int nr_infos,
 	if (ret)
 		return ret;
 
-	return hyp_g_finalize ? hyp_g_finalize() : 0;
+	return hyp_global_init ? hyp_global_init() : 0;
 }
 
-int pkvm_init_finalize(struct pkvm_mem_info infos[], int nr_infos,
-		       struct pkvm_init_ops *init_ops)
+int pkvm_init(struct pkvm_mem_info infos[], int nr_infos, struct pkvm_init_ops *init_ops)
 {
 	hyp_mmu_finalize_fn_t hyp_mmu_finalize_fn = init_ops ? init_ops->hyp_mmu_finalize :
 							       NULL;
 	host_mmu_finalize_fn_t host_mmu_finalize_fn = init_ops ? init_ops->host_mmu_finalize :
 								 NULL;
-	static bool global_finalized;
+	static bool global_initialized;
 	int ret;
 
-	if (this_cpu_read(cpu_finalized))
+	if (this_cpu_read(cpu_initialized))
 		return -EBUSY;
 
-	if (!global_finalized) {
-		ret = finalize_global(infos, nr_infos, init_ops);
+	if (!global_initialized) {
+		ret = initialize_global(infos, nr_infos, init_ops);
 		if (ret)
 			return ret;
 
-		global_finalized = true;
+		global_initialized = true;
 	} else {
 		/*
 		 * The pKVM hypervisor's MMU was already loaded on the first
-		 * finalized CPU during the global finalize. Need to load it
-		 * on all the other CPUs as well.
+		 * initialized CPU during the global initialize. Need to load
+		 * it on all the other CPUs as well.
 		 */
 		pkvm_hyp_mmu_load();
 	}
@@ -285,6 +284,6 @@ int pkvm_init_finalize(struct pkvm_mem_info infos[], int nr_infos,
 
 	pkvm_vcpu_perf_init(this_cpu_read(host_vcpu));
 
-	this_cpu_write(cpu_finalized, true);
+	this_cpu_write(cpu_initialized, true);
 	return 0;
 }

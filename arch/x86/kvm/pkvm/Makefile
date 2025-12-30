@@ -13,7 +13,7 @@ asflags-y += -include $(srctree)/arch/x86/kvm/pkvm/undef.h
 cmd_deps			:= $(src)/compiling_cmds.sh
 
 pkvm-hyp-y			:= early_alloc.o pkvm.o memory.o cpu.o \
-				   idt.o entry.o init_finalize.o pgtable.o \
+				   idt.o entry.o init.o pgtable.o \
 				   mmu.o page_alloc.o lapic.o trace.o \
 				   fpu.o
 
