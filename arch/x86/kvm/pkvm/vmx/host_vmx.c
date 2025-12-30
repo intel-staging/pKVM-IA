@@ -34,6 +34,7 @@ static struct pkvm_init_ops vmx_init_ops = {
 	.host_mmu_init = pkvm_host_ept_init,
 	.host_mmu_finalize = pkvm_host_ept_finalize,
 	.hyp_global_init = pkvm_vmx_init,
+	.reprivilege_cpu = pkvm_vmx_reprivilege_cpu,
 };
 
 static void skip_emulated_instruction(void)
