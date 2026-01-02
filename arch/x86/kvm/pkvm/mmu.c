@@ -190,13 +190,8 @@ static int fix_hyp_mmu_page_refcnt(void)
 static void set_host_mem_pgstate(unsigned long phys, unsigned long size,
 				 enum pkvm_page_state pgstate)
 {
-	unsigned long end = PAGE_ALIGN(phys + size);
-	struct pkvm_page *page;
-
-	for (phys = PAGE_ALIGN_DOWN(phys); phys < end; phys += PAGE_SIZE) {
-		page = pkvm_phys_to_page(phys);
+	for_each_pkvm_page(page, phys, size)
 		page->host_state = pgstate;
-	}
 }
 
 static int check_host_mem_pgstate(unsigned long phys, unsigned long size,
