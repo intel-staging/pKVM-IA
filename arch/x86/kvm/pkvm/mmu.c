@@ -320,14 +320,14 @@ static int fix_host_mmu_pgstate_walker(struct pkvm_pgtable_visit_ctx *ctx,
 
 static int fix_host_mmu_pgstate(void)
 {
-	unsigned long size = host_mmu.pgt_ops->level_to_size(host_mmu.cap.level + 1);
 	struct pkvm_pgtable_walker walker = {
 		.cb = fix_host_mmu_pgstate_walker,
 		.arg = NULL,
 		.walk_flags = PKVM_PGTABLE_WALK_LEAF,
 	};
 
-	return pkvm_pgtable_walk(&host_mmu, 0, size, &walker);
+	return pkvm_pgtable_walk(&host_mmu, 0, pkvm_pgtable_max_size(&host_mmu),
+				 &walker);
 }
 
 static int host_mmu_map(unsigned long phys, unsigned long size, bool mmio)
