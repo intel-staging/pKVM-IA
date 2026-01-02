@@ -200,4 +200,13 @@ static inline enum pkvm_owner_id pkvm_pte_owner_id(struct pkvm_pgtable *pgt, voi
 	return FIELD_GET(PKVM_INVALID_PTE_OWNER_MASK, pgt->pgt_ops->pte_get(ptep));
 }
 
+/*
+ * Return the max size of the virtual address space that can be
+ * mapped by the page table @pgt.
+ */
+static inline unsigned long pkvm_pgtable_max_size(struct pkvm_pgtable *pgt)
+{
+	return pgt->pgt_ops->level_to_size(pgt->cap.level + 1);
+}
+
 #endif /* __PKVM_X86_PGTABLE_H */

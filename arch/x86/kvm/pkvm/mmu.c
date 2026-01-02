@@ -181,7 +181,7 @@ static int fix_hyp_mmu_page_refcnt(void)
 	 * Calculate the max address space, then walk the [0, size) address
 	 * range to fixup refcount of every page-table page.
 	 */
-	size = hyp_mmu.pgt_ops->level_to_size(hyp_mmu.cap.level + 1);
+	size = pkvm_pgtable_max_size(&hyp_mmu);
 #endif
 
 	return pkvm_pgtable_walk(&hyp_mmu, 0, size, &walker);
