@@ -28,6 +28,7 @@
 #include <linux/sched/vhost_task.h>
 #include <linux/call_once.h>
 #include <linux/atomic.h>
+#include <linux/interval_tree_generic.h>
 
 #include <asm/apic.h>
 #include <asm/pvclock-abi.h>
@@ -796,6 +797,7 @@ struct pkvm_memcache {
 struct kvm_pkvm_vm {
 	int handle;
 	struct pkvm_memcache guest_mmu_teardown_mc;
+	struct rb_root_cached mappings;
 };
 
 struct kvm_pkvm_vcpu {
