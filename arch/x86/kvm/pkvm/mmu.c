@@ -269,6 +269,12 @@ static int check_page_owner_and_state(struct pkvm_pgtable *pgt, unsigned long va
 	return pkvm_pgtable_walk(pgt, vaddr, size, &walker);
 }
 
+static u64 host_mmu_pte_prot(bool mmio)
+{
+	return host_mmu.pgt_ops->calc_pte_perm(true, true, true) |
+	       host_mmu.pgt_ops->calc_pte_memtype(mmio);
+}
+
 static int fix_host_mmu_pgstate_walker(struct pkvm_pgtable_visit_ctx *ctx,
 				       unsigned long walk_flags,
 				       void *const arg)
@@ -532,8 +538,6 @@ unlock:
  */
 void pkvm_hyp_donate_host(unsigned long phys, unsigned long size, bool clear)
 {
-	u64 prot = host_mmu.pgt_ops->calc_pte_perm(true, true, true) |
-		   host_mmu.pgt_ops->calc_pte_memtype(false);
 	void *va = __pkvm_va(phys);
 	int ret;
 
@@ -564,7 +568,8 @@ void pkvm_hyp_donate_host(unsigned long phys, unsigned long size, bool clear)
 	 * the page state and the mapping, which may lead to unexpected
 	 * behavior. So panic if it fails.
 	 */
-	BUG_ON(ret = pkvm_pgtable_map(&host_mmu, phys, phys, size, prot));
+	BUG_ON(ret = pkvm_pgtable_map(&host_mmu, phys, phys, size,
+				      host_mmu_pte_prot(false)));
 
 	set_host_mem_pgstate(phys, size, PKVM_PAGE_OWNED);
 unlock:
