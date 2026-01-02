@@ -175,7 +175,7 @@ static __init int pkvm_setup_host_vm(struct pkvm_hyp *pkvm)
 
 static struct vmcs *pkvm_alloc_vmcs(void)
 {
-	struct vmcs *vmcs = pkvm_sym(pkvm_early_alloc_page)();
+	struct vmcs *vmcs = pkvm_sym(pkvm_early_alloc_page)(NULL);
 
 	if (!vmcs)
 		return NULL;
@@ -297,7 +297,7 @@ static __init int pkvm_setup_host_vcpu(struct kvm *kvm, int cpu)
 		return -ENOMEM;
 	}
 
-	vmx->vmcs01.msr_bitmap = pkvm_sym(pkvm_early_alloc_page)();
+	vmx->vmcs01.msr_bitmap = pkvm_sym(pkvm_early_alloc_page)(NULL);
 	if (!vmx->vmcs01.msr_bitmap) {
 		pr_err("no msr_bitmap page for CPU%d\n", cpu);
 		return -ENOMEM;
