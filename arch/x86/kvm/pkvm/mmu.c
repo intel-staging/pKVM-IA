@@ -607,8 +607,7 @@ out:
  */
 int pkvm_hyp_donate_host_mmio_locked(unsigned long phys, unsigned long size)
 {
-	u64 prot = host_mmu.pgt_ops->calc_pte_perm(true, true, true) |
-		   host_mmu.pgt_ops->calc_pte_memtype(true) |
+	u64 prot = host_mmu_pte_prot(true) |
 		   host_mmu.pgt_ops->pte_mk_pgstate(PKVM_PAGE_OWNED);
 	int ret;
 
