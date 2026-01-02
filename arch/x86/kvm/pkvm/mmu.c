@@ -638,9 +638,6 @@ int pkvm_hyp_donate_host_mmio_locked(unsigned long phys, unsigned long size)
  */
 int pkvm_host_share_hyp(unsigned long phys, unsigned long size)
 {
-	unsigned long start = PAGE_ALIGN_DOWN(phys);
-	unsigned long end = PAGE_ALIGN(phys + size);
-	struct pkvm_page *page;
 	int ret;
 
 	if (size == 0 || !is_memory_range(phys, size))
@@ -648,9 +645,7 @@ int pkvm_host_share_hyp(unsigned long phys, unsigned long size)
 
 	pkvm_host_mmu_lock();
 
-	for (phys = start; phys < end; phys += PAGE_SIZE) {
-		page = pkvm_phys_to_page(phys);
-
+	for_each_pkvm_page(page, phys, size) {
 		switch (page->host_state) {
 		case PKVM_PAGE_OWNED:
 			BUG_ON(page->host_share_hyp_count);
@@ -675,9 +670,7 @@ int pkvm_host_share_hyp(unsigned long phys, unsigned long size)
 		}
 	}
 
-	for (phys = start; phys < end; phys += PAGE_SIZE) {
-		page = pkvm_phys_to_page(phys);
-
+	for_each_pkvm_page(page, phys, size) {
 		page->host_state = PKVM_PAGE_SHARED_OWNED;
 		page->host_share_hyp_count++;
 	}
@@ -704,8 +697,6 @@ unlock:
  */
 void pkvm_host_unshare_hyp(unsigned long phys, unsigned long size)
 {
-	unsigned long end = PAGE_ALIGN(phys + size);
-	struct pkvm_page *page;
 	int ret;
 
 	if (size == 0) {
@@ -719,9 +710,7 @@ void pkvm_host_unshare_hyp(unsigned long phys, unsigned long size)
 	if (ret)
 		goto unlock;
 
-	for (phys = PAGE_ALIGN_DOWN(phys); phys < end; phys += PAGE_SIZE) {
-		page = pkvm_phys_to_page(phys);
-
+	for_each_pkvm_page(page, phys, size) {
 		/*
 		 * Even if host_share_hyp_count is 0 because the page is
 		 * shared with a guest, not with the hypervisor, it still
