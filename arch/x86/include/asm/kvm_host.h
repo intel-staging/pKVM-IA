@@ -795,6 +795,7 @@ struct pkvm_memcache {
 
 struct kvm_pkvm_vm {
 	int handle;
+	struct pkvm_memcache guest_mmu_teardown_mc;
 };
 
 struct kvm_pkvm_vcpu {

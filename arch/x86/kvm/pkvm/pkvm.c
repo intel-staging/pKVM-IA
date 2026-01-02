@@ -8,6 +8,7 @@
 #include "lapic.h"
 #include "mem_protect.h"
 #include "memory.h"
+#include "mmu.h"
 #include "pkvm.h"
 #include "trace.h"
 #include "../x86.h"
@@ -121,7 +122,8 @@ static struct pkvm_vm *free_pkvm_vm_handle(int handle)
 	return pkvm_vm;
 }
 
-static int pkvm_vm_init(phys_addr_t host_kvm_pa, phys_addr_t pkvm_vm_pa)
+static int pkvm_vm_init(phys_addr_t host_kvm_pa, phys_addr_t pkvm_vm_pa,
+			phys_addr_t pgd_pa)
 {
 	struct pkvm_vm *pkvm_vm;
 	struct kvm *kvm;
@@ -160,9 +162,13 @@ static int pkvm_vm_init(phys_addr_t host_kvm_pa, phys_addr_t pkvm_vm_pa)
 
 	pkvm_spin_lock_init(&pkvm_vm->lock);
 
+	ret = pkvm_guest_mmu_init(pkvm_vm, pgd_pa);
+	if (ret)
+		goto undonate;
+
 	ret = allocate_pkvm_vm_handle(pkvm_vm);
 	if (ret < 0)
-		goto undonate;
+		goto mmu_destroy;
 
 	ret = kvm_x86_call(vm_init)(kvm);
 	if (ret)
@@ -172,6 +178,8 @@ static int pkvm_vm_init(phys_addr_t host_kvm_pa, phys_addr_t pkvm_vm_pa)
 
 free_handle:
 	free_pkvm_vm_handle(kvm->arch.pkvm.handle);
+mmu_destroy:
+	pkvm_guest_mmu_destroy(pkvm_vm);
 undonate:
 	pkvm_hyp_donate_host(__pkvm_pa(pkvm_vm), size, false);
 unshare:
@@ -218,6 +226,8 @@ static int pkvm_vm_destroy(int vm_handle, struct pkvm_memcache *mc)
 	shared_kvm_pa = __pkvm_pa(pkvm_vm->shared_kvm);
 
 	kvm_x86_call(vm_destroy)(&pkvm_vm->kvm);
+
+	pkvm_guest_mmu_destroy(pkvm_vm);
 
 	teardown_donated_memory(mc, (void *)pkvm_vm, pkvm_vm->size);
 
@@ -1730,7 +1740,8 @@ void pkvm_handle_host_hypercall(struct kvm_vcpu *vcpu)
 		break;
 	case __pkvm__vm_init:
 		ret = pkvm_vm_init(pkvm_host_gpa_to_phys(pkvm_hc_input1(vcpu)),
-				   pkvm_host_gpa_to_phys(pkvm_hc_input2(vcpu)));
+				   pkvm_host_gpa_to_phys(pkvm_hc_input2(vcpu)),
+				   pkvm_host_gpa_to_phys(pkvm_hc_input3(vcpu)));
 		break;
 	case __pkvm__vm_destroy:
 		ret = pkvm_vm_destroy(pkvm_hc_input1(vcpu), &out.vm_destroy.memcache);
