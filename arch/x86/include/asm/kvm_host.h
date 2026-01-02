@@ -789,6 +789,8 @@ struct pkvm_memcache {
 		u64 nr_pages;
 	} head;
 	unsigned long count;
+#define PKVM_MC_ACCOUNT_PGTABLE_PAGES	BIT(1)
+	unsigned long flags;
 };
 
 struct kvm_pkvm_vm {
@@ -2025,6 +2027,7 @@ extern phys_addr_t pkvm_mem_size;
 void __init pkvm_reserve(void);
 void pkvm_init_debugfs(void);
 void pkvm_create_vm_debugfs(struct kvm *kvm);
+int kvm_topup_pkvm_memcache(struct pkvm_memcache *mc, unsigned long min_pages);
 void kvm_free_pkvm_memcache(struct pkvm_memcache *mc);
 #else
 #define enable_pkvm		false
