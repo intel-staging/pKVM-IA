@@ -338,11 +338,9 @@ static int fix_host_mmu_pgstate(void)
 
 static int host_mmu_map(unsigned long phys, unsigned long size, bool mmio)
 {
-	u64 prot = host_mmu.pgt_ops->calc_pte_perm(true, true, true) |
-		   host_mmu.pgt_ops->calc_pte_memtype(mmio);
-
 	/* The vaddr == phys for the host MMU */
-	return pkvm_pgtable_map(&host_mmu, phys, phys, size, prot);
+	return pkvm_pgtable_map(&host_mmu, phys, phys, size,
+				host_mmu_pte_prot(mmio));
 }
 
 int pkvm_hyp_mmu_init(void *pool_base, unsigned long pool_pages)
