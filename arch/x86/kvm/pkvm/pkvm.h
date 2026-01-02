@@ -156,6 +156,16 @@ static inline void pkvm_set_vcpu_outside_guest(struct kvm_vcpu *vcpu)
 	smp_store_mb(vcpu->mode, OUTSIDE_GUEST_MODE);
 }
 
+static inline struct pkvm_vm *pgt_to_pkvm(struct pkvm_pgtable *pgt)
+{
+	return container_of(pgt, struct pkvm_vm, mmu);
+}
+
+static inline struct kvm *pgt_to_kvm(struct pkvm_pgtable *pgt)
+{
+	return &pgt_to_pkvm(pgt)->kvm;
+}
+
 static inline void pkvm_make_req_to_host(int req, struct kvm_vcpu *vcpu)
 {
 	BUILD_BUG_ON(req >= sizeof(to_pkvm_vcpu(vcpu)->reqs_to_host) * 8);
