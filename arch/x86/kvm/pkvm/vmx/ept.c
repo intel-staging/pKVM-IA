@@ -172,7 +172,21 @@ static void host_ept_flush_tlb(struct pkvm_pgtable *pgt,
 static void guest_ept_flush_tlb(struct pkvm_pgtable *pgt,
 				unsigned long vaddr, unsigned long size)
 {
-	/* TODO */
+	struct pkvm_vm *pkvm_vm = pgt_to_pkvm(pgt);
+	struct kvm_vcpu *vcpu;
+	int i;
+
+	pkvm_spin_lock(&pkvm_vm->lock);
+
+	for_each_pkvm_guest_vcpu(i, vcpu, pkvm_vm) {
+		kvm_make_request(KVM_REQ_TLB_FLUSH_CURRENT, vcpu);
+		pkvm_kick_vcpu(vcpu);
+	}
+
+	for_each_pkvm_guest_vcpu(i, vcpu, pkvm_vm)
+		pkvm_wait_vcpu_kicked_out(vcpu);
+
+	pkvm_spin_unlock(&pkvm_vm->lock);
 }
 
 static u64 ept_pgstate_mask(void)
