@@ -1463,6 +1463,10 @@ static int pkvm_vcpu_run(struct kvm_vcpu *vcpu, bool force_immediate_exit,
 {
 	int ret;
 
+	if (unlikely(!kvm_vcpu_has_run(vcpu)))
+		kvm_x86_call(load_mmu_pgd)(vcpu, vcpu->arch.mmu->root.hpa,
+					   vcpu->arch.mmu->root_role.level);
+
 	/*
 	 * Flush predictor when switching from host VM to pVM to prevent host VM
 	 * from attacking pVM. This is not needed if switch from host VM to npVM
