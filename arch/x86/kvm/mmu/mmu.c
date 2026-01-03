@@ -1724,7 +1724,7 @@ bool kvm_unmap_gfn_range(struct kvm *kvm, struct kvm_gfn_range *range)
 			    lockdep_is_held(&kvm->slots_lock));
 
 #ifdef CONFIG_PKVM_X86
-	if (/*enable_pkvm*/ 0)
+	if (enable_pkvm)
 		flush = pkvm_unmap_gfn_range(kvm, range);
 #endif
 
@@ -1827,7 +1827,8 @@ static bool kvm_rmap_age_gfn_range(struct kvm *kvm,
 
 static bool kvm_may_have_shadow_mmu_sptes(struct kvm *kvm)
 {
-	return !tdp_mmu_enabled || READ_ONCE(kvm->arch.indirect_shadow_pages);
+	return (!tdp_mmu_enabled || READ_ONCE(kvm->arch.indirect_shadow_pages)) &&
+	       !enable_pkvm;
 }
 
 bool kvm_age_gfn(struct kvm *kvm, struct kvm_gfn_range *range)
@@ -1835,7 +1836,7 @@ bool kvm_age_gfn(struct kvm *kvm, struct kvm_gfn_range *range)
 	bool young = false;
 
 #ifdef CONFIG_PKVM_X86
-	if (/*enable_pkvm*/ 0)
+	if (enable_pkvm)
 		young = pkvm_age_gfn_range(kvm, range, true);
 #endif
 
@@ -1853,7 +1854,7 @@ bool kvm_test_age_gfn(struct kvm *kvm, struct kvm_gfn_range *range)
 	bool young = false;
 
 #ifdef CONFIG_PKVM_X86
-	if (/*enable_pkvm*/ 0)
+	if (enable_pkvm)
 		young = pkvm_age_gfn_range(kvm, range, false);
 #endif
 
@@ -4841,7 +4842,7 @@ static int kvm_mmu_faultin_pfn(struct kvm_vcpu *vcpu,
 static bool is_page_fault_stale(struct kvm_vcpu *vcpu,
 				struct kvm_page_fault *fault)
 {
-	if (/*!enable_pkvm*/ 1) {
+	if (!enable_pkvm) {
 		struct kvm_mmu_page *sp = root_to_sp(vcpu->arch.mmu->root.hpa);
 
 		/* Special roots, e.g. pae_root, are not backed by shadow pages. */
@@ -5131,7 +5132,7 @@ int kvm_tdp_page_fault(struct kvm_vcpu *vcpu, struct kvm_page_fault *fault)
 		return kvm_tdp_mmu_page_fault(vcpu, fault);
 #endif
 #ifdef CONFIG_PKVM_X86
-	if (/*enable_pkvm*/ 0)
+	if (enable_pkvm)
 		return pkvm_page_fault(vcpu, fault);
 #endif
 
@@ -6735,7 +6736,7 @@ void kvm_configure_mmu(bool enable_tdp, int tdp_forced_root_level,
 	max_tdp_level = tdp_max_root_level;
 
 #ifdef CONFIG_X86_64
-	tdp_mmu_enabled = tdp_mmu_allowed && tdp_enabled;
+	tdp_mmu_enabled = tdp_mmu_allowed && tdp_enabled && !enable_pkvm;
 #endif
 	/*
 	 * max_huge_page_level reflects KVM's MMU capabilities irrespective
@@ -7582,7 +7583,7 @@ static inline bool kvm_memslot_flush_zap_all(struct kvm *kvm)
 {
 	return kvm->arch.vm_type == KVM_X86_DEFAULT_VM &&
 	       kvm_check_has_quirk(kvm, KVM_X86_QUIRK_SLOT_ZAP_ALL) &&
-	       /*!enable_pkvm*/ 1;
+	       !enable_pkvm;
 }
 
 void kvm_arch_flush_shadow_memslot(struct kvm *kvm,
