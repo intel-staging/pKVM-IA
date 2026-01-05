@@ -235,6 +235,100 @@ static u64 host_mmu_pte_prot_rwx(bool mmio)
 	       host_mmu.pgt_ops->calc_pte_memtype(mmio);
 }
 
+static int verify_host_mmu_pgstate_walker(struct pkvm_pgtable_visit_ctx *ctx,
+					  unsigned long walk_flags,
+					  void *const arg)
+{
+	const struct pkvm_pgtable_ops *pgt_ops = ctx->pgt->pgt_ops;
+	unsigned long phys = ctx->addr, size;
+
+	size = pgt_ops->level_to_size(ctx->level);
+
+	if (pgt_ops->pte_present(ctx->ptep)) {
+		BUG_ON(pgt_ops->pte_to_phys(ctx->ptep) != ctx->addr);
+
+		/* A present pte could map either memory pages or MMIO pages. */
+		if (is_mmio_range(phys, size)) {
+			/*
+			 * Mapped host-owned MMIO pages must already be effectively set
+			 * to the desired state PKVM_PAGE_OWNED, since corresponding pte
+			 * bits are zero.
+			 */
+			BUG_ON(pkvm_pte_pgstate(ctx->pgt, ctx->ptep) != PKVM_PAGE_OWNED);
+		} else {
+			/*
+			 * Must be normal memory pages since the mapped ranges
+			 * are either MMIO or memory. And the MMIO and memory
+			 * are not mapped by the same PTE leaf so it is not
+			 * possible to be a MMIO-memory mixed range.
+			 */
+			BUG_ON(!is_memory_range(phys, size));
+			if (!IS_ENABLED(CONFIG_PKVM_X86_DEBUG) &&
+			    is_pkvm_text_range(phys, size)) {
+				/*
+				 * .pkvm.text pages are mapped read-only in the host MMU,
+				 * and their ownership must already be set up by
+				 * host_mmu_map_ro().
+				 */
+				BUG_ON(check_host_mem_pgstate(phys, size,
+							      PKVM_PAGE_SHARED_BORROWED,
+							      PKVM_ID_HYP));
+			} else {
+				/*
+				 * Mapped host-owned memory pages must already be effectively set
+				 * to the desired state (PKVM_PAGE_OWNED, PKVM_ID_HOST), since
+				 * corresponding pkvm_page struct fields are zero-initialized.
+				 */
+				BUG_ON(check_host_mem_pgstate(phys, size, PKVM_PAGE_OWNED,
+							      PKVM_ID_HOST));
+			}
+		}
+	} else {
+		if (is_mmio_range(phys, size)) {
+			/*
+			 * All MMIO pages are initially owned by the host. A non-present
+			 * pte means that the MMIO page was not mapped initially in
+			 * pkvm_host_mmu_init() (it may be mapped later on the first host
+			 * access). However, its desired state (PKVM_PAGE_OWNED,
+			 * PKVM_ID_HOST) must already be effectively set since the pte
+			 * is zeroed.
+			 */
+			BUG_ON(pkvm_pte_pgstate(ctx->pgt, ctx->ptep) != PKVM_PAGE_OWNED);
+			BUG_ON(pkvm_pte_owner_id(ctx->pgt, ctx->ptep) != PKVM_ID_HOST);
+		} else if (is_memory_range(phys, size)) {
+			/*
+			 * Unmapped (hyp-owned) memory pages ownership must already be
+			 * set up by host_mmu_unmap().
+			 */
+			BUG_ON(check_host_mem_pgstate(phys, size, PKVM_PAGE_NONE,
+						      PKVM_ID_HYP));
+		} else {
+			/*
+			 * There is a theoretical possibility that none of the above
+			 * conditions holds, when a zeroed PTE represents a huge page
+			 * overlapping both a MMIO region that is not mapped in the
+			 * host MMU yet and a hypervisor-owned memory region that was
+			 * unmapped by host_mmu_unmap(). Don't BUG_ON in this legitimate
+			 * edge case.
+			 */
+		}
+	}
+
+	return 0;
+}
+
+static int verify_host_mmu_pgstate(void)
+{
+	struct pkvm_pgtable_walker walker = {
+		.cb = verify_host_mmu_pgstate_walker,
+		.arg = NULL,
+		.walk_flags = PKVM_PGTABLE_WALK_LEAF,
+	};
+
+	return pkvm_pgtable_walk(&host_mmu, 0, pkvm_pgtable_max_size(&host_mmu),
+				 &walker);
+}
+
 static int host_mmu_map(unsigned long phys, unsigned long size, bool mmio)
 {
 	/* The vaddr == phys for the host MMU */
@@ -443,7 +537,7 @@ int pkvm_host_mmu_init(void *pool_base, unsigned long pool_pages,
 #endif
 	}
 
-	return 0;
+	return verify_host_mmu_pgstate();
 }
 
 int pkvm_host_mmu_handle_fault(unsigned long gpa)
