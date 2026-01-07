@@ -190,12 +190,14 @@ static int handle_write_msr(struct kvm_vcpu *vcpu)
 		 */
 		BUG_ON(is_msr_in_bitmap_range(msr));
 
-		if (wrmsr_safe(msr, low, high)) {
-			kvm_inject_gp(vcpu, 0);
+		if (wrmsr_safe(msr, low, high))
 			ret = X86EMUL_UNHANDLEABLE;
-		}
+
 		break;
 	}
+
+	if (ret == X86EMUL_UNHANDLEABLE)
+		kvm_inject_gp(vcpu, 0);
 
 	return ret;
 }
