@@ -714,7 +714,11 @@ static __init void init_guest_state_area_from_native(struct vcpu_vmx *vmx)
 
 	if (!rdmsrq_safe(MSR_CORE_PERF_GLOBAL_CTRL, &msrq)) {
 		struct kvm_pmu *pmu = vcpu_to_pmu(&vmx->vcpu);
+		union cpuid10_eax eax = {
+			.full = native_cpuid_eax(10),
+		};
 
+		pmu->version = eax.split.version_id;
 		pmu->global_ctrl = msrq;
 		vmcs_write64(GUEST_IA32_PERF_GLOBAL_CTRL, msrq);
 	}

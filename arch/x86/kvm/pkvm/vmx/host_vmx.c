@@ -149,6 +149,11 @@ static int handle_write_msr(struct kvm_vcpu *vcpu)
 		struct kvm_pmu *pmu = vcpu_to_pmu(vcpu);
 		struct vcpu_vmx *vmx = to_vmx(vcpu);
 
+		if (!kvm_pmu_has_perf_global_ctrl(pmu)) {
+			ret = X86EMUL_UNHANDLEABLE;
+			break;
+		}
+
 		if (pmu->global_ctrl == val)
 			break;
 
