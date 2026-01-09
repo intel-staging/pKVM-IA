@@ -2,9 +2,9 @@
 #include <linux/sched.h>
 #include <asm/cpufeature.h>
 #include <asm/current.h>
-#include <asm/fpu/types.h>
 #include "internal.h"
 #include "fpu.h"
+#include "xstate.h"
 
 /*
  * percpu_fpstate is used to reset the FPU hardware to its initial state
@@ -54,5 +54,23 @@ int pkvm_init_percpu_fpu(void)
 	fpu->perm.__state_perm		= fpu_kernel_cfg.max_features;
 	fpu->perm.__state_size		= fpu_kernel_cfg.max_size;
 
+	fpu->guest_perm = fpu->perm;
+
 	return 0;
+}
+
+void pkvm_init_guest_fpu(struct fpu_guest *gfpu)
+{
+	u64 permitted = xstate_get_group_perm(true);
+	struct fpstate *fpstate = gfpu->fpstate;
+
+	fpstate->xfeatures	= fpu_kernel_cfg.default_features & permitted;
+	fpstate->user_xfeatures	= fpu_user_cfg.default_features & permitted;
+	fpstate->xfd		= 0;
+
+	fpstate->in_use		= false;
+
+	fpstate_init_user(fpstate);
+
+	gfpu->xfeatures		= fpstate->user_xfeatures;
 }
