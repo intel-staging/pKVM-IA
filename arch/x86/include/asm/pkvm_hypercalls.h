@@ -14,5 +14,6 @@ PKVM_HC(dump_vmexit_trace)
 
 /* KVM ops */
 PKVM_HC(check_processor_compatibility)
+PKVM_HC(vm_init)
 
 #undef PKVM_HC
