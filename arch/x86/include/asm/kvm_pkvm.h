@@ -111,6 +111,7 @@ extern pteval_t pkvm_sym(__default_kernel_pte_mask);
 #ifdef CONFIG_AMD_MEM_ENCRYPT
 extern u64 pkvm_sym(sme_me_mask);
 #endif
+extern struct pkvm_init_ops *pkvm_sym(init_ops);
 
 PKVM_DECLARE(void *, pkvm_early_alloc_page, (void));
 PKVM_DECLARE(void *, pkvm_early_alloc_contig, (unsigned int nr_pages));
