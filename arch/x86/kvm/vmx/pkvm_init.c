@@ -964,6 +964,8 @@ int __init vmx_pkvm_init(void)
 
 	pkvm_hypercall(init_finalize);
 
+	pkvm_init_debugfs();
+
 	pr_info("Hypervisor is up and running!\n");
 	return 0;
 
