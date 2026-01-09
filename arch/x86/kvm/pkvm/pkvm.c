@@ -481,8 +481,7 @@ void pkvm_handle_host_hypercall(struct kvm_vcpu *vcpu)
 
 	switch (hc) {
 	case __pkvm__init:
-		ret = pkvm_init((struct pkvm_mem_info *)pkvm_hc_input1(vcpu), pkvm_hc_input2(vcpu),
-				(struct pkvm_init_ops *)pkvm_hc_input3(vcpu));
+		ret = pkvm_init((struct pkvm_mem_info *)pkvm_hc_input1(vcpu), pkvm_hc_input2(vcpu));
 		break;
 	case __pkvm__enable_vmexit_trace:
 		pkvm_enable_vmexit_trace(pkvm_hc_input1(vcpu));

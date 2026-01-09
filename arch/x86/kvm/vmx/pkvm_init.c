@@ -1096,8 +1096,7 @@ static void do_pkvm_hyp_init(void *data)
 			.prot	= pgprot_val(PAGE_KERNEL),
 		},
 	};
-	int ret = pkvm_hypercall(init, (unsigned long)infos, ARRAY_SIZE(infos),
-				 (unsigned long)pkvm_sym(pkvm_vmx_init_ops));
+	int ret = pkvm_hypercall(init, (unsigned long)infos, ARRAY_SIZE(infos));
 
 	if (data)
 		*(int *)data = ret;
@@ -1185,6 +1184,8 @@ int __init vmx_pkvm_init(void)
 		pr_warn("to prevent pkvm running on such CPU, ");
 		pr_cont("reboot with kvm-intel.pkvm_relax_cpu_bugs=false\n");
 	}
+
+	pkvm_sym(init_ops) = pkvm_sym(pkvm_vmx_init_ops);
 
 	ret = pkvm_host_deprivilege_cpus(pkvm);
 	if (ret) {

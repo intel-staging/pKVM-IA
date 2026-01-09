@@ -27,6 +27,6 @@ struct pkvm_init_ops {
 	hyp_global_init_fn_t		hyp_global_init;
 };
 
-int pkvm_init(struct pkvm_mem_info infos[], int nr_info, struct pkvm_init_ops *init_ops);
+int pkvm_init(struct pkvm_mem_info infos[], int nr_info);
 
 #endif /* __PKVM_X86_INIT_H */

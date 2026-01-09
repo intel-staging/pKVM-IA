@@ -192,9 +192,11 @@ static int create_host_mmu(const struct pkvm_mem_info infos[], int nr_infos,
 	return 0;
 }
 
+/* Set by the host before deprivilege and used through the initialization process. */
+struct pkvm_init_ops *init_ops;
+
 #define TMP_NR_INFOS	16
-static int initialize_global(struct pkvm_mem_info infos[], int nr_infos,
-			     struct pkvm_init_ops *init_ops)
+static int initialize_global(struct pkvm_mem_info infos[], int nr_infos)
 {
 	host_mmu_init_fn_t host_mmu_init_fn = init_ops ? init_ops->host_mmu_init : NULL;
 	hyp_global_init_fn_t hyp_global_init = init_ops ? init_ops->hyp_global_init : NULL;
@@ -241,7 +243,7 @@ static int initialize_global(struct pkvm_mem_info infos[], int nr_infos,
 	return hyp_global_init ? hyp_global_init() : 0;
 }
 
-int pkvm_init(struct pkvm_mem_info infos[], int nr_infos, struct pkvm_init_ops *init_ops)
+int pkvm_init(struct pkvm_mem_info infos[], int nr_infos)
 {
 	hyp_mmu_finalize_fn_t hyp_mmu_finalize_fn = init_ops ? init_ops->hyp_mmu_finalize :
 							       NULL;
@@ -254,7 +256,7 @@ int pkvm_init(struct pkvm_mem_info infos[], int nr_infos, struct pkvm_init_ops *
 		return -EBUSY;
 
 	if (!global_initialized) {
-		ret = initialize_global(infos, nr_infos, init_ops);
+		ret = initialize_global(infos, nr_infos);
 		if (ret)
 			return ret;
 
