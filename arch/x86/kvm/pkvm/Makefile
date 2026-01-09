@@ -19,6 +19,7 @@ pkvm-hyp-y			:= early_alloc.o pkvm.o memory.o cpu.o \
 kernel-x86-lib			:= ../../lib
 pkvm-hyp-y			+= $(kernel-x86-lib)/memset_64.o
 pkvm-hyp-y			+= $(kernel-x86-lib)/memcpy_64.o
+pkvm-hyp-y			+= $(kernel-x86-lib)/hweight.o
 
 pkvm-hyp-$(CONFIG_MITIGATION_RETPOLINE)	+= retpoline.o
 $(obj)/retpoline.pkvm.o: $(obj)/retpoline.pkvm.S FORCE
