@@ -1256,6 +1256,8 @@ int __init vmx_pkvm_init(void)
 	if (ret)
 		goto repriv_cpus;
 
+	pkvm_hypercall(init_finalize);
+
 	pkvm_init_debugfs();
 
 	pr_info("Hypervisor is up and running!\n");
