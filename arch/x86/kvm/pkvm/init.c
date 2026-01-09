@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <linux/kvm_host.h>
 #include <asm/kvm_pkvm.h>
+#include "../x86.h"
 #include "early_alloc.h"
 #include "init.h"
 #include "lapic.h"
@@ -285,6 +286,8 @@ int pkvm_init(struct pkvm_mem_info infos[], int nr_infos)
 		return ret;
 
 	pkvm_vcpu_perf_init(this_cpu_read(host_vcpu));
+
+	kvm_user_return_msr_cpu_online();
 
 	this_cpu_write(cpu_initialized, true);
 	return 0;
