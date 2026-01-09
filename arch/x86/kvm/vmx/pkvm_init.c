@@ -605,6 +605,63 @@ static noinline int local_deprivilege_cpu(void)
 	return -EINVAL;
 }
 
+static DEFINE_PER_CPU(bool, deprivileged);
+static __init void pkvm_host_reprivilege_cpu(void *data)
+{
+	int cpu = smp_processor_id();
+	int ret;
+
+	if (!this_cpu_read(deprivileged))
+		return;
+
+	/*
+	 * Load the RW GDT page for reprivilege code
+	 * to reload TR.
+	 */
+	load_direct_gdt(cpu);
+
+	/*
+	 * Intel CET requires indirect jmp/call to return to
+	 * endbr64 instruction. So we can't use kvm_hypercall
+	 * here.
+	 */
+	asm volatile(
+		"vmcall\n"
+		"endbr64\n"
+		: "=a"(ret)
+		: "a"(__pkvm__reprivilege_cpu)
+		: "memory");
+
+	/* Switch back to RO GDT page */
+	load_fixmap_gdt(cpu);
+
+	if (!ret) {
+		this_cpu_write(deprivileged, false);
+		kvm_cpu_vmxoff();
+		pr_info("%s: CPU%d back in host mode\n", __func__, cpu);
+	}
+
+	*(int *)data = ret;
+}
+
+static __init void pkvm_host_reprivilege_cpus(void)
+{
+	int cpu;
+
+	for_each_possible_cpu(cpu) {
+		int ret, reprivilege_ret = 0;
+
+		if (!per_cpu(deprivileged, cpu))
+			continue;
+
+		ret = smp_call_function_single(cpu, pkvm_host_reprivilege_cpu,
+					       &reprivilege_ret, true);
+		if (ret || reprivilege_ret)
+			panic("CPU%d failed to reprivilege(smp_call=%d, reprivilege=%d)\n",
+			      cpu, ret, reprivilege_ret);
+	}
+}
+
 static __init void pkvm_host_deprivilege_cpu(void *data)
 {
 	int cpu = smp_processor_id(), *deprivilege_ret = data, ret;
@@ -629,6 +686,7 @@ static __init void pkvm_host_deprivilege_cpu(void *data)
 	}
 
 	vcpu->mode = IN_GUEST_MODE;
+	this_cpu_write(deprivileged, true);
 	pr_info("CPU%d in guest mode\n", cpu);
 	return;
 vmxoff:
@@ -798,19 +856,18 @@ int __init vmx_pkvm_init(void)
 	pkvm_sym(init_ops) = pkvm_sym(pkvm_vmx_init_ops);
 
 	ret = pkvm_host_deprivilege_cpus(pkvm);
-	if (ret) {
-		/* TODO: Re-privilege the deprivileged CPUs */
-		goto out;
-	}
+	if (ret)
+		goto repriv_cpus;
 
 	ret = pkvm_hyp_init();
-	if (ret) {
-		/* TODO: Re-privilege the deprivileged CPUs */
-		goto out;
-	}
+	if (ret)
+		goto repriv_cpus;
 
 	pr_info("Hypervisor is up and running!\n");
 	return 0;
+
+repriv_cpus:
+	pkvm_host_reprivilege_cpus();
 out:
 	/*
 	 * As the reserved memory at the pkvm_mem_base will not be
