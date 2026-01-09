@@ -1349,6 +1349,8 @@ int __init vmx_pkvm_init(void)
 	if (ret)
 		panic("pkvm failed to initialize hypervisor, error %d\n", ret);
 
+	pkvm_init_debugfs();
+
 	pr_info("Hypervisor is up and running!\n");
 	return 0;
 out:
