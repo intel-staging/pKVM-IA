@@ -9,6 +9,7 @@ BUILD_BUG_ON(1)
 
 /* Hypercalls used only during pKVM initialization */
 PKVM_HC(init)
+PKVM_HC(reprivilege_cpu)
 
 /* pKVM vmexit tracing/profiling */
 PKVM_HC(enable_vmexit_trace)
