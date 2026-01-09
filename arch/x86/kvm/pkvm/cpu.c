@@ -7,6 +7,7 @@
 #include <asm/processor.h>
 #include <asm/sections.h>
 #include "memory.h"
+#include "pkvm.h"
 
 unsigned long __per_cpu_offset[NR_CPUS];
 DEFINE_PER_CPU_CACHE_HOT(unsigned long, this_cpu_off);
@@ -37,6 +38,8 @@ int pkvm_setup_per_cpu(int cpu, unsigned long base,
 				(unsigned long)__per_cpu_start;
 	per_cpu(this_cpu_off, cpu) = __per_cpu_offset[cpu];
 	per_cpu(cpu_number, cpu) = cpu;
+	per_cpu(phys_cpu, cpu) = pcpu;
+	per_cpu(host_vcpu, cpu) = vcpu;
 
 	return 0;
 }
