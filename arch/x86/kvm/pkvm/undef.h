@@ -10,5 +10,6 @@
  * disabled. (This list needs to be extended when new variants are added.)
  */
 #undef CONFIG_CALL_THUNKS_DEBUG
+#undef CONFIG_PREEMPT_DYNAMIC
 
 #endif /* __PKVM_X86_UNDEF_H */
