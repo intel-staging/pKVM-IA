@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <linux/types.h>
 #include <asm/fpu/xcr.h>
+#include <asm/pkvm_spinlock.h>
+#include "debug.h"
 #include "init.h"
 #include "lapic.h"
 #include "mem_protect.h"
@@ -34,13 +36,49 @@ bool __read_mostly enable_pmu = true;
  */
 bool tdp_enabled = true;
 
+/* The maximum number of VMs under pkvm. */
+#define MAX_PKVM_VMS		64
+
+static DECLARE_BITMAP(pkvm_vms_bitmap, MAX_PKVM_VMS);
+static DEFINE_PKVM_SPINLOCK(pkvm_vms_lock);
+static struct pkvm_vm_ref {
+	/* Reference counter to indicate if pkvm_vm is in use */
+	atomic_t refcount;
+	/* Point to pkvm_vm in pkvm */
+	struct pkvm_vm *pkvm_vm;
+} pkvm_vms_ref[MAX_PKVM_VMS];
+
+static int allocate_pkvm_vm_handle(struct pkvm_vm *pkvm_vm)
+{
+	struct pkvm_vm_ref *pkvm_vm_ref;
+	int idx;
+
+	pkvm_spin_lock(&pkvm_vms_lock);
+
+	idx = find_first_zero_bit(pkvm_vms_bitmap, MAX_PKVM_VMS);
+	if (idx == MAX_PKVM_VMS) {
+		pkvm_spin_unlock(&pkvm_vms_lock);
+		return -ENOMEM;
+	}
+	__set_bit(idx, pkvm_vms_bitmap);
+
+	pkvm_vm->kvm.arch.pkvm.handle = idx;
+	pkvm_vm_ref = &pkvm_vms_ref[idx];
+	pkvm_vm_ref->pkvm_vm = pkvm_vm;
+	atomic_set(&pkvm_vm_ref->refcount, 1);
+
+	pkvm_spin_unlock(&pkvm_vms_lock);
+
+	return idx;
+}
+
 static int pkvm_vm_init(phys_addr_t host_kvm_pa, phys_addr_t pkvm_vm_pa)
 {
 	struct pkvm_vm *pkvm_vm;
 	struct kvm *kvm;
+	int ret, handle;
 	size_t size;
 	u8 vm_type;
-	int ret;
 
 	ret = pkvm_host_share_hyp(host_kvm_pa, kvm_x86_ops.vm_size);
 	if (ret)
@@ -75,7 +113,20 @@ static int pkvm_vm_init(phys_addr_t host_kvm_pa, phys_addr_t pkvm_vm_pa)
 	if (ret)
 		goto undonate;
 
-	return 0;
+	/*
+	 * Publish the VM last. Once the handle is allocated, the host can use
+	 * or destroy the VM on other CPUs, so it must be the last step of the
+	 * VM initialization. Don't add code after it that accesses the pkvm_vm
+	 * or that can fail and jump to the error handling path, since the VM
+	 * may already be destroyed and cannot be safely undo.
+         */
+	handle = allocate_pkvm_vm_handle(pkvm_vm);
+	if (handle < 0) {
+		ret = handle;
+		goto undonate;
+	}
+
+	return handle;
 
 undonate:
 	pkvm_hyp_donate_host(__pkvm_pa(pkvm_vm), size, false);
