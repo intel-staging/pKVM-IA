@@ -39,7 +39,8 @@ kvm				:= ..
 pkvm-hyp-y			+= $(kvm)/x86.o $(kvm)/cpuid.o
 
 pkvm-hyp-$(CONFIG_PKVM_INTEL)	+= $(kvm)/vmx/vmx.o vmx/host_vmx.o \
-				   vmx/host_vmentry.o vmx/idt.o vmx/ept.o
+				   vmx/host_vmentry.o vmx/idt.o vmx/ept.o \
+				   $(kvm)/vmx/main.o
 
 AFLAGS_vmx/host_vmentry.pkvm.o	+= -iquote $(srctree)/arch/x86/kvm
 AFLAGS_vmx/host_vmentry.pkvm.o	+= -iquote $(obj)
