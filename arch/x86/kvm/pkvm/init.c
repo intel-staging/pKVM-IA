@@ -188,6 +188,7 @@ static int create_hyp_mmu(const struct pkvm_mem_info infos[], int nr_infos)
 static int initialize_global(struct pkvm_mem_info infos[], int nr_infos)
 {
 	host_mmu_init_fn_t host_mmu_init_fn = init_ops ? init_ops->host_mmu_init : NULL;
+	hyp_global_init_fn_t hyp_global_init = init_ops ? init_ops->hyp_global_init : NULL;
 	struct pkvm_mem_info tmp_infos[TMP_NR_INFOS];
 	phys_addr_t mem_base = INVALID_PAGE;
 	unsigned long mem_size = 0;
@@ -224,8 +225,12 @@ static int initialize_global(struct pkvm_mem_info infos[], int nr_infos)
 	if (ret)
 		return ret;
 
-	return pkvm_host_mmu_init(host_pgt_base, pkvm_host_pgtable_pages(),
-				  tmp_infos, nr_infos, host_mmu_init_fn);
+	ret = pkvm_host_mmu_init(host_pgt_base, pkvm_host_pgtable_pages(),
+				 tmp_infos, nr_infos, host_mmu_init_fn);
+	if (ret)
+		return ret;
+
+	return hyp_global_init ? hyp_global_init() : 0;
 }
 
 int pkvm_init(struct pkvm_mem_info infos[], int nr_infos)
