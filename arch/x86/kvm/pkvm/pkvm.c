@@ -1289,26 +1289,56 @@ static int pkvm_vcpu_after_set_cpuid(struct kvm_vcpu *vcpu,
 {
 	struct kvm_cpuid_entry2 *new, *old;
 	int new_nent, old_nent, ret;
-	u64 size;
+	u64 size, aligned_size;
 
 	new_nent = READ_ONCE(to_pkvm_vcpu(vcpu)->shared_vcpu->arch.cpuid_nent);
 	if (new_nent < 0 || new_nent > KVM_MAX_CPUID_ENTRIES)
 		return -EINVAL;
 
-	size = PAGE_ALIGN(sizeof(struct kvm_cpuid_entry2) * new_nent);
-	ret = pkvm_host_donate_hyp(cpuid_pa, size, false);
+	size = sizeof(struct kvm_cpuid_entry2) * new_nent;
+	aligned_size = PAGE_ALIGN(size);
+	ret = pkvm_host_donate_hyp(cpuid_pa, aligned_size, false);
 	if (ret)
 		return ret;
 
 	new = __pkvm_va(cpuid_pa);
+	if (pkvm_is_protected_vcpu(vcpu)) {
+		/*
+		 * Donation is page-granule, so the host must ensure that
+		 * the cpuid buffer size is page aligned though the actual
+		 * nent only records valid entries.
+		 *
+		 * Clear the trailing space after nent so it can be used
+		 * to hold missing cpuid entries enforced by pkvm.
+		 */
+		memset((void *)new + size, 0, aligned_size - size);
+
+		ret = pkvm_enforce_cpuid(new, &new_nent,
+					 aligned_size / sizeof(struct kvm_cpuid_entry2));
+		if (ret)
+			goto undonate;
+	}
+
 	old = vcpu->arch.cpuid_entries;
 	old_nent = vcpu->arch.cpuid_nent;
 
 	ret = kvm_set_cpuid(vcpu, new, new_nent);
-	if (ret) {
-		pkvm_hyp_donate_host(__pkvm_pa(new), size, false);
-		return ret;
-	}
+	if (ret)
+		goto undonate;
+
+	/*
+	 * The pVM will directly boot with lapic in x2apic mode, which requires
+	 * the X86_FEATURE_X2APIC to be set in the vCPUID. The vCPUID entries
+	 * are enforced by pkvm_enforce_cpuid() via overriding the vCPUID leaf
+	 * 0x1 ECX X2APIC feature bit with the value from the native CPUID. As
+	 * the pKVM initialization requires the native lapic in X2APIC mode, it
+	 * means that the native CPUID will always have the X2APIC feature bit
+	 * set, thus the enforced vCPUID will also always have the X2APIC set
+	 * for a pVM. So it must be a pKVM code bug if the pVM doesn't have
+	 * X2APIC feature after enforcing.
+	 */
+	if (pkvm_is_protected_vcpu(vcpu))
+		BUG_ON(!guest_cpu_cap_has(vcpu, X86_FEATURE_X2APIC));
 
 	memset(mc, 0, sizeof(*mc));
 	/*
@@ -1321,6 +1351,10 @@ static int pkvm_vcpu_after_set_cpuid(struct kvm_vcpu *vcpu,
 						   old_nent));
 
 	return 0;
+
+undonate:
+	pkvm_hyp_donate_host(__pkvm_pa(new), aligned_size, false);
+	return ret;
 }
 
 static int pkvm_vcpu_handle_host_hypercall(struct kvm_vcpu *hvcpu, enum pkvm_hc hc,
