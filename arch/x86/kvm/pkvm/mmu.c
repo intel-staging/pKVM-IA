@@ -179,6 +179,25 @@ static int host_mmu_map(unsigned long phys, unsigned long size, bool mmio)
 	return pkvm_pgtable_map(&host_mmu, phys, phys, size, prot);
 }
 
+static int host_mmu_map_ro(unsigned long phys, unsigned long size)
+{
+	u64 prot = host_mmu.pgt_ops->calc_pte_perm(true, false, false) |
+		   host_mmu.pgt_ops->calc_pte_memtype(false);
+
+	BUG_ON(!is_memory_range(phys, size));
+
+	/* The vaddr == phys for the host MMU */
+	return pkvm_pgtable_map(&host_mmu, phys, phys, size, prot);
+}
+
+static int host_mmu_unmap(unsigned long phys, unsigned long size)
+{
+	BUG_ON(!is_memory_range(phys, size));
+
+	/* The vaddr == phys for the host MMU */
+	return pkvm_pgtable_unmap(&host_mmu, phys, phys, size);
+}
+
 int pkvm_hyp_mmu_init(void *pool_base, unsigned long pool_pages)
 {
 	struct pkvm_pgtable_cap cap = {
@@ -247,7 +266,9 @@ int pkvm_hyp_mmu_map(unsigned long vaddr, unsigned long phys,
 	return pkvm_pgtable_map(&hyp_mmu, vaddr, phys, size, prot);
 }
 
-int pkvm_host_mmu_init(void *pool_base, unsigned long pool_pages, host_mmu_init_fn_t fn)
+int pkvm_host_mmu_init(void *pool_base, unsigned long pool_pages,
+		       const struct pkvm_mem_info infos[], int nr_infos,
+		       host_mmu_init_fn_t fn)
 {
 	struct memblock_region *reg;
 	unsigned long phys, i;
@@ -272,6 +293,24 @@ int pkvm_host_mmu_init(void *pool_base, unsigned long pool_pages, host_mmu_init_
 	for (i = phys = 0; i < pkvm_memblock_nr; i++, phys = reg->base + reg->size) {
 		reg = &pkvm_memory[i];
 		ret = host_mmu_map(phys, (unsigned long)reg->base - phys, true);
+		if (ret)
+			return ret;
+	}
+
+	/*
+	 * Unmap the memory range in the pkvm_mem_info, which includes the pkvm
+	 * DATA and its reserved memory, to protect the pKVM hypervisor from the
+	 * host VM. Keep .pkvm.text mapped read-only, since it contains no
+	 * secrets, while the host kernel may need to inspect pKVM text in some
+	 * cases, e.g. for instruction decoding in arch_jump_entry_size() for
+	 * getting size of a pKVM's static branch.
+	 */
+	for (i = 0; i < nr_infos; i++) {
+		if (is_pkvm_text_range(infos[i].pa, infos[i].size))
+			ret = host_mmu_map_ro(infos[i].pa, infos[i].size);
+		else
+			ret = host_mmu_unmap(infos[i].pa, infos[i].size);
+
 		if (ret)
 			return ret;
 	}

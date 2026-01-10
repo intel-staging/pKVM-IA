@@ -7,6 +7,7 @@
 #include <linux/mm.h>
 #include <vdso/limits.h>
 #include <asm/page.h>
+#include <asm/pkvm_image.h>
 
 #define __pkvm_pa		__pa
 #define __pkvm_va		__va
@@ -79,6 +80,14 @@ static inline bool is_memory_range(unsigned long phys, unsigned long size)
 		return false;
 
 	return range_contains(&range, &target);
+}
+
+static inline bool is_pkvm_text_range(unsigned long phys, unsigned long size)
+{
+	unsigned long start = __pa_symbol(pkvm_sym(text_start));
+	unsigned long end = __pa_symbol(pkvm_sym(text_end));
+
+	return phys >= start && phys + size <= end;
 }
 
 #endif /* __PKVM_X86_MEMORY_H */
