@@ -44,6 +44,8 @@ static struct gdt_page pkvm_gdt_page = {
 
 static unsigned int intercept_w_msrs[] = {
 	MSR_CORE_PERF_GLOBAL_CTRL,
+	MSR_IA32_APICBASE,
+	X2APIC_MSR(APIC_ID),
 };
 
 unsigned long __init pkvm_vmx_reserve_pages(void)
