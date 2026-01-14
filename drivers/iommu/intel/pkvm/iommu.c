@@ -23,7 +23,7 @@ unsigned int iommu_pglvl_mask = IOMMU_PGT_4LEVEL | IOMMU_PGT_5LEVEL;
 /* GCMD oneshot bits where unsetting the bit doesn't have an effect */
 #define DMAR_GCMD_ONESHOT	(DMA_GCMD_SRTP | DMA_GCMD_SIRTP)
 /* Mask of bits the host is allowed to access directly (passed through to hardware) */
-#define DMAR_GCMD_DIRECT	(DMA_GCMD_TE | DMA_GCMD_IRE | DMA_GCMD_CFI | DMA_GCMD_SIRTP)
+#define DMAR_GCMD_DIRECT	(DMA_GCMD_IRE | DMA_GCMD_CFI | DMA_GCMD_SIRTP)
 /* Mask of bits supported by pKVM */
 #define DMAR_GCMD_SUPPORTED_BITS	(DMAR_GSTS_EN_BITS | DMA_GCMD_SRTP | DMA_GCMD_SIRTP)
 
@@ -87,24 +87,34 @@ static int iommu_direct_mmio_write(struct intel_iommu *iommu, u64 phys,
 
 static int handle_gcmd_direct(struct intel_iommu *iommu, u32 gcmd_bit, bool set)
 {
-	u32 gcmd = iommu->vgsts & DMAR_GSTS_EN_BITS;
+	u32 gcmd = readl(iommu->reg + DMAR_GSTS_REG) & DMAR_GSTS_EN_BITS;
 	u32 sts;
 
 	if ((gcmd_bit & DMAR_GCMD_ONESHOT) && !set)
 		return -EINVAL;
 
-	if (set)
+	if (set) {
+		if (gcmd & gcmd_bit) {
+			iommu->vgsts |= gcmd_bit;
+			return 0;
+		}
 		gcmd |= gcmd_bit;
-	else
+	} else {
+		if (!(gcmd & gcmd_bit)) {
+			iommu->vgsts &= ~gcmd_bit;
+			return 0;
+		}
 		gcmd &= ~gcmd_bit;
+	}
 
 	writel(gcmd, iommu->reg + DMAR_GCMD_REG);
-	if (set)
+	if (set) {
 		IOMMU_WAIT_OP(iommu, DMAR_GSTS_REG, dmar_readl, (sts & gcmd_bit), sts);
-	else
+		iommu->vgsts |= gcmd_bit;
+	} else {
 		IOMMU_WAIT_OP(iommu, DMAR_GSTS_REG, dmar_readl, !(sts & gcmd_bit), sts);
-
-	iommu->vgsts = (iommu->vgsts & DMAR_GCMD_ONESHOT) | gcmd;
+		iommu->vgsts &= ~gcmd_bit;
+	}
 
 	return 0;
 }
@@ -230,6 +240,31 @@ static int handle_gcmd_srtp(struct intel_iommu *iommu)
 	return 0;
 }
 
+static int handle_gcmd_te(struct intel_iommu *iommu, bool enable)
+{
+	if (enable) {
+		if (iommu->vgsts & DMA_GSTS_TES) {
+			pkvm_err("iommu%d: TE allowed only once\n", iommu->seq_id);
+			return -EBUSY;
+		} else if (!(iommu->vgsts & DMA_GSTS_RTPS)) {
+			pkvm_err("iommu%d: TE not allowed before SRTP\n", iommu->seq_id);
+			return -EINVAL;
+		}
+
+		handle_gcmd_direct(iommu, DMA_GCMD_TE, true);
+		pkvm_dbg("iommu%d: Translation enabled!\n", iommu->seq_id);
+	} else {
+		/*
+		 * Translation is not really disabled as it would
+		 * compromise pKVM security guarantees.
+		 */
+		iommu->vgsts &= ~DMA_GSTS_TES;
+		pkvm_dbg("iommu%d: Translation marked as disabled!\n", iommu->seq_id);
+	}
+
+	return 0;
+}
+
 static int handle_global_cmd(struct intel_iommu *iommu, u32 val)
 {
 	u32 changed = (iommu->vgsts & DMAR_GSTS_EN_BITS) ^ val;
@@ -257,6 +292,9 @@ static int handle_global_cmd(struct intel_iommu *iommu, u32 val)
 
 	if (changed & DMA_GCMD_SRTP)
 		return handle_gcmd_srtp(iommu);
+
+	if (changed & DMA_GCMD_TE)
+		return handle_gcmd_te(iommu, !!(val & changed));
 
 	/*
 	 * Check if the bits are allowed to be directly accessible by the host
