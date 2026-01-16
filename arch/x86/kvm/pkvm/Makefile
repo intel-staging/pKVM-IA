@@ -33,6 +33,7 @@ quiet_cmd_patch_retpoline = PATCH_RETPOLINE $@
       cmd_patch_retpoline = $(BASH) $(src)/compiling_cmds.sh patch_retpoline $< $@
 
 kernel-lib			:= ../../../../lib
+pkvm-hyp-y			+= $(kernel-lib)/string.o $(kernel-lib)/ctype.o
 pkvm-hyp-$(CONFIG_LIST_HARDENED) += $(kernel-lib)/list_debug.o
 
 kvm				:= ..
