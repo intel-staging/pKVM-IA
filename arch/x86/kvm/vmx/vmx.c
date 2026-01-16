@@ -2852,6 +2852,7 @@ static bool kvm_is_vmx_supported(void)
 
 	return supported;
 }
+#endif /* !__PKVM_HYP__ */
 
 int vmx_check_processor_compat(void)
 {
@@ -2859,8 +2860,10 @@ int vmx_check_processor_compat(void)
 	struct vmcs_config vmcs_conf;
 	struct vmx_capability vmx_cap;
 
+#ifndef __PKVM_HYP__
 	if (!__kvm_is_vmx_supported())
 		return -EIO;
+#endif
 
 	if (setup_vmcs_config(&vmcs_conf, &vmx_cap) < 0) {
 		pr_err("Failed to setup VMCS config on CPU %d\n", cpu);
@@ -2875,6 +2878,7 @@ int vmx_check_processor_compat(void)
 	return 0;
 }
 
+#ifndef __PKVM_HYP__
 int kvm_cpu_vmxon(u64 vmxon_pointer)
 {
 	u64 msr;
