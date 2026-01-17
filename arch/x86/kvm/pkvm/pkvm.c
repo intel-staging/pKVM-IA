@@ -10,6 +10,8 @@
 #include "pkvm.h"
 #include "trace.h"
 #include "../x86.h"
+#include "../lapic.h"
+#include "../irq.h"
 
 struct pkvm_hyp *pkvm_hyp;
 DEFINE_PER_CPU(struct pkvm_pcpu *, phys_cpu);
@@ -140,13 +142,12 @@ static int pkvm_vm_init(phys_addr_t host_kvm_pa, phys_addr_t pkvm_vm_pa)
 
 	kvm = &pkvm_vm->kvm;
 	kvm->arch.vm_type = vm_type;
-	if (pkvm_is_protected_vm(kvm))
-		kvm->arch.disabled_quirks = kvm_caps.inapplicable_quirks &
-					    kvm_caps.supported_quirks;
-	else
-		kvm->arch.disabled_quirks = (kvm_caps.inapplicable_quirks |
-					     pkvm_vm->shared_kvm->arch.disabled_quirks) &
-					    kvm_caps.supported_quirks;
+	/*
+	 * For an npVM, the quirks disabled by the host VMM are added when
+	 * creating the first vCPU, see postponed_per_vm_setup().
+	 */
+	kvm->arch.disabled_quirks = kvm_caps.inapplicable_quirks &
+				    kvm_caps.supported_quirks;
 
 	ret = kvm_x86_call(vm_init)(kvm);
 	if (ret)
@@ -214,6 +215,292 @@ static int pkvm_vm_destroy(int vm_handle, struct pkvm_memcache *mc)
 	return 0;
 }
 
+static int attach_pkvm_vcpu_to_vm(struct pkvm_vm *pkvm_vm, struct pkvm_vcpu *pkvm_vcpu)
+{
+	struct kvm *kvm = &pkvm_vm->kvm;
+	int vcpu_handle;
+
+	pkvm_spin_lock(&pkvm_vm->lock);
+
+	if (kvm->created_vcpus == KVM_MAX_VCPUS) {
+		pkvm_spin_unlock(&pkvm_vm->lock);
+		return -EINVAL;
+	}
+	vcpu_handle = kvm->created_vcpus++;
+	pkvm_vcpu->vcpu.arch.pkvm.handle = vcpu_handle;
+	pkvm_vcpu->pkvm_vm = pkvm_vm;
+	pkvm_vm->vcpus[vcpu_handle] = pkvm_vcpu;
+
+	pkvm_spin_unlock(&pkvm_vm->lock);
+
+	atomic_set(&pkvm_vm->vcpu_refs[vcpu_handle], 1);
+
+	return vcpu_handle;
+}
+
+static int setup_vcpu_lapic(struct kvm_vcpu *vcpu, struct kvm_lapic *shared_apic)
+{
+	struct kvm_lapic *apic = vcpu->arch.apic;
+	size_t apic_size = sizeof(struct kvm_lapic);
+	void *apic_regs = NULL;
+	int ret;
+
+	if (!apic || WARN_ON(!shared_apic))
+		return 0;
+	/*
+	 * Temporary sharing host's apic structure to access its elements for
+	 * setting up pKVM's apic structure. It will be unshared after that.
+	 */
+	ret = pkvm_host_share_hyp(__pkvm_pa(shared_apic), apic_size);
+	if (ret)
+		return ret;
+
+	apic->apicv_active = !!READ_ONCE(*(u8 *)&shared_apic->apicv_active);
+
+	apic_regs = kern_pkvm_va(READ_ONCE(shared_apic->regs));
+	if (!apic_regs) {
+		ret = -EINVAL;
+		goto unshare_apic;
+	}
+
+	ret = pkvm_host_share_hyp(__pkvm_pa(apic_regs), PAGE_SIZE);
+	if (ret)
+		goto unshare_apic;
+
+	apic->regs = apic_regs;
+	apic->nr_lvt_entries = kvm_apic_calc_nr_lvt_entries(vcpu);
+	apic->vcpu = vcpu;
+	/* No highest ISR is cached. */
+	apic->highest_isr_cache = -1;
+
+	kvm_make_request(KVM_REQ_APICV_UPDATE, vcpu);
+
+unshare_apic:
+	pkvm_host_unshare_hyp(__pkvm_pa(shared_apic), apic_size);
+	return ret;
+}
+
+static void unsetup_vcpu_lapic(struct kvm_vcpu *vcpu)
+{
+	struct kvm_lapic *apic = vcpu->arch.apic;
+
+	if (!apic)
+		return;
+
+	pkvm_host_unshare_hyp(__pkvm_pa(apic->regs), PAGE_SIZE);
+}
+
+static int postponed_per_vm_setup(struct kvm *kvm)
+{
+	struct pkvm_vm *pkvm_vm = to_pkvm(kvm);
+	struct kvm *shared_kvm = pkvm_vm->shared_kvm;
+	enum kvm_irqchip_mode irqchip_mode;
+	u32 max_vcpu_ids, bsp_vcpu_id;
+	u64 disabled_quirks = 0;
+
+	if (pkvm_vm->postponed_setup_done)
+		return 0;
+
+	irqchip_mode = READ_ONCE(shared_kvm->arch.irqchip_mode);
+	switch (irqchip_mode) {
+	case KVM_IRQCHIP_NONE:
+#ifdef CONFIG_KVM_IOAPIC
+	case KVM_IRQCHIP_KERNEL:
+#endif
+	case KVM_IRQCHIP_SPLIT:
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	max_vcpu_ids = READ_ONCE(shared_kvm->arch.max_vcpu_ids);
+	if (!max_vcpu_ids || max_vcpu_ids > KVM_MAX_VCPU_IDS)
+		return -EINVAL;
+
+	bsp_vcpu_id = READ_ONCE(shared_kvm->arch.bsp_vcpu_id);
+	if (bsp_vcpu_id >= max_vcpu_ids)
+		return -EINVAL;
+
+	if (!pkvm_is_protected_vm(kvm)) {
+		disabled_quirks = READ_ONCE(shared_kvm->arch.disabled_quirks);
+		if (disabled_quirks & ~kvm_caps.supported_quirks)
+			return -EINVAL;
+		disabled_quirks &= kvm_caps.supported_quirks;
+	}
+
+	/*
+	 * The following setup is per VM, not per vCPU, however it cannot be
+	 * done during VM creation, since these values are set by the host VMM
+	 * via an ioctl after a VM is already created. At the same time, the
+	 * host KVM relies on these values being already set when setting up a
+	 * vCPU, thus implicitly assuming that the VMM should set them before
+	 * creating vCPUs. So it is ok to assume these host's values here are
+	 * up-to-date.
+	 */
+
+	kvm->arch.irqchip_mode = irqchip_mode;
+	kvm->arch.max_vcpu_ids = max_vcpu_ids;
+	kvm->arch.bsp_vcpu_id = bsp_vcpu_id;
+	/*
+	 * The host VMM can disable quirks via KVM_CAP_DISABLE_QUIRKS(2) after a
+	 * VM is created, so take the npVM's disabled quirks here.
+	 */
+	if (!pkvm_is_protected_vm(kvm))
+		kvm->arch.disabled_quirks |= disabled_quirks;
+
+	pkvm_vm->postponed_setup_done = true;
+	return 0;
+}
+
+static int __vcpu_create(struct kvm *kvm, struct kvm_vcpu *vcpu, struct fpstate *fps,
+			 struct kvm_lapic *shared_apic)
+{
+	struct pkvm_vcpu *pkvm_vcpu = to_pkvm_vcpu(vcpu);
+	struct pkvm_vm *pkvm_vm = to_pkvm(kvm);
+	void *free_mem;
+	int ret;
+
+	free_mem = (void *)pkvm_vcpu + PKVM_VCPU_BASE_SIZE + kvm_vcpu_sz;
+
+	pkvm_spin_lock(&pkvm_vm->lock);
+
+	ret = postponed_per_vm_setup(kvm);
+	if (ret) {
+		pkvm_spin_unlock(&pkvm_vm->lock);
+		return ret;
+	}
+
+	/*
+	 * Both the VM's irqchip_mode and the vCPU's lapic come from the
+	 * untrusted host. KVM only creates a lapic for a vCPU when the irqchip
+	 * is in kernel, and the vendor code relies on this, e.g. VMX writes the
+	 * IPIv pid_table, which is only allocated when the irqchip is in
+	 * kernel, if the vCPU has a lapic and IPIv is enabled. Reject a vCPU
+	 * with a lapic when the irqchip is not in kernel to enforce this.
+	 */
+	if (shared_apic && !irqchip_in_kernel(kvm)) {
+		pkvm_spin_unlock(&pkvm_vm->lock);
+		return -EINVAL;
+	}
+
+	ret = kvm_x86_call(vcpu_precreate)(kvm);
+	if (ret) {
+		pkvm_spin_unlock(&pkvm_vm->lock);
+		return ret;
+	}
+
+	pkvm_spin_unlock(&pkvm_vm->lock);
+
+	vcpu->kvm = kvm;
+	/* Set cpu to -1 to indicate it is not loaded on any CPU */
+	vcpu->cpu = -1;
+
+	vcpu->vcpu_id = READ_ONCE(pkvm_vcpu->shared_vcpu->vcpu_id);
+	if (vcpu->vcpu_id < 0 || vcpu->vcpu_id >= kvm->arch.max_vcpu_ids)
+		return -EINVAL;
+	/*
+	 * TODO: check if there is no existing vCPU with the same vcpu_id.
+	 * See also https://lore.kernel.org/kvm/al6eg7C-2sDBEAFD@google.com/
+	 */
+
+	vcpu->arch.last_vmentry_cpu = -1;
+	bitmap_fill(vcpu->arch.regs_avail, NR_VCPU_TOTAL_REGS);
+	bitmap_fill(vcpu->arch.regs_dirty, NR_VCPU_TOTAL_REGS);
+	vcpu->arch.pat = MSR_IA32_CR_PAT_DEFAULT;
+
+	vcpu->arch.apic_base = READ_ONCE(pkvm_vcpu->shared_vcpu->arch.apic_base);
+	if (shared_apic)
+		vcpu->arch.apic = free_mem;
+
+	ret = setup_vcpu_lapic(vcpu, shared_apic);
+	if (ret)
+		return ret;
+
+	vcpu->arch.guest_fpu.fpstate = fps;
+
+	ret = kvm_x86_call(vcpu_create)(vcpu);
+	if (ret)
+		unsetup_vcpu_lapic(vcpu);
+
+	return ret;
+}
+
+static void __vcpu_free(struct kvm_vcpu *vcpu)
+{
+	kvm_x86_call(vcpu_free)(vcpu);
+
+	unsetup_vcpu_lapic(vcpu);
+}
+
+static int pkvm_vcpu_create(int vm_handle, phys_addr_t host_vcpu_pa,
+			    phys_addr_t pkvm_vcpu_pa, phys_addr_t fpu_pa)
+{
+	struct kvm_lapic *shared_apic;
+	struct kvm_vcpu *shared_vcpu;
+	struct pkvm_vcpu *pkvm_vcpu;
+	size_t vcpu_size, fps_size;
+	struct pkvm_vm *pkvm_vm;
+	struct fpstate *fps;
+	int ret, handle;
+
+	pkvm_vm = pkvm_get_vm(vm_handle);
+	if (!pkvm_vm)
+		return -EINVAL;
+
+	ret = pkvm_host_share_hyp(host_vcpu_pa, kvm_vcpu_sz);
+	if (ret)
+		goto put_vm;
+
+	shared_vcpu = __pkvm_va(host_vcpu_pa);
+	vcpu_size = PKVM_VCPU_BASE_SIZE + kvm_vcpu_sz;
+	shared_apic = kern_pkvm_va(READ_ONCE(shared_vcpu->arch.apic));
+	if (shared_apic)
+		vcpu_size += sizeof(struct kvm_lapic);
+	vcpu_size = PAGE_ALIGN(vcpu_size);
+
+	ret = pkvm_host_donate_hyp(pkvm_vcpu_pa, vcpu_size, true);
+	if (ret)
+		goto unshare_vcpu;
+
+	pkvm_vcpu = __pkvm_va(pkvm_vcpu_pa);
+	pkvm_vcpu->shared_vcpu = shared_vcpu;
+	pkvm_vcpu->size = vcpu_size;
+
+	fps_size = pkvm_guest_initial_fpstate_size(&pkvm_vm->kvm);
+	ret = pkvm_host_donate_hyp(fpu_pa, fps_size, true);
+	if (ret)
+		goto undonate_vcpu;
+
+	fps = __pkvm_va(fpu_pa);
+	fps->size = fps_size;
+
+	ret = __vcpu_create(&pkvm_vm->kvm, &pkvm_vcpu->vcpu, fps, shared_apic);
+	if (ret)
+		goto undonate_fps;
+
+	handle = attach_pkvm_vcpu_to_vm(pkvm_vm, pkvm_vcpu);
+	if (handle < 0) {
+		ret = handle;
+		goto destroy_vcpu;
+	}
+
+	pkvm_put_vm(pkvm_vm);
+
+	return handle;
+
+destroy_vcpu:
+	__vcpu_free(&pkvm_vcpu->vcpu);
+undonate_fps:
+	pkvm_hyp_donate_host(__pkvm_pa(fps), fps_size, false);
+undonate_vcpu:
+	pkvm_hyp_donate_host(__pkvm_pa(pkvm_vcpu), vcpu_size, false);
+unshare_vcpu:
+	pkvm_host_unshare_hyp(host_vcpu_pa, kvm_vcpu_sz);
+put_vm:
+	pkvm_put_vm(pkvm_vm);
+	return ret;
+}
+
 void pkvm_handle_host_hypercall(struct kvm_vcpu *vcpu)
 {
 	enum pkvm_hc hc = pkvm_hc(vcpu);
@@ -242,6 +529,12 @@ void pkvm_handle_host_hypercall(struct kvm_vcpu *vcpu)
 		break;
 	case __pkvm__vm_destroy:
 		ret = pkvm_vm_destroy(pkvm_hc_input1(vcpu), &out.vm_destroy.memcache);
+		break;
+	case __pkvm__vcpu_create:
+		ret = pkvm_vcpu_create(pkvm_hc_input1(vcpu),
+				       pkvm_host_gpa_to_phys(pkvm_hc_input2(vcpu)),
+				       pkvm_host_gpa_to_phys(pkvm_hc_input3(vcpu)),
+				       pkvm_host_gpa_to_phys(pkvm_hc_input4(vcpu)));
 		break;
 	default:
 		ret = -EINVAL;
