@@ -14,7 +14,9 @@ cmd_deps			:= $(src)/compiling_cmds.sh
 pkvm-hyp-y			:= early_alloc.o memory.o cpu.o \
 				   idt.o entry.o kern_stub.o pkvm.o \
 				   init.o pgtable.o mmu.o page_alloc.o \
-				   lapic.o trace.o
+				   lapic.o trace.o fpu.o
+
+CFLAGS_fpu.pkvm.o		+= -iquote $(srctree)/arch/x86/kernel/fpu
 
 fpu				:= ../../kernel/fpu
 pkvm-hyp-y			+= $(fpu)/core.o
