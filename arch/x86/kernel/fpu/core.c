@@ -534,6 +534,7 @@ static inline unsigned int init_fpstate_copy_size(void)
 	/* XSAVE(S) just needs the legacy and the xstate header part */
 	return sizeof(init_fpstate.regs.xsave);
 }
+#endif /* !__PKVM_HYP__ */
 
 static inline void fpstate_init_fxstate(struct fpstate *fpstate)
 {
@@ -567,6 +568,7 @@ void fpstate_init_user(struct fpstate *fpstate)
 		fpstate_init_fstate(fpstate);
 }
 
+#ifndef __PKVM_HYP__
 static void __fpstate_reset(struct fpstate *fpstate)
 {
 	/*
