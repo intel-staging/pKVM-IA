@@ -3,6 +3,7 @@
 #include <asm/kvm_pkvm.h>
 #include "../x86.h"
 #include "early_alloc.h"
+#include "fpu.h"
 #include "init.h"
 #include "lapic.h"
 #include "memory.h"
@@ -282,6 +283,10 @@ int pkvm_init(struct pkvm_mem_info infos[], int nr_infos)
 		return ret;
 
 	ret = pkvm_host_mmu_finalize(host_mmu_finalize_fn);
+	if (ret)
+		return ret;
+
+	ret = pkvm_init_percpu_fpu();
 	if (ret)
 		return ret;
 
