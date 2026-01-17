@@ -18,6 +18,7 @@ early_param("kvm-intel.pkvm", early_pkvm_parse_cmdline);
 static DEFINE_PER_CPU(struct pkvm_pcpu *, pkvm_pcpu);
 static DEFINE_PER_CPU(struct kvm_vcpu *, host_vcpu);
 static DEFINE_PER_CPU(struct vmcs *, pkvm_vmxarea);
+static unsigned long data_pages;
 
 
 /* Only need GDT entries for KERNEL_CS & KERNEL_DS as pKVM only use these two */
@@ -34,7 +35,11 @@ static unsigned int intercept_w_msrs[] = {
 
 u64 pkvm_total_reserve_pages(void)
 {
-	return pkvm_vmx_data_pages();
+	u64 total = pkvm_vmx_data_pages();
+
+	total += pkvm_hyp_pgtable_pages();
+
+	return total;
 }
 
 static __init void pkvm_setup_syms(void)
@@ -656,8 +661,10 @@ static __init int pkvm_host_deprivilege_cpus(struct pkvm_hyp *pkvm)
 
 static void do_pkvm_hyp_init(void *data)
 {
-	int ret = pkvm_hypercall(init);
+	unsigned long data_size = data_pages << PAGE_SHIFT;
+	int ret;
 
+	ret = pkvm_hypercall(init, pkvm_mem_base + data_size, pkvm_mem_size - data_size);
 	if (data)
 		*(int *)data = ret;
 }
@@ -681,7 +688,6 @@ static __init int pkvm_hyp_init(void)
 
 int __init vmx_pkvm_init(void)
 {
-	unsigned long nr_pages;
 	struct pkvm_hyp *pkvm;
 	int ret, cpu;
 
@@ -694,8 +700,8 @@ int __init vmx_pkvm_init(void)
 		goto out;
 	}
 
-	nr_pages = pkvm_vmx_data_pages();
-	pkvm_sym(pkvm_early_alloc_init)(__va(pkvm_mem_base), nr_pages << PAGE_SHIFT);
+	data_pages = pkvm_vmx_data_pages();
+	pkvm_sym(pkvm_early_alloc_init)(__va(pkvm_mem_base), data_pages << PAGE_SHIFT);
 
 	pkvm = pkvm_sym(pkvm_hyp) = pkvm_sym(pkvm_early_alloc_contig)(PKVM_HYP_PAGES);
 	if (!pkvm) {
