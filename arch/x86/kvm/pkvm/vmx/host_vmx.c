@@ -8,6 +8,7 @@
 #include "host_vmx.h"
 #include "pkvm/init.h"
 #include "pkvm/lapic.h"
+#include "pkvm/trace.h"
 #include "pkvm.h"
 
 #define CR4			4
@@ -329,6 +330,8 @@ void pkvm_host_vmexit_main(struct vcpu_vmx *vmx)
 	struct vcpu_vt *vt = &vmx->vt;
 	bool skip_instruction = false;
 
+	pkvm_trace_vmexit_start(vcpu);
+
 	pkvm_set_vcpu_outside_guest(vcpu);
 
 	vcpu->arch.cr2 = native_read_cr2();
@@ -411,4 +414,6 @@ handle_events:
 
 	if (vcpu->arch.cr2 != native_read_cr2())
 		native_write_cr2(vcpu->arch.cr2);
+
+	pkvm_trace_vmexit_end(vcpu, vt->exit_reason.basic);
 }
