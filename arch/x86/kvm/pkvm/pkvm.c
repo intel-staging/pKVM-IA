@@ -65,6 +65,24 @@ static struct pkvm_x86_ops pkvm_x86_ops __read_mostly;
 /* TODO: If can be optimized with the static call mechanism. */
 #define pkvm_x86_call(func)		(pkvm_x86_ops.func)
 
+static struct pkvm_iommu_ops *iommu_ops;
+
+void pkvm_register_iommu_ops(struct pkvm_iommu_ops *ops)
+{
+	BUG_ON(READ_ONCE(iommu_ops));
+	WRITE_ONCE(iommu_ops, ops);
+}
+
+/*
+ * Until the static call mechanism is available, use indirect
+ * calls. All iommu_ops callbacks are mandatory for now.
+ */
+#define pkvm_iommu_call(func)				\
+({							\
+	BUG_ON(!iommu_ops || !iommu_ops->func);			\
+	(iommu_ops->func);				\
+})
+
 static int __pkvm_vcpu_free(struct pkvm_vm *pkvm_vm, int vcpu_handle,
 			    struct pkvm_memcache *mc);
 
@@ -1874,6 +1892,20 @@ void pkvm_handle_host_hypercall(struct kvm_vcpu *vcpu)
 	case __pkvm__vm_mmu_age:
 		ret = pkvm_vm_mmu_age(pkvm_hc_input1(vcpu), pkvm_hc_input2(vcpu),
 				      pkvm_hc_input3(vcpu), pkvm_hc_input4(vcpu));
+		break;
+	case __pkvm__iommu_mmio_read:
+		ret = pkvm_iommu_call(mmio_read)(pkvm_hc_input1(vcpu),
+						 pkvm_hc_input2(vcpu),
+						 &out.iommu_mmio_read.val);
+		break;
+	case __pkvm__iommu_mmio_write:
+		ret = pkvm_iommu_call(mmio_write)(pkvm_hc_input1(vcpu),
+						  pkvm_hc_input2(vcpu),
+						  pkvm_hc_input3(vcpu));
+		break;
+	case __pkvm__iommu_hypercall:
+		ret = pkvm_iommu_call(hypercall)(&in.iommu_hypercall.in,
+						 &out.iommu_hypercall.out);
 		break;
 	default:
 		ret = pkvm_vcpu_handle_host_hypercall(vcpu, hc, &in, &out);

@@ -22,6 +22,27 @@ unsigned int iommu_pglvl_mask = IOMMU_PGT_4LEVEL | IOMMU_PGT_5LEVEL;
 static struct intel_iommu iommus[PKVM_MAX_IOMMU_NUM];
 static int nr_iommus;
 
+static int pkvm_iommu_mmio_read(u64 phys, int len, u64 *val)
+{
+	return 0;
+}
+
+static int pkvm_iommu_mmio_write(u64 phys, int len, u64 val)
+{
+	return 0;
+}
+
+static int pkvm_handle_iommu_hypercall(void *in, void *out)
+{
+	return 0;
+}
+
+struct pkvm_iommu_ops iommu_ops = {
+	.mmio_read = pkvm_iommu_mmio_read,
+	.mmio_write = pkvm_iommu_mmio_write,
+	.hypercall = pkvm_handle_iommu_hypercall,
+};
+
 int __init prepare_iommu(struct intel_iommu_info *info)
 {
 	struct intel_iommu *iommu;
@@ -79,5 +100,6 @@ int pkvm_intel_iommu_init(void)
 		if (ret)
 			return ret;
 	}
+	pkvm_register_iommu_ops(&iommu_ops);
 	return 0;
 }
