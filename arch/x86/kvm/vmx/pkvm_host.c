@@ -635,7 +635,7 @@ static void pkvm_get_idt(struct kvm_vcpu *vcpu, struct desc_ptr *dt)
 static void pkvm_set_idt(struct kvm_vcpu *vcpu, struct desc_ptr *dt)
 {
 	union pkvm_hc_data data = {
-		.set_gdt.desc = *dt,
+		.set_idt.desc = *dt,
 	};
 
 	if (vcpu->arch.guest_state_protected)
