@@ -224,7 +224,7 @@ int pkvm_pasid_table_setup(struct intel_iommu *iommu, struct device_domain_info 
 }
 
 int pkvm_pasid_setup_fl(struct device_domain_info *info, phys_addr_t fsptptr,
-		      u32 pasid, u16 did, u16 old_did, int flags)
+		      u32 pasid, u16 did, int flags)
 {
 	union pkvm_hc_data d = { 0 };
 	struct pasid_setup_fl_data *data = &d.iommu_pasid_setup_fl.in;
@@ -236,7 +236,6 @@ int pkvm_pasid_setup_fl(struct device_domain_info *info, phys_addr_t fsptptr,
 	data->pasid = pasid;
 	data->flags = flags;
 	data->did = did;
-	data->old_did = old_did;
 	data->bus = info->bus;
 	data->devfn = info->devfn;
 	data->ats_qdep = info->ats_qdep;
@@ -264,7 +263,7 @@ int pkvm_pasid_setup_fl(struct device_domain_info *info, phys_addr_t fsptptr,
 }
 
 int pkvm_pasid_setup_sl(struct device_domain_info *info, phys_addr_t ssptptr,
-			u32 pasid, u16 did, u16 old_did)
+			u32 pasid, u16 did)
 {
 	union pkvm_hc_data d = { 0 };
 	struct pasid_setup_sl_data *data = &d.iommu_pasid_setup_sl.in;
@@ -275,7 +274,6 @@ int pkvm_pasid_setup_sl(struct device_domain_info *info, phys_addr_t ssptptr,
 	data->ssptptr_gpa = ssptptr;
 	data->pasid = pasid;
 	data->did = did;
-	data->old_did = old_did;
 	data->bus = info->bus;
 	data->devfn = info->devfn;
 	data->ats_qdep = info->ats_qdep;

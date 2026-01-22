@@ -286,16 +286,11 @@ static int iommu_pasid_setup_fl(struct pasid_setup_fl_data *data)
 	if (ret)
 		return ret;
 
-	pkvm_dbg("%s: dev[%x:%x], pasid: %x, fsptptr_gpa: %llx, did: %d, old_did: %d\n", __func__,
-		 data->bus, data->devfn, data->pasid, data->fsptptr_gpa, data->did, data->old_did);
-	if (!data->old_did) {
-		return intel_pasid_setup_first_level(iommu, &dev, fsptptr,
-						     data->pasid, data->did,
-						     data->flags);
-	}
-	return intel_pasid_replace_first_level(iommu, &dev, fsptptr,
-					       data->pasid, data->did,
-					       data->old_did, data->flags);
+	pkvm_dbg("%s: dev[%x:%x], pasid: %x, fsptptr_gpa: %llx, did: %d\n", __func__,
+		 data->bus, data->devfn, data->pasid, data->fsptptr_gpa, data->did);
+
+	return intel_pasid_setup_first_level(iommu, &dev, fsptptr,
+					     data->pasid, data->did, data->flags);
 }
 
 int pkvm_iommu_pasid_setup_fl(struct pasid_setup_fl_data *in, struct pasid_setup_fl_data *out)
@@ -360,15 +355,11 @@ static int iommu_pasid_setup_sl(struct pasid_setup_sl_data *data)
 	if (ret)
 		return ret;
 
-	pkvm_dbg("%s: dev[%x:%x], pasid: %x ssptptr_gpa: %llx, did: %d, old_did: %d\n", __func__,
-		 data->bus, data->devfn, data->pasid, data->ssptptr_gpa, data->did, data->old_did);
-	if (!data->old_did) {
-		return intel_pasid_setup_second_level(iommu, &domain, &dev,
-						      data->did, data->pasid);
-	}
-	return intel_pasid_replace_second_level(iommu, &domain, &dev,
-						data->did, data->old_did,
-						data->pasid);
+	pkvm_dbg("%s: dev[%x:%x], pasid: %x ssptptr_gpa: %llx, did: %d\n", __func__,
+		 data->bus, data->devfn, data->pasid, data->ssptptr_gpa, data->did);
+
+	return intel_pasid_setup_second_level(iommu, &domain, &dev,
+					      data->did, data->pasid);
 }
 
 int pkvm_iommu_pasid_setup_sl(struct pasid_setup_sl_data *in, struct pasid_setup_sl_data *out)
