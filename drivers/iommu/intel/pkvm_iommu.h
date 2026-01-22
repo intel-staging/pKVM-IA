@@ -121,9 +121,9 @@ int pkvm_context_mapping(struct intel_iommu *iommu, struct device_domain_info *i
 int pkvm_pasid_table_setup(struct intel_iommu *iommu, struct device_domain_info *info,
 			   u8 bus, u8 devfn);
 int pkvm_pasid_setup_fl(struct device_domain_info *info, phys_addr_t fsptptr,
-			u32 pasid, u16 did, u16 old_did, int flags);
+			u32 pasid, u16 did, int flags);
 int pkvm_pasid_setup_sl(struct device_domain_info *info, phys_addr_t ssptptr,
-			u32 pasid, u16 did, u16 old_did);
+			u32 pasid, u16 did);
 int pkvm_pasid_teardown(struct device_domain_info *info, u32 pasid);
 int pkvm_alloc_domain(struct device_domain_info *info, struct dmar_domain *domain);
 int pkvm_free_domain(struct dmar_domain *domain);
@@ -261,13 +261,13 @@ static inline int pkvm_pasid_table_setup(struct intel_iommu *iommu,
 }
 static inline int pkvm_pasid_setup_fl(struct device_domain_info *info,
 				      phys_addr_t fsptptr, u32 pasid,
-				      u16 did, u16 old_did, int flags)
+				      u16 did, int flags)
 {
 	return -EOPNOTSUPP;
 }
 static inline int pkvm_pasid_setup_sl(struct device_domain_info *info,
 				      phys_addr_t ssptptr, u32 pasid,
-				      u16 did, u16 old_did)
+				      u16 did)
 {
 	return -EOPNOTSUPP;
 }

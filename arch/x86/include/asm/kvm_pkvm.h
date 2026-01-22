@@ -98,7 +98,6 @@ struct pasid_setup_fl_data {
 	u32 pasid;
 	u32 flags;
 	u16 did;
-	u16 old_did; /* replace_fl */
 	u8 bus;
 	u8 devfn;
 	u8 ats_qdep;
@@ -111,7 +110,6 @@ struct pasid_setup_sl_data {
 	u64 donation_page_gpa;
 	u32 pasid;
 	u16 did;
-	u16 old_did; /* replace_sl */
 	u8 bus;
 	u8 devfn;
 	u8 ats_qdep;
