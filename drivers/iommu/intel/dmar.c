@@ -31,7 +31,14 @@
 #include <asm/irq_remapping.h>
 #include <asm/kvm_host.h>
 
+#ifdef __PKVM_HYP__
+#include <asm/pkvm_spinlock.h>
+#include "memory.h"
+#include "debug.h"
+#endif
+
 #include "iommu.h"
+#ifndef __PKVM_HYP__
 #include "../irq_remapping.h"
 #include "../iommu-pages.h"
 #include "perf.h"
@@ -1219,6 +1226,7 @@ static void free_iommu(struct intel_iommu *iommu)
 	ida_free(&dmar_seq_ids, iommu->seq_id);
 	kfree(iommu);
 }
+#endif /* !__PKVM_HYP__ */
 
 /*
  * Reclaim all the submitted descriptors which have completed its work.
@@ -1292,7 +1300,9 @@ static int qi_check_fault(struct intel_iommu *iommu, int index, int wait_index)
 {
 	u32 fault;
 	int head, tail;
+#ifndef __PKVM_HYP__
 	struct device *dev;
+#endif
 	u64 iqe_err, ite_sid;
 	struct q_inval *qi = iommu->qi;
 	int shift = qi_shift(iommu);
@@ -1354,6 +1364,7 @@ static int qi_check_fault(struct intel_iommu *iommu, int index, int wait_index)
 			head = (head - 2 + QI_LENGTH) % QI_LENGTH;
 		} while (head != tail);
 
+#ifndef __PKVM_HYP__
 		/*
 		 * If device was released or isn't present, no need to retry
 		 * the ATS invalidate request anymore.
@@ -1367,6 +1378,7 @@ static int qi_check_fault(struct intel_iommu *iommu, int index, int wait_index)
 			    !pci_device_is_present(to_pci_dev(dev)))
 				return -ETIMEDOUT;
 		}
+#endif
 		if (qi->desc_status[wait_index] == QI_ABORT)
 			return -EAGAIN;
 	}
@@ -1379,6 +1391,22 @@ static int qi_check_fault(struct intel_iommu *iommu, int index, int wait_index)
 	return 0;
 }
 
+#ifndef __PKVM_HYP__
+#define qi_lock(qi) raw_spin_lock(&(qi)->q_lock)
+#define qi_unlock(qi) raw_spin_unlock(&(qi)->q_lock)
+#define qi_lock_irqsave(qi, flags) raw_spin_lock_irqsave(&(qi)->q_lock, flags)
+#define qi_unlock_irqrestore(qi, flags) raw_spin_unlock_irqrestore(&(qi)->q_lock, flags)
+#else
+#define qi_lock(qi) pkvm_spin_lock(&(qi)->q_lock)
+#define qi_unlock(qi) pkvm_spin_unlock(&(qi)->q_lock)
+#define qi_lock_irqsave(qi, flags) qi_lock(qi)
+#define qi_unlock_irqrestore(qi, flags) qi_unlock(qi)
+
+#define trace_qi_submit(a1, a2, a3, a4, a5)
+#undef virt_to_phys
+#define virt_to_phys(ptr) __pkvm_pa(ptr)
+#endif
+
 /*
  * Function to submit invalidation descriptors of all types to the queued
  * invalidation interface(QI). Multiple descriptors can be submitted at a
@@ -1390,19 +1418,26 @@ int qi_submit_sync(struct intel_iommu *iommu, struct qi_desc *desc,
 		   unsigned int count, unsigned long options)
 {
 	struct q_inval *qi = iommu->qi;
+#ifndef __PKVM_HYP__
 	s64 devtlb_start_ktime = 0;
 	s64 iotlb_start_ktime = 0;
 	s64 iec_start_ktime = 0;
+#endif
 	struct qi_desc wait_desc;
 	int wait_index, index;
+#ifndef __PKVM_HYP__
 	unsigned long flags;
+#endif
 	int offset, shift;
 	int rc, i;
+#ifndef __PKVM_HYP__
 	u64 type;
+#endif
 
 	if (!qi)
 		return 0;
 
+#ifndef __PKVM_HYP__
 	type = desc->qw0 & GENMASK_ULL(3, 0);
 
 	if ((type == QI_IOTLB_TYPE || type == QI_EIOTLB_TYPE) &&
@@ -1416,20 +1451,21 @@ int qi_submit_sync(struct intel_iommu *iommu, struct qi_desc *desc,
 	if (type == QI_IEC_TYPE &&
 	    dmar_latency_enabled(iommu, DMAR_LATENCY_INV_IEC))
 		iec_start_ktime = ktime_to_ns(ktime_get());
+#endif /* !__PKVM_HYP__ */
 
 restart:
 	rc = 0;
 
-	raw_spin_lock_irqsave(&qi->q_lock, flags);
+	qi_lock_irqsave(qi, flags);
 	/*
 	 * Check if we have enough empty slots in the queue to submit,
 	 * the calculation is based on:
 	 * # of desc + 1 wait desc + 1 space between head and tail
 	 */
 	while (qi->free_cnt < count + 2) {
-		raw_spin_unlock_irqrestore(&qi->q_lock, flags);
+		qi_unlock_irqrestore(qi, flags);
 		cpu_relax();
-		raw_spin_lock_irqsave(&qi->q_lock, flags);
+		qi_lock_irqsave(qi, flags);
 	}
 
 	index = qi->free_head;
@@ -1477,9 +1513,9 @@ restart:
 		if (rc)
 			break;
 
-		raw_spin_unlock(&qi->q_lock);
+		qi_unlock(qi);
 		cpu_relax();
-		raw_spin_lock(&qi->q_lock);
+		qi_lock(qi);
 	}
 
 	/*
@@ -1494,11 +1530,12 @@ restart:
 		qi->desc_status[(index + i) % QI_LENGTH] = QI_FREE;
 
 	reclaim_free_desc(qi);
-	raw_spin_unlock_irqrestore(&qi->q_lock, flags);
+	qi_unlock_irqrestore(qi, flags);
 
 	if (rc == -EAGAIN)
 		goto restart;
 
+#ifndef __PKVM_HYP__
 	if (iotlb_start_ktime)
 		dmar_latency_update(iommu, DMAR_LATENCY_INV_IOTLB,
 				ktime_to_ns(ktime_get()) - iotlb_start_ktime);
@@ -1510,6 +1547,7 @@ restart:
 	if (iec_start_ktime)
 		dmar_latency_update(iommu, DMAR_LATENCY_INV_IEC,
 				ktime_to_ns(ktime_get()) - iec_start_ktime);
+#endif
 
 	return rc;
 }
@@ -1564,8 +1602,13 @@ void qi_flush_dev_iotlb(struct intel_iommu *iommu, u16 sid, u16 pfsid,
 	 * Software is recommended to not submit any Device-TLB invalidation
 	 * requests while address remapping hardware is disabled.
 	 */
+#ifndef __PKVM_HYP__
 	if (!(iommu->gcmd & DMA_GCMD_TE))
 		return;
+#else
+	if (!(iommu->vgsts & DMA_GSTS_TES))
+		return;
+#endif
 
 	qi_desc_dev_iotlb(sid, pfsid, qdep, addr, mask, &desc);
 	qi_submit_sync(iommu, &desc, 1, 0);
@@ -1603,8 +1646,13 @@ void qi_flush_dev_iotlb_pasid(struct intel_iommu *iommu, u16 sid, u16 pfsid,
 	 * Software is recommended to not submit any Device-TLB invalidation
 	 * requests while address remapping hardware is disabled.
 	 */
+#ifndef __PKVM_HYP__
 	if (!(iommu->gcmd & DMA_GCMD_TE))
 		return;
+#else
+	if (!(iommu->vgsts & DMA_GSTS_TES))
+		return;
+#endif
 
 	qi_desc_dev_iotlb_pasid(sid, pfsid, pasid,
 				qdep, addr, size_order,
@@ -1622,6 +1670,7 @@ void qi_flush_pasid_cache(struct intel_iommu *iommu, u16 did,
 	qi_submit_sync(iommu, &desc, 1, 0);
 }
 
+#ifndef __PKVM_HYP__
 /*
  * Disable Queued Invalidation interface.
  */
@@ -2418,3 +2467,4 @@ bool dmar_platform_optin(void)
 	return ret;
 }
 EXPORT_SYMBOL_GPL(dmar_platform_optin);
+#endif /* !__PKVM_HYP__ */
