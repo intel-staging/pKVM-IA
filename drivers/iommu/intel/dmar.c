@@ -1438,6 +1438,9 @@ int qi_submit_sync(struct intel_iommu *iommu, struct qi_desc *desc,
 		return 0;
 
 #ifndef __PKVM_HYP__
+	if (pkvm_enabled())
+		return pv_qi_submit_sync(iommu, desc, count, options);
+
 	type = desc->qw0 & GENMASK_ULL(3, 0);
 
 	if ((type == QI_IOTLB_TYPE || type == QI_EIOTLB_TYPE) &&

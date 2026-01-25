@@ -32,7 +32,7 @@ unsigned int iommu_pglvl_mask = IOMMU_PGT_4LEVEL | IOMMU_PGT_5LEVEL;
 static struct intel_iommu iommus[PKVM_MAX_IOMMU_NUM];
 static int nr_iommus;
 
-static struct intel_iommu *iommu_from_phys(unsigned long phys)
+struct intel_iommu *iommu_from_phys(unsigned long phys)
 {
 	int i;
 
@@ -112,13 +112,16 @@ static int handle_gcmd_direct(struct intel_iommu *iommu, u32 gcmd_bit, bool set)
 
 static int initialize_qi(struct intel_iommu *iommu)
 {
+	u64 desc_sz = ecap_smts(iommu->ecap) ? SZ_8K : SZ_4K;
 	struct q_inval *qi = iommu->qi;
 	u64 val = __pkvm_pa(qi->desc);
+	int ret;
 
-	/*
-	 * TODO: Write protect QI descriptor page once we have
-	 *       hypervisor take care of all QI logic.
-	 */
+	ret = pkvm_host_donate_hyp_share_ro(val, desc_sz, true);
+	if (ret) {
+		pkvm_err("iommu%d: failed to write protect QI desc!\n", iommu->seq_id);
+		return ret;
+	}
 
 	iommu->flush.flush_context = qi_flush_context;
 	iommu->flush.flush_iotlb = qi_flush_iotlb;
@@ -267,6 +270,8 @@ static int pkvm_iommu_mmio_write(u64 phys, int len, u64 val)
 	case DMAR_ECAP_REG:
 		fallthrough;
 	case DMAR_GSTS_REG:
+		fallthrough;
+	case DMAR_IQH_REG:
 		ret = -EINVAL;
 		break;
 	case DMAR_GCMD_REG:
@@ -281,6 +286,13 @@ static int pkvm_iommu_mmio_write(u64 phys, int len, u64 val)
 			iommu->viqa = val;
 		}
 		break;
+	case DMAR_IQT_REG:
+		if (iommu->qi) {
+			pkvm_err("iommu%d: write to IQT not allowed!\n",
+				 iommu->seq_id);
+			return -EPERM;
+		}
+		break;
 	default:
 		/* Not emulated MMIO can directly go to hardware */
 		ret = iommu_direct_mmio_write(iommu, phys, len, val);
@@ -292,7 +304,20 @@ static int pkvm_iommu_mmio_write(u64 phys, int len, u64 val)
 
 static int pkvm_handle_iommu_hypercall(void *in, void *out)
 {
-	return 0;
+	struct iommu_hc_data *data_in = (struct iommu_hc_data *)in;
+	int ret;
+
+	switch (data_in->hc_num) {
+	case qi_submit:
+		ret = pkvm_iommu_qi_submit(&data_in->qi_submit);
+		break;
+	default:
+		pkvm_err("Invalid hypercall: %d\n", data_in->hc_num);
+		ret = -EINVAL;
+	}
+
+	*(struct iommu_hc_data *)out = *data_in;
+	return ret;
 }
 
 struct pkvm_iommu_ops iommu_ops = {

@@ -24,7 +24,12 @@ struct intel_iommu_info {
 	int msagaw;
 };
 
+struct qi_desc;
+struct intel_iommu;
+
 #ifdef CONFIG_PKVM_INTEL
+#include "pkvm/iommu_hc.h"
+
 extern unsigned int pkvm_sym(iommu_pglvl_mask);
 extern unsigned int pkvm_sym(iommu_pgsz_mask);
 
@@ -75,6 +80,9 @@ static inline void pkvm_writel(void __iomem *reg, unsigned long reg_phys,
 
 int __init pkvm_host_prepare_iommu(void);
 int __init pkvm_host_init_iommu(void);
+
+int pv_qi_submit_sync(struct intel_iommu *iommu, struct qi_desc *desc,
+		      unsigned int count, unsigned long options);
 #else /* __PKVM_HYP__ */
 static inline bool iommu_supports_2m_page(void)
 {
@@ -91,7 +99,15 @@ static inline bool iommu_supports_5levels(void)
 	return iommu_pglvl_mask & IOMMU_PGT_5LEVEL;
 }
 
+struct intel_iommu *iommu_from_phys(unsigned long phys);
 int pkvm_intel_iommu_init(void);
 #endif /* !__PKVM_HYP__ */
+#else /* !CONFIG_PKVM_INTEL */
+static inline int pv_qi_submit_sync(struct intel_iommu *iommu,
+				    struct qi_desc *desc, unsigned int count,
+				    unsigned long options)
+{
+	return -EOPNOTSUPP;
+}
 #endif /* CONFIG_PKVM_INTEL */
 #endif /* _PKVM_INTEL_IOMMU_H_ */
