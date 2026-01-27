@@ -6556,7 +6556,6 @@ static int handle_apic_write(struct kvm_vcpu *vcpu)
 #endif
 }
 
-#ifndef __PKVM_HYP__
 static int handle_task_switch(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
@@ -6565,6 +6564,18 @@ static int handle_task_switch(struct kvm_vcpu *vcpu)
 	u32 error_code = 0;
 	u16 tss_selector;
 	int reason, type, idt_v, idt_index;
+
+#ifdef __PKVM_HYP__
+	/*
+	 * The pKVM hypervisor doesn't have instruction emulation thus cannot
+	 * emulate the task switch. So handle the EXIT_REASON_TASK_SWITCH for
+	 * the pVM by injecting #GP.
+	 */
+	if (pkvm_is_protected_vcpu(vcpu)) {
+		kvm_inject_gp(vcpu, 0);
+		return 1;
+	}
+#endif
 
 	idt_v = (vmx->idt_vectoring_info & VECTORING_INFO_VALID_MASK);
 	idt_index = (vmx->idt_vectoring_info & VECTORING_INFO_VECTOR_MASK);
@@ -6605,6 +6616,7 @@ static int handle_task_switch(struct kvm_vcpu *vcpu)
 		       type != INTR_TYPE_NMI_INTR))
 		WARN_ON(!skip_emulated_instruction(vcpu));
 
+#ifndef __PKVM_HYP__
 	/*
 	 * TODO: What about debug traps on tss switch?
 	 *       Are we supposed to inject them and update dr6?
@@ -6612,8 +6624,16 @@ static int handle_task_switch(struct kvm_vcpu *vcpu)
 	return kvm_task_switch(vcpu, tss_selector,
 			       type == INTR_TYPE_SOFT_INTR ? idt_index : -1,
 			       reason, has_error_code, error_code);
+#else
+	/*
+	 * Switch to the host and let the host to emulate the task switch
+	 * for the npVMs.
+	 */
+	return 0;
+#endif
 }
 
+#ifndef __PKVM_HYP__
 static int handle_ept_violation(struct kvm_vcpu *vcpu)
 {
 	unsigned long exit_qualification = vmx_get_exit_qual(vcpu);
@@ -7057,8 +7077,8 @@ static int (*kvm_vmx_exit_handlers[])(struct kvm_vcpu *vcpu) = {
 	[EXIT_REASON_WBINVD]                  = kvm_emulate_wbinvd,
 #endif
 	[EXIT_REASON_XSETBV]                  = kvm_emulate_xsetbv,
-#ifndef __PKVM_HYP__
 	[EXIT_REASON_TASK_SWITCH]             = handle_task_switch,
+#ifndef __PKVM_HYP__
 	[EXIT_REASON_MCE_DURING_VMENTRY]      = handle_machine_check,
 	[EXIT_REASON_GDTR_IDTR]		      = handle_desc,
 	[EXIT_REASON_LDTR_TR]		      = handle_desc,
@@ -10005,6 +10025,19 @@ static void share_nonprotected_vcpu_state(struct kvm_vcpu *vcpu,
 		/* For the host to skip the instruction for certain exit reasons */
 		shared_vcpu->arch.event_exit_inst_len = vmcs_read32(VM_EXIT_INSTRUCTION_LEN);
 		break;
+	case EXIT_REASON_TASK_SWITCH: {
+		u32 idt_vectoring_info = to_vmx(vcpu)->idt_vectoring_info;
+
+		if (((u32)vmx_get_exit_qual(vcpu) >> 30) == TASK_SWITCH_GATE &&
+		    (idt_vectoring_info & VECTORING_INFO_VALID_MASK) &&
+		    (idt_vectoring_info & VECTORING_INFO_TYPE_MASK) == INTR_TYPE_HARD_EXCEPTION) {
+			if (idt_vectoring_info & VECTORING_INFO_DELIVER_CODE_MASK)
+				to_vmx(shared_vcpu)->error_code =
+					vmcs_read32(IDT_VECTORING_ERROR_CODE);
+		}
+
+		break;
+	}
 	default:
 		break;
 	}
