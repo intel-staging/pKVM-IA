@@ -9,4 +9,6 @@ unsigned int debug_smp_processor_id(void)
 {
 	return raw_smp_processor_id();
 }
+
+void __this_cpu_preempt_check(const char *op) {}
 #endif
