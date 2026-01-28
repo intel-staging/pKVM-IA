@@ -9701,6 +9701,18 @@ void pkvm_vmx_prepare_switch_to_host(struct kvm_vcpu *vcpu)
 
 static void pkvm_vmx_update_vcpu_state_from_host(struct kvm_vcpu *vcpu)
 {
+	struct kvm_vcpu *shared_vcpu = to_pkvm_vcpu(vcpu)->shared_vcpu;
+	struct vcpu_vmx *vmx = to_vmx(vcpu);
+
+	/*
+	 * The pKVM hypervisor relies on the preemption timer feature. Thus the
+	 * host may also request the pKVM hypervisor to use this feature to
+	 * emulate the guest timer. So need to sync the host's hv_deadline_tsc
+	 * to the pKVM unconditionally so that the pKVM hypervisor can properly
+	 * update the preemption timer for the guest.
+	 */
+	vmx->hv_deadline_tsc = to_vmx(shared_vcpu)->hv_deadline_tsc;
+
 	/*
 	 * TODO: Update vcpu state according to the vmexit reason handled by
 	 * the host.
