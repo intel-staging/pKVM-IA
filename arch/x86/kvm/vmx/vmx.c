@@ -6688,6 +6688,7 @@ static int handle_pml_full(struct kvm_vcpu *vcpu)
 	 */
 	return 1;
 }
+#endif /* !__PKVM_HYP__ */
 
 static fastpath_t handle_fastpath_preemption_timer(struct kvm_vcpu *vcpu,
 						   bool force_immediate_exit)
@@ -6709,6 +6710,7 @@ static fastpath_t handle_fastpath_preemption_timer(struct kvm_vcpu *vcpu,
 	if (force_immediate_exit)
 		return EXIT_FASTPATH_EXIT_HANDLED;
 
+#ifndef __PKVM_HYP__
 	/*
 	 * If L2 is active, go down the slow path as emulating the guest timer
 	 * expiration likely requires synthesizing a nested VM-Exit.
@@ -6718,8 +6720,12 @@ static fastpath_t handle_fastpath_preemption_timer(struct kvm_vcpu *vcpu,
 
 	kvm_lapic_expired_hv_timer(vcpu);
 	return EXIT_FASTPATH_REENTER_GUEST;
+#else
+	return EXIT_FASTPATH_NONE;
+#endif
 }
 
+#ifndef __PKVM_HYP__
 static int handle_preemption_timer(struct kvm_vcpu *vcpu)
 {
 	/*
@@ -7990,8 +7996,10 @@ static fastpath_t vmx_exit_handlers_fastpath(struct kvm_vcpu *vcpu,
 	case EXIT_REASON_MSR_WRITE_IMM:
 		return handle_fastpath_wrmsr_imm(vcpu, vmx_get_exit_qual(vcpu),
 						 vmx_get_msr_imm_reg(vcpu));
+#endif
 	case EXIT_REASON_PREEMPTION_TIMER:
 		return handle_fastpath_preemption_timer(vcpu, force_immediate_exit);
+#ifndef __PKVM_HYP__
 	case EXIT_REASON_HLT:
 		return handle_fastpath_hlt(vcpu);
 	case EXIT_REASON_INVD:
