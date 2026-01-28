@@ -9586,6 +9586,31 @@ void pkvm_vmx_prepare_switch_to_host(struct kvm_vcpu *vcpu)
 	vmx_prepare_switch_to_host(to_vmx(vcpu));
 }
 
+static void update_protected_vcpu_state(struct kvm_vcpu *vcpu,
+					struct kvm_vcpu *shared_vcpu)
+{
+	switch (vmx_get_exit_reason(vcpu).basic) {
+	case EXIT_REASON_IO_INSTRUCTION: {
+		unsigned long exit_qual = vmx_get_exit_qual(vcpu);
+
+		/* Only need to update RAX for the input data (IN) */
+		if ((exit_qual & 8) != 0) {
+			unsigned int size = (exit_qual & 7) + 1;
+			unsigned long val = (size < 4) ? kvm_rax_read(vcpu) : 0;
+			unsigned long host_rax = shared_vcpu->arch.regs[VCPU_REGS_RAX];
+
+			memcpy(&val, &host_rax, size);
+			kvm_rax_write(vcpu, val);
+		}
+
+		WARN_ON_ONCE(kvm_skip_emulated_instruction(vcpu) != 1);
+		break;
+	}
+	default:
+		break;
+	}
+}
+
 static void pkvm_vmx_update_vcpu_state_from_host(struct kvm_vcpu *vcpu)
 {
 	struct kvm_vcpu *shared_vcpu = to_pkvm_vcpu(vcpu)->shared_vcpu;
@@ -9600,10 +9625,11 @@ static void pkvm_vmx_update_vcpu_state_from_host(struct kvm_vcpu *vcpu)
 	 */
 	vmx->hv_deadline_tsc = to_vmx(shared_vcpu)->hv_deadline_tsc;
 
-	/*
-	 * TODO: Update vcpu state according to the vmexit reason handled by
-	 * the host.
-	 */
+	if (pkvm_is_protected_vcpu(vcpu) &&
+	    pkvm_has_req_to_host(HOST_HANDLE_EXIT, vcpu) &&
+	    !vmx_get_exit_reason(vcpu).failed_vmentry &&
+	    !vmx->fail)
+		update_protected_vcpu_state(vcpu, shared_vcpu);
 }
 
 static void share_nonprotected_vcpu_state(struct kvm_vcpu *vcpu,
