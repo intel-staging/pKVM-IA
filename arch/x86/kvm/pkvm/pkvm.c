@@ -507,6 +507,16 @@ static int postponed_per_vm_setup(struct kvm *kvm)
 		kvm->arch.bus_lock_detection_enabled =
 			!!READ_ONCE(*(u8 *)&shared_kvm->arch.bus_lock_detection_enabled);
 
+	if (kvm_caps.has_notify_vmexit) {
+		u32 notify_vmexit_flags = READ_ONCE(shared_kvm->arch.notify_vmexit_flags);
+
+		if (notify_vmexit_flags & ~KVM_X86_NOTIFY_VMEXIT_VALID_BITS)
+			return -EINVAL;
+
+		kvm->arch.notify_vmexit_flags = notify_vmexit_flags;
+		kvm->arch.notify_window = shared_kvm->arch.notify_window;
+	}
+
 	pkvm_vm->postponed_setup_done = true;
 	return 0;
 }

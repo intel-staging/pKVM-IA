@@ -144,9 +144,6 @@ EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_host);
 #define KVM_BUS_LOCK_DETECTION_VALID_MODE	(KVM_BUS_LOCK_DETECTION_OFF | \
 						 KVM_BUS_LOCK_DETECTION_EXIT)
 
-#define KVM_X86_NOTIFY_VMEXIT_VALID_BITS	(KVM_X86_NOTIFY_VMEXIT_ENABLED | \
-						 KVM_X86_NOTIFY_VMEXIT_USER)
-
 static void process_nmi(struct kvm_vcpu *vcpu);
 static void store_regs(struct kvm_vcpu *vcpu);
 static int sync_regs(struct kvm_vcpu *vcpu);

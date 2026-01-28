@@ -50,6 +50,9 @@
 	(KVM_X86_QUIRK_CD_NW_CLEARED |		\
 	 KVM_X86_QUIRK_IGNORE_GUEST_PAT)
 
+#define KVM_X86_NOTIFY_VMEXIT_VALID_BITS	(KVM_X86_NOTIFY_VMEXIT_ENABLED | \
+						 KVM_X86_NOTIFY_VMEXIT_USER)
+
 int kvm_x86_vendor_init(struct kvm_x86_init_ops *ops);
 void kvm_x86_vendor_exit(void);
 
