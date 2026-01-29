@@ -231,3 +231,62 @@ int pkvm_iommu_set_sm_ce(struct set_sm_ce_data *in, struct set_sm_ce_data *out)
 	*out = *in;
 	return ret;
 }
+
+static int iommu_pasid_setup_fl(struct pasid_setup_fl_data *data)
+{
+	struct intel_iommu *iommu = iommu_from_phys(data->phys);
+	u16 bdf = PCI_DEVID(data->bus, data->devfn);
+	struct device_domain_info info = { 0 };
+	struct pkvm_device dev = { .info = &info };
+	u64 fsptptr;
+	int ret;
+
+	if (!iommu)
+		return -EINVAL;
+
+	if (data->ats_qdep > PCI_ATS_MAX_QDEP)
+		return -EINVAL;
+
+	if (is_dev_in_satc(bdf)) {
+		if (ecap_dit(iommu->ecap))
+			info.pfsid = bdf;
+	} else if (data->ats_supported || data->ats_enabled) {
+		return -EPERM;
+	}
+
+	if (data->did == FLPT_DEFAULT_DID) {
+		pkvm_err("%s: First-level setup not allowed for default domain\n", __func__);
+		return -EPERM;
+	}
+
+	fsptptr = pkvm_host_gpa_to_phys(data->fsptptr_gpa);
+	info.bus = data->bus;
+	info.devfn = data->devfn;
+	info.ats_qdep = data->ats_qdep;
+	info.ats_enabled = data->ats_enabled;
+	info.ats_supported = data->ats_supported;
+	info.iommu = iommu;
+
+	ret = accept_page_donation(iommu, &data->donation_page_gpa);
+	if (ret)
+		return ret;
+
+	pkvm_dbg("%s: dev[%x:%x], pasid: %x, fsptptr_gpa: %llx, did: %d, old_did: %d\n", __func__,
+		 data->bus, data->devfn, data->pasid, data->fsptptr_gpa, data->did, data->old_did);
+	if (!data->old_did) {
+		return intel_pasid_setup_first_level(iommu, &dev, fsptptr,
+						     data->pasid, data->did,
+						     data->flags);
+	}
+	return intel_pasid_replace_first_level(iommu, &dev, fsptptr,
+					       data->pasid, data->did,
+					       data->old_did, data->flags);
+}
+
+int pkvm_iommu_pasid_setup_fl(struct pasid_setup_fl_data *in, struct pasid_setup_fl_data *out)
+{
+	int ret = iommu_pasid_setup_fl(in);
+
+	*out = *in;
+	return ret;
+}
