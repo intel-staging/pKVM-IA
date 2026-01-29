@@ -471,6 +471,19 @@ static int postponed_per_vm_setup(struct kvm *kvm)
 	if (!pkvm_is_protected_vm(kvm))
 		kvm->arch.disabled_quirks |= disabled_quirks;
 
+	if (!pkvm_is_protected_vm(kvm)) {
+		u64 disabled_exits = READ_ONCE(shared_kvm->arch.disabled_exits);
+
+		if (disabled_exits & ~(KVM_X86_DISABLE_EXITS_MWAIT |
+				       KVM_X86_DISABLE_EXITS_HLT |
+				       KVM_X86_DISABLE_EXITS_PAUSE |
+				       KVM_X86_DISABLE_EXITS_CSTATE |
+				       KVM_X86_DISABLE_EXITS_APERFMPERF))
+			return -EINVAL;
+
+		kvm->arch.disabled_exits = disabled_exits;
+	}
+
 	pkvm_vm->postponed_setup_done = true;
 	return 0;
 }
