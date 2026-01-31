@@ -142,7 +142,6 @@ int pkvm_context_clear(u64 phys, u8 bus, u8 devfn, struct device_domain_info *in
 	data->devfn = devfn;
 	data->ats_qdep = info->ats_qdep;
 	data->ats_supported = info->ats_supported;
-	data->ats_enabled = info->ats_enabled;
 
 	return pkvm_hypercall_in(iommu_clear_ce, &d);
 }
@@ -161,7 +160,6 @@ int pkvm_context_mapping(struct intel_iommu *iommu, struct device_domain_info *i
 	data->devfn = devfn;
 	data->ats_qdep = info ? info->ats_qdep : 0;
 	data->ats_supported = info ? info->ats_supported : 0;
-	data->ats_enabled = info ? info->ats_enabled : 0;
 
 	spin_lock(&iommu->lock);
 	ret = pkvm_hypercall_inout(iommu_set_lm_ce, &d, &d);
@@ -203,7 +201,6 @@ int pkvm_pasid_table_setup(struct intel_iommu *iommu, struct device_domain_info 
 	data->pasid_supported = info->pasid_supported;
 	data->pasid_enabled = info->pasid_enabled;
 	data->ats_supported = info->ats_supported;
-	data->ats_enabled = info->ats_enabled;
 	data->ats_qdep = info->ats_qdep;
 
 	spin_lock(&iommu->lock);
@@ -245,7 +242,6 @@ int pkvm_pasid_setup_fl(struct device_domain_info *info, phys_addr_t fsptptr,
 	data->bus = info->bus;
 	data->devfn = info->devfn;
 	data->ats_qdep = info->ats_qdep;
-	data->ats_enabled = info->ats_enabled;
 	data->ats_supported = info->ats_supported;
 
 	spin_lock(&iommu->lock);
@@ -286,7 +282,6 @@ int pkvm_pasid_setup_sl(struct device_domain_info *info, phys_addr_t ssptptr,
 	data->devfn = info->devfn;
 	data->ats_qdep = info->ats_qdep;
 	data->ats_supported = info->ats_supported;
-	data->ats_enabled = info->ats_enabled;
 
 	spin_lock(&iommu->lock);
 	ret = pkvm_hypercall_inout(iommu_pasid_setup_sl, &d, &d);
@@ -320,7 +315,6 @@ int pkvm_pasid_teardown(struct device_domain_info *info, u32 pasid)
 	data->bus = info->bus;
 	data->devfn = info->devfn;
 	data->ats_qdep = info->ats_qdep;
-	data->ats_enabled = info->ats_enabled;
 	data->ats_supported = info->ats_supported;
 
 	return pkvm_hypercall_in(iommu_pasid_teardown, &d);
