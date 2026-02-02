@@ -1544,6 +1544,16 @@ int domain_context_mapping_one(struct dmar_domain *domain,
 #ifndef __PKVM_HYP__
 	copied_context_tear_down(iommu, context, bus, devfn);
 #endif
+
+#ifdef __PKVM_HYP__
+	ret = pkvm_get_domain_cache_tag_assign(pgd, did,
+					       IOMMU_NO_PASID, info);
+	if (ret) {
+		pr_err("iommu%d: failed to get the domain for pgd: %p\n",
+		       iommu->seq_id, pgd);
+		goto out_unlock;
+	}
+#endif
 	context_clear_entry(context);
 	context_set_domain_id(context, did);
 
@@ -1795,6 +1805,7 @@ void domain_context_clear_one(struct device_domain_info *info, u8 bus, u8 devfn)
 	struct pasid_dir_entry *pasid_dir = NULL;
 	bool sm = sm_supported(iommu);
 	u64 pasid_dir_sz;
+	void *pgd = NULL;
 #endif
 	u16 did;
 
@@ -1821,6 +1832,8 @@ void domain_context_clear_one(struct device_domain_info *info, u8 bus, u8 devfn)
 		if (sm) {
 			pasid_dir = __pkvm_va(context->lo & VTD_PAGE_MASK);
 			pasid_dir_sz = get_pasid_dir_size(context);
+		} else {
+			pgd = __pkvm_va(context->lo & VTD_PAGE_MASK);
 		}
 	} else {
 		WARN_ON(context->lo & VTD_PAGE_MASK);
@@ -1836,6 +1849,9 @@ void domain_context_clear_one(struct device_domain_info *info, u8 bus, u8 devfn)
 #ifdef __PKVM_HYP__
 	if (pasid_dir)
 		pasid_free_table(pasid_dir, pasid_dir_sz);
+	else if (pgd)
+		pkvm_put_domain_cache_tag_unassign(pgd, did,
+						   IOMMU_NO_PASID, info);
 #endif
 }
 
