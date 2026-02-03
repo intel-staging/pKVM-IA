@@ -5612,9 +5612,11 @@ static int handle_exception_nmi(struct kvm_vcpu *vcpu)
 #endif
 	u32 intr_info, ex_no, error_code;
 	unsigned long dr6;
+#ifndef __PKVM_HYP__
 	u32 vect_info;
 
 	vect_info = vmx->idt_vectoring_info;
+#endif
 	intr_info = vmx_get_intr_info(vcpu);
 
 	/* The MC and NMI will be handled by the host. */
