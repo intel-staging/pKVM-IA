@@ -6235,10 +6235,14 @@ static int handle_task_switch(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 	unsigned long exit_qualification;
+#ifndef __PKVM_HYP__
 	bool has_error_code = false;
 	u32 error_code = 0;
 	u16 tss_selector;
 	int reason, type, idt_v, idt_index;
+#else
+	int reason, type, idt_v;
+#endif
 
 #ifdef __PKVM_HYP__
 	/*
@@ -6253,7 +6257,9 @@ static int handle_task_switch(struct kvm_vcpu *vcpu)
 #endif
 
 	idt_v = (vmx->idt_vectoring_info & VECTORING_INFO_VALID_MASK);
+#ifndef __PKVM_HYP__
 	idt_index = (vmx->idt_vectoring_info & VECTORING_INFO_VECTOR_MASK);
+#endif
 	type = (vmx->idt_vectoring_info & VECTORING_INFO_TYPE_MASK);
 
 	exit_qualification = vmx_get_exit_qual(vcpu);
@@ -6270,6 +6276,7 @@ static int handle_task_switch(struct kvm_vcpu *vcpu)
 			kvm_clear_interrupt_queue(vcpu);
 			break;
 		case INTR_TYPE_HARD_EXCEPTION:
+#ifndef __PKVM_HYP__
 			if (vmx->idt_vectoring_info &
 			    VECTORING_INFO_DELIVER_CODE_MASK) {
 				has_error_code = true;
@@ -6277,6 +6284,7 @@ static int handle_task_switch(struct kvm_vcpu *vcpu)
 					vmcs_read32(IDT_VECTORING_ERROR_CODE);
 			}
 			fallthrough;
+#endif
 		case INTR_TYPE_SOFT_EXCEPTION:
 			kvm_clear_exception_queue(vcpu);
 			break;
@@ -6284,7 +6292,9 @@ static int handle_task_switch(struct kvm_vcpu *vcpu)
 			break;
 		}
 	}
+#ifndef __PKVM_HYP__
 	tss_selector = exit_qualification;
+#endif
 
 	if (!idt_v || (type != INTR_TYPE_HARD_EXCEPTION &&
 		       type != INTR_TYPE_EXT_INTR &&
