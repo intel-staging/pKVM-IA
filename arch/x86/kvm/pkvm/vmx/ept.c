@@ -36,7 +36,17 @@ int pkvm_host_ept_level(void)
 
 static void *host_ept_zalloc_page(struct pkvm_memcache *mc)
 {
-	return pkvm_alloc_pages(&host_ept_pool, 0);
+	void *page = pkvm_alloc_pages(&host_ept_pool, 0);
+
+	/*
+	 * TODO: no need to flush cache if none of the
+	 * devices behind non-coherent IOMMUs are configured
+	 * for passthrough mode.
+	 */
+	if (page && !pkvm_iommu_paging_structure_coherency())
+		clflush_cache_range(page, PAGE_SIZE);
+
+	return page;
 }
 
 static void host_ept_get_page(void *vaddr)
@@ -162,6 +172,24 @@ static void ept_pte_set(void *ptep, u64 spte)
 	WRITE_ONCE(*(u64 *)ptep, spte);
 }
 
+static void host_ept_pte_set(void *ptep, u64 spte)
+{
+	ept_pte_set(ptep, spte);
+
+	/*
+	 * TODO: no need to flush cache if none of the
+	 * devices behind non-coherent IOMMUs are configured
+	 * for passthrough mode.
+	 */
+	if (!pkvm_iommu_paging_structure_coherency())
+		clflush_cache_range(ptep, sizeof(u64));
+}
+
+static void guest_ept_pte_set(void *ptep, u64 spte)
+{
+	ept_pte_set(ptep, spte);
+}
+
 static u64 ept_pte_get(void *ptep)
 {
 	return READ_ONCE(*(u64 *)ptep);
@@ -252,7 +280,7 @@ static const struct pkvm_pgtable_ops host_ept_pgt_ops = {
 	.pte_is_leaf = ept_pte_is_leaf,
 	.pte_size = ept_pte_size,
 	.pte_count = ept_pte_count,
-	.pte_set = ept_pte_set,
+	.pte_set = host_ept_pte_set,
 	.pte_get = ept_pte_get,
 	.flush_tlb = host_ept_flush_tlb,
 	.pte_mk_pgstate = ept_pte_mk_pgstate,
@@ -277,7 +305,7 @@ static const struct pkvm_pgtable_ops guest_ept_pgt_ops = {
 	.pte_is_leaf = ept_pte_is_leaf,
 	.pte_size = ept_pte_size,
 	.pte_count = ept_pte_count,
-	.pte_set = ept_pte_set,
+	.pte_set = guest_ept_pte_set,
 	.pte_get = ept_pte_get,
 	.flush_tlb = guest_ept_flush_tlb,
 	.pte_mk_pgstate = ept_pte_mk_pgstate,
