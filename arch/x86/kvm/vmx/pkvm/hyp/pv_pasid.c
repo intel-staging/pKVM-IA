@@ -260,6 +260,9 @@ out_unlock:
 					param.ats_qdep, 0, 64 - VTD_PAGE_SHIFT);
 	}
 
+	if (did == FLPT_DEFAULT_DID)
+		atomic_dec(&hyp_iommu->pt_cnt);
+
 	return 0;
 }
 
@@ -367,6 +370,8 @@ int pkvm_iommu_set_pasid_sl(u64 param_va)
 	}
 
 	if (param.did == FLPT_DEFAULT_DID) {
+		atomic_inc(&hyp_iommu->pt_cnt);
+
 		/*
 		 * Passthrough will break pkvm security guarantees as
 		 * device would be able to access the whole physical

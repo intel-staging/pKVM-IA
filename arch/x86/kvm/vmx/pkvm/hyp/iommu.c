@@ -1281,3 +1281,26 @@ int pkvm_iommu_iec_flush(u64 phys, bool global, u64 index, u64 mask)
 
 	return 0;
 }
+
+void pkvm_iommu_flush_iotlb_hostept(unsigned long addr, unsigned long size)
+{
+	struct pkvm_iommu *iommu;
+	struct qi_desc desc;
+	unsigned int size_order = ilog2(__roundup_pow_of_two(size >> VTD_PAGE_SHIFT));
+
+	addr = ALIGN_DOWN(addr, (1ULL << (VTD_PAGE_SHIFT + size_order)));
+	for_each_valid_iommu(iommu) {
+		if (!atomic_read(&iommu->pt_cnt))
+			continue;
+
+		if (cap_pgsel_inv(iommu->iommu.cap) &&
+		    size_order <= cap_max_amask_val(iommu->iommu.cap))
+			setup_iotlb_qi_desc(iommu, &desc, FLPT_DEFAULT_DID, addr, size_order,
+					DMA_TLB_PSI_FLUSH);
+		else
+			setup_iotlb_qi_desc(iommu, &desc, FLPT_DEFAULT_DID, 0, 0,
+					    DMA_TLB_DSI_FLUSH);
+
+		__submit_qi(iommu, &desc, 1);
+	}
+}

@@ -19,5 +19,6 @@ int pkvm_iommu_sync(u16 bdf, u32 pasid);
 #endif
 bool pkvm_iommu_coherency(u16 bdf, u32 pasid);
 void pkvm_iommu_flush_iotlb(struct pkvm_pgtable *pgt, unsigned long addr, unsigned long size);
+void pkvm_iommu_flush_iotlb_hostept(unsigned long addr, unsigned long size);
 
 #endif

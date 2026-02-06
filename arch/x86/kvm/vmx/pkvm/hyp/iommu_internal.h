@@ -41,6 +41,12 @@ struct pkvm_iommu {
 
 	/* Link ptdev information of this IOMMU */
 	struct list_head ptdev_head;
+
+	/*
+	 * Number of Context/Pasid entries configured
+	 * in pass-through mode from the host perspective
+	 */
+	atomic_t pt_cnt;
 };
 
 enum lm_level {
