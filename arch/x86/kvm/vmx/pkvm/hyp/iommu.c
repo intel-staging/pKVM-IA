@@ -1242,6 +1242,7 @@ void pkvm_iommu_flush_iotlb(struct pkvm_pgtable *pgt, unsigned long addr, unsign
 		iommu_put_page(data.desc);
 }
 
+#ifdef CONFIG_PKVM_INTEL_PVIOMMU
 int pkvm_iommu_iec_flush(u64 phys, bool global, u64 index, u64 mask)
 {
 	struct pkvm_iommu *hyp_iommu = find_iommu_by_reg_phys(phys);
@@ -1261,6 +1262,7 @@ int pkvm_iommu_iec_flush(u64 phys, bool global, u64 index, u64 mask)
 
 	return 0;
 }
+#endif
 
 void pkvm_iommu_flush_iotlb_hostept(unsigned long addr, unsigned long size)
 {
