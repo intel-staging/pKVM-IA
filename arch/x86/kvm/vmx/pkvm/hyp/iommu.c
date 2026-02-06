@@ -885,7 +885,7 @@ static void handle_global_cmd(struct pkvm_iommu *iommu, u32 val)
 	if (changed & DMA_GCMD_TE)
 		handle_gcmd_te(iommu, !!(val & DMA_GCMD_TE));
 
-	if (val & DMA_GCMD_SRTP)
+	if (changed & DMA_GCMD_SRTP)
 		handle_gcmd_srtp(iommu);
 
 	if (changed & DMA_GCMD_QIE)
@@ -945,6 +945,14 @@ static unsigned long access_iommu_mmio(struct pkvm_iommu *iommu, bool is_read,
 	struct pkvm_viommu *viommu = &iommu->viommu;
 	unsigned long offset = phys - iommu->iommu.reg_phys;
 	unsigned long ret = 0;
+
+	if (unlikely(!iommu->activated)) {
+		ret = activate_iommu(iommu);
+		if (ret) {
+			pkvm_err("pkvm: iommu%d is failed to activate\n", iommu->iommu.seq_id);
+			return ret;
+		}
+	}
 
 	/* Only need to emulate part of the MMIO */
 	switch (offset) {
