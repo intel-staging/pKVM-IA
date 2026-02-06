@@ -259,8 +259,8 @@ static void context_present_cache_flush(struct pkvm_iommu *iommu, u16 bdf, u16 d
 	}
 }
 
-unsigned long set_context_entry(struct pkvm_iommu *hyp_iommu,
-				struct pkvm_lm_context_param *param, u16 agaw)
+static unsigned long set_context_entry(struct pkvm_iommu *hyp_iommu,
+				       struct pkvm_lm_context_param *param, u16 agaw)
 {
 	struct intel_iommu *iommu = &hyp_iommu->iommu;
 	u8 bus = PCI_BUS_NUM(param->bdf);
