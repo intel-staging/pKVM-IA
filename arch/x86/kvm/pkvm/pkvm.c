@@ -159,6 +159,7 @@ static int pkvm_vm_init(phys_addr_t host_kvm_pa, phys_addr_t pkvm_vm_pa,
 		kvm->arch.disabled_quirks = (kvm_caps.inapplicable_quirks |
 					     pkvm_vm->shared_kvm->arch.disabled_quirks) &
 					    kvm_caps.supported_quirks;
+	kvm->arch.apic_bus_cycle_ns = APIC_BUS_CYCLE_NS_DEFAULT;
 	kvm->arch.pkvm.pvmfw_load_addr = INVALID_GPA;
 
 	pkvm_spin_lock_init(&pkvm_vm->lock);
@@ -437,6 +438,7 @@ static int postponed_per_vm_setup(struct kvm *kvm)
 	struct pkvm_vm *pkvm_vm = to_pkvm(kvm);
 	struct kvm *shared_kvm = pkvm_vm->shared_kvm;
 	enum kvm_irqchip_mode irqchip_mode;
+	u64 apic_bus_cycle_ns;
 	u32 max_vcpu_ids;
 
 	if (pkvm_vm->postponed_setup_done)
@@ -451,6 +453,11 @@ static int postponed_per_vm_setup(struct kvm *kvm)
 	max_vcpu_ids = READ_ONCE(shared_kvm->arch.max_vcpu_ids);
 	if (!max_vcpu_ids || max_vcpu_ids > KVM_MAX_VCPU_IDS)
 		return -EINVAL;
+
+	apic_bus_cycle_ns = READ_ONCE(shared_kvm->arch.apic_bus_cycle_ns);
+	if (!apic_bus_cycle_ns)
+		return -EINVAL;
+
 	/*
 	 * The following setup is per VM, not per vCPU, however it cannot be
 	 * done during VM creation, since these values are set by the host VMM
@@ -463,6 +470,7 @@ static int postponed_per_vm_setup(struct kvm *kvm)
 
 	kvm->arch.irqchip_mode = irqchip_mode;
 	kvm->arch.max_vcpu_ids = max_vcpu_ids;
+	kvm->arch.apic_bus_cycle_ns = apic_bus_cycle_ns;
 
 	if (kvm_caps.has_bus_lock_exit)
 		kvm->arch.bus_lock_detection_enabled =
