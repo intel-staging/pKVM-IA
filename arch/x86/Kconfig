@@ -921,6 +921,7 @@ config PKVM_X86_GUEST
 	bool "pKVM Protected Guest Support"
 	depends on PARAVIRT
 	select ARCH_HAS_CC_PLATFORM
+	select ARCH_HAS_VIRTIO_BALLOON_HYP_OPS
 	select X86_MEM_ENCRYPT
 	help
 	  Support running as a protected guest under Protected KVM (pKVM).
