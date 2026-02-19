@@ -214,9 +214,12 @@ static void host_ept_flush_tlb(struct pkvm_pgtable *pgt,
 		pkvm_kick_vcpu(vcpu);
 	}
 
+	pkvm_iommu_pt_flush(vaddr, size);
+
 	/*
-	 * Start to wait for all vCPUs once all vCPUs are kicked to make the
-	 * waiting overhead overlapping a bit with the kicking.
+	 * Start to wait for all vCPUs once all vCPUs are kicked and IOMMU TLB
+	 * being flushed to make the waiting overhead overlapping a bit with
+	 * the kicking and flushing.
 	 */
 	for_each_pkvm_initialized_cpu(i, vcpu)
 		pkvm_wait_vcpu_kicked_out(vcpu);
