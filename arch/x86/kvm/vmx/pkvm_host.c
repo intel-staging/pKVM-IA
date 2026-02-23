@@ -1629,7 +1629,7 @@ static int pkvm_vcpu_realloc_fpstate(struct kvm_vcpu *vcpu)
 	void *fps;
 	int ret;
 
-	fpsize = PAGE_ALIGN(vcpu->arch.guest_fpu.fpstate->size +
+	fpsize = PAGE_ALIGN(fpu_user_cfg.max_size +
 			    ALIGN(offsetof(struct fpstate, regs), 64));
 	fps = alloc_pages_exact(fpsize, GFP_KERNEL_ACCOUNT);
 	if (!fps)
@@ -1663,7 +1663,7 @@ static void pkvm_vcpu_after_set_cpuid(struct kvm_vcpu *vcpu)
 	 * fpstate is only necessary for the pVM, and should be done before
 	 * adding the new cpuid entries to the pKVM hypervisor.
 	 */
-	if ((vcpu->arch.guest_fpu.xfeatures & XFEATURE_MASK_USER_DYNAMIC) &&
+	if ((fpu_user_cfg.max_features & XFEATURE_MASK_USER_DYNAMIC) &&
 	    pkvm_is_protected_vcpu(vcpu) &&
 	    pkvm_vcpu_realloc_fpstate(vcpu))
 		return;
