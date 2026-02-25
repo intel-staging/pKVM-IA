@@ -1148,10 +1148,22 @@ static int pkvm_hwapic_isr_update(struct kvm_vcpu *vcpu, int max_isr)
 	return 0;
 }
 
-static void pkvm_sync_pir_to_irr(struct kvm_vcpu *vcpu, int pir)
+static int pkvm_sync_pir_to_irr(struct kvm_vcpu *vcpu, int pir)
 {
+	/*
+	 * Validate the passed in pir value from the host to make sure it is not
+	 * an exception vector for the pVM for the same security reason with the
+	 * PV interface __pkvm__inject_irq. See comments in the function
+	 * pkvm_inject_irq.
+	 *
+	 * The value -1 is allowed as it represents no interrupt.
+	 */
+	if (pkvm_is_protected_vcpu(vcpu) && pir != -1 && pir < 32)
+		return -EPERM;
+
 	to_pkvm_vcpu(vcpu)->max_irr = pir;
 	kvm_x86_call(sync_pir_to_irr)(vcpu);
+	return 0;
 }
 
 static int pkvm_vcpu_after_set_cpuid(struct kvm_vcpu *vcpu,
@@ -1808,7 +1820,7 @@ static int pkvm_vcpu_handle_host_hypercall(struct kvm_vcpu *hvcpu, enum pkvm_hc 
 		ret = pkvm_hwapic_isr_update(vcpu, pkvm_hc_input1(hvcpu));
 		break;
 	case __pkvm__sync_pir_to_irr:
-		pkvm_sync_pir_to_irr(vcpu, pkvm_hc_input1(hvcpu));
+		ret = pkvm_sync_pir_to_irr(vcpu, pkvm_hc_input1(hvcpu));
 		break;
 	case __pkvm__vcpu_after_set_cpuid:
 		ret = pkvm_vcpu_after_set_cpuid(vcpu, pkvm_host_gpa_to_phys(pkvm_hc_input1(hvcpu)),
