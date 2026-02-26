@@ -1115,14 +1115,16 @@ static int pkvm_inject_irq(struct kvm_vcpu *vcpu)
 	return 0;
 }
 
-static void pkvm_inject_nmi(struct kvm_vcpu *vcpu)
+static int pkvm_inject_nmi(struct kvm_vcpu *vcpu)
 {
 	if (kvm_x86_call(nmi_allowed)(vcpu, true) <= 0 ||
 	    !pkvm_event_injection_allowed(vcpu))
-		return;
+		return -EBUSY;
 
 	vcpu->arch.nmi_injected = true;
 	kvm_x86_call(inject_nmi)(vcpu);
+
+	return 0;
 }
 
 static void pkvm_inject_exception(struct kvm_vcpu *vcpu)
@@ -1890,7 +1892,7 @@ static int pkvm_vcpu_handle_host_hypercall(struct kvm_vcpu *hvcpu, enum pkvm_hc 
 		ret = pkvm_inject_irq(vcpu);
 		break;
 	case __pkvm__inject_nmi:
-		pkvm_inject_nmi(vcpu);
+		ret = pkvm_inject_nmi(vcpu);
 		break;
 	case __pkvm__inject_exception:
 		pkvm_inject_exception(vcpu);
