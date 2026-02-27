@@ -661,6 +661,7 @@ extern unsigned long pkvm_sym(kaslr_offset_val);
 
 extern bool __read_mostly pkvm_sym(enable_apicv);
 extern bool __read_mostly pkvm_sym(enable_ipiv);
+extern bool __read_mostly pkvm_sym(enable_vpid);
 
 u64 pkvm_total_reserve_pages(void);
 PKVM_DECLARE(void *, pkvm_early_alloc_page, (struct pkvm_memcache *mc));
