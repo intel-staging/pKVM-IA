@@ -343,8 +343,14 @@ int intel_pasid_setup_dirty_tracking(struct intel_iommu *iommu,
 				     bool enabled);
 int intel_pasid_setup_pass_through(struct intel_iommu *iommu,
 				   struct device *dev, u32 pasid);
+#ifndef __PKVM_HYP__
 int intel_pasid_setup_nested(struct intel_iommu *iommu, struct device *dev,
 			     u32 pasid, struct dmar_domain *domain);
+#else
+int intel_pasid_setup_nested(struct intel_iommu *iommu, struct pkvm_device *dev,
+			     u32 pasid, u16 did, struct dmar_domain *domain,
+			     bool force_snoop);
+#endif
 #ifndef __PKVM_HYP__
 void intel_pasid_tear_down_entry(struct intel_iommu *iommu,
 				 struct device *dev, u32 pasid,
