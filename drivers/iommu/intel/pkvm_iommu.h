@@ -42,11 +42,10 @@ extern unsigned int pkvm_sym(iommu_pgsz_mask);
 extern int pkvm_sym(intel_iommu_sm);
 extern int pkvm_sym(intel_iommu_superpage);
 
-static inline bool pkvm_nested_enabled(struct intel_iommu *iommu)
-{
-	/* TODO: implement nested support */
-	return false;
-}
+extern bool __read_mostly pkvm_sym(intel_iommu_pkvm_use_nested);
+#define pkvm_nested_enabled(iommu)	(intel_iommu_pkvm_use_nested && \
+					 sm_supported(iommu) && \
+					 ecap_nest((iommu)->ecap))
 
 PKVM_DECLARE(int, prepare_iommu, (struct intel_iommu_info *info));
 

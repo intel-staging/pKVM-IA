@@ -1727,6 +1727,10 @@ static inline bool intel_domain_is_ss_paging(struct dmar_domain *domain)
 }
 #endif /* !__PKVM_HYP__ */
 
+#ifdef CONFIG_PKVM_INTEL
+extern bool intel_iommu_pkvm_use_nested;
+#endif
+
 #ifdef CONFIG_INTEL_IOMMU
 extern int intel_iommu_sm;
 extern int intel_iommu_superpage;
