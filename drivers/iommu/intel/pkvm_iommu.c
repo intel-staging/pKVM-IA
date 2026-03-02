@@ -92,6 +92,7 @@ int __init pkvm_host_prepare_iommu(void)
 
 	pkvm_sym(intel_iommu_sm) = intel_iommu_sm;
 	pkvm_sym(intel_iommu_superpage) = intel_iommu_superpage;
+	pkvm_sym(intel_iommu_pkvm_use_nested) = intel_iommu_pkvm_use_nested;
 
 	for_each_iommu(iommu, drhd) {
 		struct intel_iommu_info info = {
