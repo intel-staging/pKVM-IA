@@ -359,3 +359,41 @@ int pkvm_iommu_domain_unmap(u64 pgd_gpa, u64 start_pfn, u64 last_pfn)
 
 	return 0;
 }
+
+/* Flush IOMMU caches for the domain identified by the given pgd_gpa. */
+int pkvm_iommu_domain_flush(u64 pgd_gpa, u64 start, u64 last, bool ih)
+{
+	struct dmar_domain *domain;
+
+	if (start > last) {
+		pkvm_err("%s: invalid flush range [%llx, %llx]\n",
+			 __func__, start, last);
+		return -EINVAL;
+	}
+
+	domain = __pkvm_get_iommu_domain(pkvm_host_gpa_to_virt(pgd_gpa));
+	if (!domain) {
+		pkvm_err("%s, failed to get the domain [pgd:%llx]\n",
+			 __func__, pgd_gpa);
+		return -EINVAL;
+	}
+
+	/*
+	 * Guard against integer overflow and shift-by-64 UB on huge ranges in
+	 * calculate_psi_aligned_address() and qi_desc_piotlb(). With newer
+	 * kernels this check is not needed anymore, since commits e36ee89679f4
+	 * ("iommu/vt-d: Pass size_order to qi_desc_piotlb() not npages") and
+	 * 9785df3fd670 ("iommu/vt-d: Simplify calculate_psi_aligned_address()").
+	 */
+	if (last > domain->max_addr && !(start == 0 && last == ULONG_MAX)) {
+		pkvm_err("%s: invalid flush range [%llx, %llx] for domain [pgd:%llx, max_addr:%llx]\n",
+			 __func__, start, last, pgd_gpa, domain->max_addr);
+		pkvm_put_iommu_domain(domain);
+		return -EINVAL;
+	}
+
+	cache_tag_flush_range(domain, start, last, ih);
+	pkvm_put_iommu_domain(domain);
+
+	return 0;
+}

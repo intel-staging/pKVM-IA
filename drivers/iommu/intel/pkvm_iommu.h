@@ -132,6 +132,8 @@ int pkvm_domain_map(struct dmar_domain *domain, unsigned long iov_pfn,
 		    int prot, int gfp);
 int pkvm_domain_unmap(struct dmar_domain *domain, unsigned long start_pfn,
 		      unsigned long last_pfn);
+int pkvm_domain_flush(struct dmar_domain *domain, unsigned long start,
+		      unsigned long last, bool ih);
 int pkvm_modify_irte(struct intel_iommu *iommu, int index, struct irte *irte_modified);
 int pkvm_write_iommu_msi(struct intel_iommu *iommu, u32 offset, u32 data,
 			 u32 addr, u32 uaddr);
@@ -206,6 +208,7 @@ int pkvm_iommu_alloc_domain(struct alloc_domain_data *data);
 int pkvm_iommu_free_domain(u64 pgd_gpa, struct pkvm_memcache *mc);
 int pkvm_iommu_domain_map(struct domain_map_data *in, struct domain_map_data *out);
 int pkvm_iommu_domain_unmap(u64 pgd_gpa, u64 start_pfn, u64 last_pfn);
+int pkvm_iommu_domain_flush(u64 pgd_gpa, u64 start, u64 last, bool ih);
 int pkvm_iommu_modify_irte(struct modify_irte_data *data);
 
 /*
@@ -283,6 +286,12 @@ static inline int pkvm_domain_map(struct dmar_domain *domain, unsigned long iov_
 }
 static inline int pkvm_domain_unmap(struct dmar_domain *domain, unsigned long start_pfn,
 				    unsigned long last_pfn)
+{
+	return -EOPNOTSUPP;
+}
+static inline int pkvm_domain_flush(struct dmar_domain *domain,
+				    unsigned long start, unsigned long last,
+				    bool ih)
 {
 	return -EOPNOTSUPP;
 }

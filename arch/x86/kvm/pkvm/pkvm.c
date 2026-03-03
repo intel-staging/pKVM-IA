@@ -2201,6 +2201,12 @@ void pkvm_handle_host_hypercall(struct kvm_vcpu *vcpu)
 					      pkvm_hc_input2(vcpu),
 					      pkvm_hc_input3(vcpu));
 		break;
+	case __pkvm__iommu_domain_flush:
+		ret = pkvm_iommu_domain_flush(pkvm_hc_input1(vcpu),
+					      pkvm_hc_input2(vcpu),
+					      pkvm_hc_input3(vcpu),
+					      pkvm_hc_input4(vcpu));
+		break;
 	case __pkvm__iommu_modify_irte:
 		ret = pkvm_iommu_modify_irte(&in.iommu_modify_irte.data);
 		break;
