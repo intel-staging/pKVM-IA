@@ -436,8 +436,15 @@ static int domain_translation_struct_show(struct seq_file *m,
 				pgd = pasid_tbl_entry->val[2];
 				break;
 			case PASID_ENTRY_PGTT_SL_ONLY:
-			case PASID_ENTRY_PGTT_NESTED:
 				pgd = pasid_tbl_entry->val[0];
+				break;
+			case PASID_ENTRY_PGTT_NESTED:
+				if (pkvm_enabled()) {
+					pgd = pasid_tbl_entry->val[2];
+					agaw = (pasid_tbl_entry->val[2] & BIT_ULL(2)) ? 3 : 2;
+				} else {
+					pgd = pasid_tbl_entry->val[0];
+				}
 				break;
 			default:
 				goto iommu_unlock;

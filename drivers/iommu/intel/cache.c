@@ -567,6 +567,23 @@ void cache_tag_flush_range(struct dmar_domain *domain, unsigned long start,
 	struct cache_tag *tag;
 #ifndef __PKVM_HYP__
 	unsigned long flags;
+
+	/*
+	 * When pKVM is enabled, the hypervisor owns QI invalidation:
+	 * - Nested domains have host-managed S1 page tables, so flush via
+	 *   hypercall.
+	 * - Non-nested domains already flush unconditionally in pKVM's unmap
+	 *   hypercall (closing the gap where a device could read a newly
+	 *   donated page before a deferred flush), so the host shouldn't reach
+	 *   here.
+	 */
+	if (pkvm_enabled()) {
+		if (domain_pkvm_nested(domain))
+			pkvm_domain_flush(domain, start, end, ih);
+		else
+			WARN_ONCE(1, "pKVM: flush requested for non-nested domain\n");
+		return;
+	}
 #endif
 
 	if (start == 0 && end == ULONG_MAX) {
