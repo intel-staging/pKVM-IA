@@ -340,7 +340,6 @@ static int pkvm_vm_finalize(int vm_handle)
 	struct pkvm_vm *pkvm_vm;
 	struct kvm_vcpu *vcpu;
 	gpa_t pvmfw_load_addr;
-	u32 bsp_vcpu_id;
 	int ret = 0, i;
 
 	pkvm_vm = pkvm_get_vm(vm_handle);
@@ -374,13 +373,6 @@ static int pkvm_vm_finalize(int vm_handle)
 		}
 		kvm->arch.pkvm.pvmfw_load_addr = pvmfw_load_addr;
 	}
-
-	bsp_vcpu_id = READ_ONCE(shared_kvm->arch.bsp_vcpu_id);
-	if (bsp_vcpu_id >= kvm->arch.max_vcpu_ids) {
-		ret = -EINVAL;
-		goto unlock;
-	}
-	kvm->arch.bsp_vcpu_id = bsp_vcpu_id;
 
 	for_each_pkvm_guest_vcpu(i, vcpu, pkvm_vm) {
 		if (vcpu->vcpu_id == kvm->arch.bsp_vcpu_id) {
@@ -446,8 +438,8 @@ static int postponed_per_vm_setup(struct kvm *kvm)
 	struct pkvm_vm *pkvm_vm = to_pkvm(kvm);
 	struct kvm *shared_kvm = pkvm_vm->shared_kvm;
 	enum kvm_irqchip_mode irqchip_mode;
+	u32 max_vcpu_ids, bsp_vcpu_id;
 	u64 apic_bus_cycle_ns;
-	u32 max_vcpu_ids;
 
 	if (pkvm_vm->postponed_setup_done)
 		return 0;
@@ -460,6 +452,10 @@ static int postponed_per_vm_setup(struct kvm *kvm)
 
 	max_vcpu_ids = READ_ONCE(shared_kvm->arch.max_vcpu_ids);
 	if (!max_vcpu_ids || max_vcpu_ids > KVM_MAX_VCPU_IDS)
+		return -EINVAL;
+
+	bsp_vcpu_id = READ_ONCE(shared_kvm->arch.bsp_vcpu_id);
+	if (bsp_vcpu_id >= max_vcpu_ids)
 		return -EINVAL;
 
 	apic_bus_cycle_ns = READ_ONCE(shared_kvm->arch.apic_bus_cycle_ns);
@@ -478,6 +474,7 @@ static int postponed_per_vm_setup(struct kvm *kvm)
 
 	kvm->arch.irqchip_mode = irqchip_mode;
 	kvm->arch.max_vcpu_ids = max_vcpu_ids;
+	kvm->arch.bsp_vcpu_id = bsp_vcpu_id;
 	kvm->arch.apic_bus_cycle_ns = apic_bus_cycle_ns;
 
 	if (kvm_caps.has_bus_lock_exit)
@@ -554,7 +551,6 @@ static int __vcpu_create(struct kvm *kvm, struct kvm_vcpu *vcpu, struct fpstate 
 	}
 	vcpu->arch.mcg_cap = KVM_MAX_MCE_BANKS;
 
-	vcpu->arch.apic_base = pkvm_vcpu->shared_vcpu->arch.apic_base;
 	if (shared_apic)
 		vcpu->arch.apic = unused;
 
