@@ -678,6 +678,11 @@ struct dmar_domain {
 	u8 iotlb_sync_map:1;		/* Need to flush IOTLB cache or write
 					 * buffer when creating mappings.
 					 */
+#if defined(CONFIG_PKVM_INTEL) && !defined(__PKVM_HYP__)
+	u8 pkvm_nested:1;		/* pKVM hypervisor uses nested
+					 * translation for this domain.
+					 */
+#endif
 
 #ifndef __PKVM_HYP__
 	spinlock_t lock;		/* Protect device tracking lists */
@@ -771,6 +776,20 @@ struct dmar_domain {
 	struct hlist_node hnode;
 #endif /* __PKVM_HYP__ */
 };
+
+#ifndef __PKVM_HYP__
+#ifdef CONFIG_PKVM_INTEL
+static inline bool domain_pkvm_nested(struct dmar_domain *domain)
+{
+	return domain->pkvm_nested;
+}
+#else
+static inline bool domain_pkvm_nested(struct dmar_domain *domain)
+{
+	return false;
+}
+#endif
+#endif
 
 /*
  * In theory, the VT-d 4.0 spec can support up to 2 ^ 16 counters.

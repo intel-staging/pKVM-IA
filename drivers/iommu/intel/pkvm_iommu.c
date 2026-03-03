@@ -327,6 +327,7 @@ int pkvm_alloc_domain(struct device_domain_info *info, struct dmar_domain *domai
 	data->max_addr = domain->max_addr;
 	data->iommu_coherency = domain->iommu_coherency;
 	data->iommu_superpage = domain->iommu_superpage;
+	data->pkvm_nested = domain->pkvm_nested;
 
 	ret = pkvm_hypercall_in(iommu_alloc_domain, &d);
 	if (ret)

@@ -297,9 +297,9 @@ static int iommu_pasid_setup_fl(struct pasid_setup_fl_data *data)
 		 data->bus, data->devfn, data->pasid, data->fsptptr_gpa, data->did);
 
 	if (domain->domain.type == IOMMU_DOMAIN_NESTED) {
-		pkvm_err("%s: PASID setup for nested domain(%p) not implemented yet\n",
-			 __func__, domain->pgd);
-		ret = -EOPNOTSUPP;
+		ret = intel_pasid_setup_nested(iommu, &dev, data->pasid,
+					       data->did, domain,
+					       data->force_snoop);
 	} else {
 		int flags = 0;
 
