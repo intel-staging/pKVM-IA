@@ -430,6 +430,24 @@ int pkvm_domain_unmap(struct dmar_domain *domain, unsigned long start_pfn, unsig
 	return ret;
 }
 
+int pkvm_domain_flush(struct dmar_domain *domain, unsigned long start,
+		      unsigned long last, bool ih)
+{
+	u64 pgd_gpa = 0;
+	int ret;
+
+	if (!domain)
+		return -EINVAL;
+
+	pgd_gpa = virt_to_phys(domain->pgd);
+
+	ret = pkvm_hypercall(iommu_domain_flush, pgd_gpa, start, last, ih);
+	if (ret)
+		pr_err("%s: domain[pgd_pa: %llx] flush[start: %lx, last: %lx] failed (err=%d)\n",
+		       __func__, pgd_gpa, start, last, ret);
+	return ret;
+}
+
 int pkvm_modify_irte(struct intel_iommu *iommu, int index, struct irte *irte_modified)
 {
 	union pkvm_hc_data d = { 0 };
