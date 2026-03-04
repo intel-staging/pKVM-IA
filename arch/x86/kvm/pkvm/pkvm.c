@@ -300,6 +300,7 @@ static struct pkvm_vcpu *detach_pkvm_vcpu_from_vm(struct pkvm_vm *pkvm_vm, int v
 static int setup_vcpu_lapic(struct kvm_vcpu *vcpu, struct kvm_lapic *shared_apic)
 {
 	struct kvm_lapic *apic = vcpu->arch.apic;
+	struct pkvm_vcpu *pkvm_vcpu = to_pkvm_vcpu(vcpu);
 	size_t apic_size = sizeof(struct kvm_lapic);
 	void *apic_regs = NULL;
 	int ret;
@@ -324,6 +325,7 @@ static int setup_vcpu_lapic(struct kvm_vcpu *vcpu, struct kvm_lapic *shared_apic
 	if (ret)
 		goto unshare_apic;
 
+	pkvm_vcpu->shared_lapic_regs = apic_regs;
 	apic->regs = apic_regs;
 	if (enable_apicv) {
 		apic->apicv_active = true;
@@ -401,12 +403,12 @@ put_pkvm_vm:
 
 static void unsetup_vcpu_lapic(struct kvm_vcpu *vcpu)
 {
-	struct kvm_lapic *apic = vcpu->arch.apic;
+	void *regs = to_pkvm_vcpu(vcpu)->shared_lapic_regs;
 
-	if (!apic)
+	if (!regs)
 		return;
 
-	pkvm_host_unshare_hyp(__pkvm_pa(apic->regs), PAGE_SIZE);
+	pkvm_host_unshare_hyp(__pkvm_pa(regs), PAGE_SIZE);
 }
 
 static int share_vcpu_mce_banks(struct kvm_vcpu *vcpu)
