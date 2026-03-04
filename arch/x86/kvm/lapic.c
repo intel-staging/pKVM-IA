@@ -1811,6 +1811,19 @@ u64 kvm_x2apic_disable_read_intercept_reg_mask(struct kvm_vcpu *vcpu)
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_x2apic_disable_read_intercept_reg_mask);
 
+#ifdef __PKVM_HYP__
+u64 pkvm_protected_lapic_readable_reg_mask(struct kvm_lapic *apic)
+{
+	if (!apic->guest_apic_protected)
+		return 0;
+
+	return	APIC_REG_MASK(APIC_TASKPRI) |
+		APIC_REG_MASK(APIC_PROCPRI) |
+		APIC_REGS_MASK(APIC_ISR, APIC_ISR_NR) |
+		APIC_REGS_MASK(APIC_IRR, APIC_ISR_NR);
+}
+#endif
+
 #ifndef __PKVM_HYP__
 static int kvm_lapic_reg_read(struct kvm_lapic *apic, u32 offset, int len,
 			      void *data)
