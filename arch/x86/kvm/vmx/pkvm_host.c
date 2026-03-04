@@ -977,6 +977,23 @@ static void pkvm_hwapic_isr_update(struct kvm_vcpu *vcpu, int max_isr)
 	KVM_BUG_ON(pkvm_hypercall(hwapic_isr_update, max_isr), vcpu->kvm);
 }
 
+static bool pkvm_protected_apic_has_interrupt(struct kvm_vcpu *vcpu)
+{
+	union pkvm_hc_data out;
+
+	if (!lapic_in_kernel(vcpu) || KVM_BUG_ON(!vcpu->arch.apic->guest_apic_protected,
+						 vcpu->kvm))
+		return false;
+
+	if (pi_has_pending_interrupt(vcpu))
+		return true;
+
+	if (KVM_BUG_ON(pkvm_hypercall_out(protected_apic_has_interrupt, &out), vcpu->kvm))
+		return false;
+
+	return out.protected_apic_has_interrupt.has_intr;
+}
+
 struct kvm_x86_ops pkvm_host_vt_x86_ops __initdata = {
 	.name = KBUILD_MODNAME,
 
@@ -1053,6 +1070,7 @@ struct kvm_x86_ops pkvm_host_vt_x86_ops __initdata = {
 	.apicv_pre_state_restore = pi_apicv_pre_state_restore,
 	.required_apicv_inhibits = VMX_REQUIRED_APICV_INHIBITS,
 	.hwapic_isr_update = pkvm_hwapic_isr_update,
+	.protected_apic_has_interrupt = pkvm_protected_apic_has_interrupt,
 };
 
 static struct kvm_pmc *pkvm_intel_rdpmc_ecx_to_pmc(struct kvm_vcpu *vcpu,
