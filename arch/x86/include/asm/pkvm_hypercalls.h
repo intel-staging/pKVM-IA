@@ -65,6 +65,7 @@ PKVM_HC(set_virtual_apic_mode)
 PKVM_HC(refresh_apicv_exec_ctrl)
 PKVM_HC(load_eoi_exitmap)
 PKVM_HC(hwapic_isr_update)
+PKVM_HC_OUT(protected_apic_has_interrupt)
 
 #undef PKVM_HC
 #undef PKVM_HC_OUT
