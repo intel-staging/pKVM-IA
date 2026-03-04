@@ -11292,15 +11292,19 @@ void kvm_make_scan_ioapic_request(struct kvm *kvm)
 {
 	kvm_make_all_cpus_request(kvm, KVM_REQ_SCAN_IOAPIC);
 }
+#endif /* !__PKVM_HYP__ */
 
 void __kvm_vcpu_update_apicv(struct kvm_vcpu *vcpu)
 {
 	struct kvm_lapic *apic = vcpu->arch.apic;
+#ifndef __PKVM_HYP__
 	bool activate;
+#endif
 
 	if (!lapic_in_kernel(vcpu))
 		return;
 
+#ifndef __PKVM_HYP__
 	down_read(&vcpu->kvm->arch.apicv_update_lock);
 	preempt_disable();
 
@@ -11312,6 +11316,7 @@ void __kvm_vcpu_update_apicv(struct kvm_vcpu *vcpu)
 		goto out;
 
 	apic->apicv_active = activate;
+#endif
 	kvm_apic_update_apicv(vcpu);
 	kvm_x86_call(refresh_apicv_exec_ctrl)(vcpu);
 
@@ -11324,9 +11329,11 @@ void __kvm_vcpu_update_apicv(struct kvm_vcpu *vcpu)
 	if (!apic->apicv_active)
 		kvm_make_request(KVM_REQ_EVENT, vcpu);
 
+#ifndef __PKVM_HYP__
 out:
 	preempt_enable();
 	up_read(&vcpu->kvm->arch.apicv_update_lock);
+#endif
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(__kvm_vcpu_update_apicv);
 
@@ -11335,6 +11342,7 @@ static void kvm_vcpu_update_apicv(struct kvm_vcpu *vcpu)
 	if (!lapic_in_kernel(vcpu))
 		return;
 
+#ifndef __PKVM_HYP__
 	/*
 	 * Due to sharing page tables across vCPUs, the xAPIC memslot must be
 	 * deleted if any vCPU has xAPIC virtualization and x2APIC enabled, but
@@ -11349,10 +11357,12 @@ static void kvm_vcpu_update_apicv(struct kvm_vcpu *vcpu)
 	if (apic_x2apic_mode(vcpu->arch.apic) &&
 	    kvm_x86_ops.allow_apicv_in_x2apic_without_x2apic_virtualization)
 		kvm_inhibit_apic_access_page(vcpu);
+#endif
 
 	__kvm_vcpu_update_apicv(vcpu);
 }
 
+#ifndef __PKVM_HYP__
 void __kvm_set_or_clear_apicv_inhibit(struct kvm *kvm,
 				      enum kvm_apicv_inhibit reason, bool set)
 {
@@ -14915,6 +14925,9 @@ static int __pkvm_vcpu_enter_guest(struct kvm_vcpu *vcpu, bool force_immediate_e
 
 		if (kvm_check_request(KVM_REQ_TLB_FLUSH_GUEST, vcpu))
 			kvm_vcpu_flush_tlb_guest(vcpu);
+
+		if (kvm_check_request(KVM_REQ_APICV_UPDATE, vcpu))
+			kvm_vcpu_update_apicv(vcpu);
 
 		if (kvm_check_request(KVM_REQ_EVENT, vcpu))
 			kvm_check_and_inject_events(vcpu, &req_immediate_exit);
