@@ -564,7 +564,6 @@ static int __vcpu_create(struct kvm *kvm, struct kvm_vcpu *vcpu, struct fpstate 
 	}
 	vcpu->arch.mcg_cap = KVM_MAX_MCE_BANKS;
 
-	vcpu->arch.apic_base = READ_ONCE(pkvm_vcpu->shared_vcpu->arch.apic_base);
 	if (shared_apic)
 		vcpu->arch.apic = free_mem;
 
@@ -587,11 +586,38 @@ static int __vcpu_create(struct kvm *kvm, struct kvm_vcpu *vcpu, struct fpstate 
 	if (ret)
 		goto unsetup_lapic;
 
-	/* Load guest vCPU to reset it. */
+	/* Load guest vCPU to post-set after it is created. */
 	scoped_guard(switch_vcpu, vcpu) {
 		kvm_vcpu_after_set_cpuid(vcpu);
 
 		kvm_vcpu_reset(vcpu, false);
+
+		if (pkvm_is_protected_vcpu(vcpu)) {
+			u64 apic_base = APIC_DEFAULT_PHYS_BASE | LAPIC_MODE_X2APIC |
+					(kvm_vcpu_is_reset_bsp(vcpu) ? MSR_IA32_APICBASE_BSP : 0);
+
+			/*
+			 * Force set the X86_FEATURE_X2APIC to enable x2apic mode by
+			 * default for pVMs to let the pVM use MSR instructions to
+			 * access lapic, as emulating xapic mode will require the host
+			 * to decode MMIO instruction which is not supported if the
+			 * guest is a pVM as the pVM's CPU and memory state will be
+			 * isolated. Doing this when creating vCPU to guarantee the
+			 * x2apic mode will be enabled.
+			 *
+			 * Setting X86_FEATURE_X2APIC without checking the pVM's CPUID
+			 * is fine as the pVM's CPUID will be enforced by the pKVM to
+			 * have this feature.
+			 */
+			guest_cpu_cap_set(vcpu, X86_FEATURE_X2APIC);
+			/*
+			 * The kvm_apic_set_base should not be failed as the apic_base
+			 * is a valid value, and the pKVM hypervisor has already set up
+			 * the reserved bits for checking this apic_base. It should be a
+			 * code bug if it is failed.
+			 */
+			BUG_ON(kvm_apic_set_base(vcpu, apic_base, true));
+		}
 
 		/*
 		 * The guest vCPU should be put before switching back to the
