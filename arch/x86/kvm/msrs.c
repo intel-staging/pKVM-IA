@@ -2318,11 +2318,27 @@ EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_get_msr_common);
 bool pkvm_host_has_emulated_msr(struct kvm *kvm, u32 msr)
 {
 	switch (msr) {
-	case APIC_BASE_MSR ... APIC_BASE_MSR + 0xff:
 	case MSR_IA32_TSC_DEADLINE:
 	case MSR_IA32_TSC_ADJUST:
 	case MSR_IA32_TSC:
 		return true;
+	case APIC_BASE_MSR ... APIC_BASE_MSR + 0xff:
+		switch (msr) {
+		case X2APIC_MSR(APIC_TASKPRI):
+		case X2APIC_MSR(APIC_PROCPRI):
+		case X2APIC_MSR(APIC_ISR) ... X2APIC_MSR(APIC_ISR) + APIC_ISR_NR - 1:
+		case X2APIC_MSR(APIC_IRR) ... X2APIC_MSR(APIC_IRR) + APIC_ISR_NR - 1:
+			/*
+			 * The pVM will have protected apic if APICv is enabled.
+			 * With protected apic, the above x2APIC MSRs will be
+			 * protected by the pKVM hypervisor and cannot be
+			 * emulated by the host. Remove them from the host
+			 * emulated list to reflect this.
+			 */
+			return !(pkvm_is_protected_vm(kvm) && enable_apicv);
+		default:
+			return true;
+		}
 	case MSR_IA32_APICBASE:
 	case MSR_KVM_WALL_CLOCK:
 	case MSR_KVM_WALL_CLOCK_NEW:
