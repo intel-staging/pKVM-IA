@@ -1650,9 +1650,9 @@ int kvm_set_msr_common(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 	case MTRRphysBase_MSR(0) ... MSR_MTRRfix4K_F8000:
 	case MSR_MTRRdefType:
 		return kvm_mtrr_set_msr(vcpu, msr, data);
-#ifndef __PKVM_HYP__
 	case MSR_IA32_APICBASE:
 		return kvm_apic_set_base(vcpu, data, msr_info->host_initiated);
+#ifndef __PKVM_HYP__
 	case APIC_BASE_MSR ... APIC_BASE_MSR + 0xff:
 		return kvm_x2apic_msr_write(vcpu, msr, data);
 	case MSR_IA32_TSC_DEADLINE:
@@ -2100,10 +2100,10 @@ int kvm_get_msr_common(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 	case MSR_EBC_FREQUENCY_ID:
 		msr_info->data = 1 << 24;
 		break;
-#ifndef __PKVM_HYP__
 	case MSR_IA32_APICBASE:
 		msr_info->data = vcpu->arch.apic_base;
 		break;
+#ifndef __PKVM_HYP__
 	case APIC_BASE_MSR ... APIC_BASE_MSR + 0xff:
 		return kvm_x2apic_msr_read(vcpu, msr_info->index, &msr_info->data);
 	case MSR_IA32_TSC_DEADLINE:
@@ -2318,12 +2318,12 @@ EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_get_msr_common);
 bool pkvm_host_has_emulated_msr(struct kvm *kvm, u32 msr)
 {
 	switch (msr) {
-	case MSR_IA32_APICBASE:
 	case APIC_BASE_MSR ... APIC_BASE_MSR + 0xff:
 	case MSR_IA32_TSC_DEADLINE:
 	case MSR_IA32_TSC_ADJUST:
 	case MSR_IA32_TSC:
 		return true;
+	case MSR_IA32_APICBASE:
 	case MSR_KVM_WALL_CLOCK:
 	case MSR_KVM_WALL_CLOCK_NEW:
 	case MSR_KVM_SYSTEM_TIME:
