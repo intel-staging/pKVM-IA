@@ -1561,6 +1561,7 @@ handle_tlb_flush:
 	return 0;
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_set_cr3);
+#endif /* !__PKVM_HYP__ */
 
 int kvm_set_cr8(struct kvm_vcpu *vcpu, unsigned long cr8)
 {
@@ -1574,6 +1575,7 @@ int kvm_set_cr8(struct kvm_vcpu *vcpu, unsigned long cr8)
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_set_cr8);
 
+#ifndef __PKVM_HYP__
 unsigned long kvm_get_cr8(struct kvm_vcpu *vcpu)
 {
 	if (lapic_in_kernel(vcpu))
