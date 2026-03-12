@@ -757,6 +757,8 @@ struct dmar_domain {
 
 	/* parent page table which the user domain is nested on */
 	struct dmar_domain *s2_domain;
+	/* page table attributes */
+	struct iommu_hwpt_vtd_s1 s1_cfg;
 
 	/*
 	 * Lock to protect the mapping operations

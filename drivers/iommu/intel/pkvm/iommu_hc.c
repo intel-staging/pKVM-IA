@@ -239,7 +239,7 @@ static int iommu_pasid_setup_fl(struct pasid_setup_fl_data *data)
 	struct device_domain_info info = { 0 };
 	struct pkvm_device dev = { .info = &info };
 	struct dmar_domain *domain;
-	int flags = 0, level, ret;
+	int level, ret;
 	void *pgd;
 
 	if (!iommu)
@@ -296,13 +296,22 @@ static int iommu_pasid_setup_fl(struct pasid_setup_fl_data *data)
 	pkvm_dbg("%s: dev[%x:%x], pasid: %x, fsptptr_gpa: %llx, did: %d\n", __func__,
 		 data->bus, data->devfn, data->pasid, data->fsptptr_gpa, data->did);
 
-	if (data->force_snoop)
-		flags |= PASID_FLAG_PAGE_SNOOP;
-	if (level == 5)
-		flags |= PASID_FLAG_FL5LP;
-	ret = intel_pasid_setup_first_level(iommu, domain, &dev,
-					    __pkvm_pa(pgd),
-					    data->pasid, data->did, flags);
+	if (domain->domain.type == IOMMU_DOMAIN_NESTED) {
+		pkvm_err("%s: PASID setup for nested domain(%p) not implemented yet\n",
+			 __func__, domain->pgd);
+		ret = -EOPNOTSUPP;
+	} else {
+		int flags = 0;
+
+		if (data->force_snoop)
+			flags |= PASID_FLAG_PAGE_SNOOP;
+		if (level == 5)
+			flags |= PASID_FLAG_FL5LP;
+		ret = intel_pasid_setup_first_level(iommu, domain, &dev,
+						    __pkvm_pa(pgd),
+						    data->pasid, data->did,
+						    flags);
+	}
 
 put_domain:
 	if (ret)
@@ -439,6 +448,31 @@ static int __validate_domain_params(struct intel_iommu *iommu, struct alloc_doma
 		 */
 		pkvm_err("%s: invalid pgd_gpa(%llx) from host!\n",
 			 __func__, data->pgd_gpa);
+	} else if (data->pkvm_nested && !pkvm_nested_enabled(iommu)) {
+		pkvm_err("%s: pkvm_nested set while pKVM nested disabled!\n",
+			 __func__);
+	} else if (data->pkvm_nested && !data->use_first_level) {
+		pkvm_err("%s: pkvm_nested set for non-first level domain!\n",
+			 __func__);
+	} else if (!data->pkvm_nested && data->use_first_level &&
+		   pkvm_nested_enabled(iommu)) {
+		/*
+		 * Disallow FL-only domains when nested mode is enabled so the
+		 * host cannot share a DID between nested (writable S1) and
+		 * FL-only (no S2) entries to bypass stage-2 via FS caches.
+		 */
+		pkvm_err("%s: first-level domain must use nested mode!\n",
+			 __func__);
+	} else if (!PAGE_ALIGNED(data->pgd_gpa)) {
+		/*
+		 * Non-nested pgd alignment is checked on donation, but nested
+		 * domains skip donation while still keying iommu_domain_hasht
+		 * by pgd (with low bits intact). Reject unaligned pgd_gpa so
+		 * it can't mismatch PASID teardown, which reconstructs pgd
+		 * from pasid_get_flptr() with bits 11:0 masked off.
+		 */
+		pkvm_err("%s: unaligned pgd_gpa(%llx) from host!\n",
+			 __func__, data->pgd_gpa);
 	} else {
 		ret = 0;
 	}
@@ -463,12 +497,15 @@ int pkvm_iommu_alloc_domain(struct alloc_domain_data *data)
 		return ret;
 
 	pgd = pkvm_host_gpa_to_virt(data->pgd_gpa);
-	pkvm_dbg("%s: write protecting pgd: %p\n", __func__, pgd);
-	ret = pkvm_host_donate_hyp_share_ro(__pkvm_pa(pgd), VTD_PAGE_SIZE, true);
-	if (ret) {
-		pkvm_err("%s: failed to write protect pgd: %p (err=%d)\n",
-			 __func__, pgd, ret);
-		return ret;
+	/* Nested domain's first level page table is managed by host. */
+	if (!data->pkvm_nested) {
+		pkvm_dbg("%s: write protecting pgd: %p\n", __func__, pgd);
+		ret = pkvm_host_donate_hyp_share_ro(__pkvm_pa(pgd), VTD_PAGE_SIZE, true);
+		if (ret) {
+			pkvm_err("%s: failed to write protect pgd: %p (err=%d)\n",
+				 __func__, pgd, ret);
+			return ret;
+		}
 	}
 
 	need_iotlb_sync_map = cap_caching_mode(iommu->cap) && !data->use_first_level;
@@ -476,11 +513,13 @@ int pkvm_iommu_alloc_domain(struct alloc_domain_data *data)
 	if (IS_ERR(domain)) {
 		pkvm_err("%s: domain alloc failed for device[%x] (err=%ld)\n",
 			 __func__, data->bdf, PTR_ERR(domain));
-		pkvm_hyp_donate_host(__pkvm_pa(pgd), VTD_PAGE_SIZE, false);
+		if (!data->pkvm_nested)
+			pkvm_hyp_donate_host(__pkvm_pa(pgd), VTD_PAGE_SIZE, false);
 		return PTR_ERR(domain);
 	}
 
-	domain_flush_cache(domain, pgd, VTD_PAGE_SIZE);
+	if (!data->pkvm_nested)
+		domain_flush_cache(domain, pgd, VTD_PAGE_SIZE);
 
 	pkvm_dbg("%s: allocated domain(pgd=%p) for device[%x]\n", __func__,
 		 pgd, data->bdf);
