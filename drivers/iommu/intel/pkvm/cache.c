@@ -6,7 +6,7 @@
 #include <asm/pkvm_spinlock.h>
 #include "../iommu.h"
 
-#define MAX_CACHETAG_NUM 1024
+#define MAX_CACHETAG_NUM 2048
 static DECLARE_BITMAP(cache_tag_bitmap, MAX_CACHETAG_NUM);
 static struct cache_tag cache_tags[MAX_CACHETAG_NUM];
 static DEFINE_PKVM_SPINLOCK(cache_tag_lock);
