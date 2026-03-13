@@ -60,6 +60,19 @@ static void __pkvm_vcpu_unload(void *arg)
 		return;
 
 	vmx = to_vmx(vcpu);
+
+	lockdep_assert_irqs_disabled();
+
+	list_del(&vmx->loaded_vmcs->loaded_vmcss_on_cpu_link);
+
+	/*
+	 * Ensure the loaded_vmcs is removed from the per-cpu list before
+	 * updating the cpu field as -1, otherwise another CPU may see cpu == -1
+	 * and add loaded_vmcs to its per-cpu list before it is removed from the
+	 * old CPU's per-cpu list. Pairs with the smp_rmb() in pkvm_vcpu_load().
+	 */
+	smp_wmb();
+
 	vmx->loaded_vmcs->cpu = -1;
 }
 
@@ -610,12 +623,24 @@ static int pkvm_enable_virtualization_cpu(void)
 
 static void pkvm_disable_virtualization_cpu(void)
 {
-	/*
-	 * The pKVM hypervisor doesn't support disabling VMX for security
-	 * reasons. This means that the CPU will remain in VMX non-root mode
-	 * during rebooting if there was no hardware level reset. But pKVM
-	 * does not support such warm reboots anyway.
-	 */
+	int cpu = raw_smp_processor_id();
+	struct loaded_vmcs *v, *n;
+	unsigned long flags;
+
+	local_irq_save(flags);
+
+	list_for_each_entry_safe(v, n, &per_cpu(loaded_vmcss_on_cpu, cpu),
+				 loaded_vmcss_on_cpu_link) {
+		/*
+		 * The loaded_vmcs points to vcpu_vmx->vmcs01. See the
+		 * implementation in the pkvm_vcpu_create().
+		 */
+		struct vcpu_vmx *vmx = container_of(v, struct vcpu_vmx, vmcs01);
+
+		__pkvm_vcpu_unload(&vmx->vcpu);
+	}
+
+	local_irq_restore(flags);
 }
 
 /*
@@ -858,8 +883,22 @@ static void pkvm_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
 	bool already_loaded;
 
 	already_loaded = vmx->loaded_vmcs->cpu == cpu;
-	if (!already_loaded)
+	if (!already_loaded) {
 		pkvm_vcpu_unload(vcpu);
+
+		local_irq_disable();
+		/*
+		 * Ensure the loaded_vmcs->cpu update is visible before the
+		 * loaded_vmcs is added to the per-cpu list, otherwise it may
+		 * not yet be deleted from its previous per-cpu list. Pairs
+		 * with the smp_wmb() in __pkvm_vcpu_unload().
+		 */
+		smp_rmb();
+
+		list_add(&vmx->loaded_vmcs->loaded_vmcss_on_cpu_link,
+			 &per_cpu(loaded_vmcss_on_cpu, cpu));
+		local_irq_enable();
+	}
 
 	if (KVM_BUG_ON(pkvm_hypercall(vcpu_load, vcpu->kvm->arch.pkvm.handle,
 				      vcpu->arch.pkvm.handle), vcpu->kvm))

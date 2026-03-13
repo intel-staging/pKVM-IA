@@ -797,6 +797,8 @@ int kvm_cpu_vmxon(u64 vmxon_pointer);
 int kvm_cpu_vmxoff(void);
 void vmx_clear_hlt(struct kvm_vcpu *vcpu);
 
+DECLARE_PER_CPU(struct list_head, loaded_vmcss_on_cpu);
+
 #ifdef CONFIG_PKVM_INTEL
 
 #define PKVM_HOST_KVM_VMX_PAGES		(PAGE_ALIGN(sizeof(struct kvm_vmx)) >> PAGE_SHIFT)
