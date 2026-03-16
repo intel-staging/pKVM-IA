@@ -33,6 +33,9 @@ struct pkvm_hyp *pkvm_hyp;
 DEFINE_PER_CPU(struct pkvm_pcpu *, phys_cpu);
 DEFINE_PER_CPU(struct kvm_vcpu *, host_vcpu);
 DEFINE_PER_CPU(bool, host_vcpu_fixup);
+DEFINE_PER_CPU(unsigned long, start_ip);
+DEFINE_PER_CPU(bool, waking_up);
+
 /*
  * similarly pmu.c is not compiled. define kvm_mmu_cap here for the use
  * in cpuid.c
@@ -1953,6 +1956,38 @@ static int pkvm_vcpu_handle_host_hypercall(struct kvm_vcpu *hvcpu, enum pkvm_hc 
 	return ret;
 }
 
+static int pkvm_wakeup_host_vcpu(struct kvm_vcpu *vcpu, unsigned long ip, unsigned int cpu)
+{
+	struct kvm_vcpu *target_vcpu;
+
+	if (!cpu_possible(cpu))
+		return -EINVAL;
+
+	cpu = array_index_nospec(cpu, ARRAY_SIZE(pkvm_hyp->host_vcpus));
+	target_vcpu = pkvm_hyp->host_vcpus[cpu];
+	if (!target_vcpu || vcpu == target_vcpu)
+		return -EINVAL;
+
+	if (cmpxchg(&per_cpu(waking_up, cpu), false, true))
+		return -EBUSY;
+
+	per_cpu(start_ip, cpu) = ip;
+
+	/*
+	 * Ensure the per-cpu start_ip is updated before changing the mp_state
+	 * to KVM_MP_STATE_INIT_RECEVIED.
+	 */
+	smp_wmb();
+
+	target_vcpu->arch.mp_state = KVM_MP_STATE_INIT_RECEIVED;
+
+	kvm_make_request(KVM_REQ_EVENT, target_vcpu);
+
+	pkvm_kick_vcpu(target_vcpu);
+
+	return 0;
+}
+
 void pkvm_handle_host_hypercall(struct kvm_vcpu *vcpu)
 {
 	enum pkvm_hc hc = pkvm_hc(vcpu);
@@ -2088,6 +2123,10 @@ void pkvm_handle_host_hypercall(struct kvm_vcpu *vcpu)
 					      pkvm_hc_input3(vcpu));
 		break;
 #endif
+	case __pkvm__wakeup_secondary_cpu:
+		ret = pkvm_wakeup_host_vcpu(vcpu, pkvm_hc_input1(vcpu),
+					    pkvm_hc_input2(vcpu));
+		break;
 	default:
 		ret = pkvm_vcpu_handle_host_hypercall(vcpu, hc, &in, &out);
 		break;

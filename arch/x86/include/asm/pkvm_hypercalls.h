@@ -15,6 +15,9 @@ BUILD_BUG_ON(1)
 #define PKVM_HC_INOUT PKVM_HC
 #endif
 
+/* Wakeup a secondary host vCPU which is offline */
+PKVM_HC(wakeup_secondary_cpu)
+
 /* Hypercalls used only during pKVM initialization */
 PKVM_HC(init)
 PKVM_HC(init_finalize)

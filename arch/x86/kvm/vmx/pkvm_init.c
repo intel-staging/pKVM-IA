@@ -415,6 +415,7 @@ static __init int pkvm_setup_host_vcpu(struct pkvm_hyp *pkvm, int cpu)
 	vmx->vcpu.cpu = cpu;
 	vmx->vcpu.vcpu_id = kvm->created_vcpus;
 	vmx->vcpu.kvm = kvm;
+	vmx->vcpu.arch.mp_state = KVM_MP_STATE_RUNNABLE;
 	kvm->created_vcpus++;
 	pkvm->host_vcpus[cpu] = &vmx->vcpu;
 
