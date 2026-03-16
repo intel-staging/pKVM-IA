@@ -333,3 +333,36 @@ int pkvm_init_finalize(void)
 
 	return 0;
 }
+
+int pkvm_bringup_vcpu(struct kvm_vcpu *vcpu)
+{
+	int ret;
+
+	if (!init_ops || !init_ops->reset_vcpu || !init_ops->startup_vcpu)
+		return -EOPNOTSUPP;
+
+	if (vcpu->arch.mp_state != KVM_MP_STATE_INIT_RECEIVED)
+		return -EPERM;
+
+	/*
+	 * Ensure the mp_state is visible before reading the per-cpu start_ip.
+	 * Pairs with the smp_wmb() in the pkvm_wakeup_host_vcpu.
+	 */
+	smp_rmb();
+
+	ret = init_ops->reset_vcpu(vcpu);
+	if (ret)
+		return ret;
+
+	vcpu->arch.mp_state = KVM_MP_STATE_SIPI_RECEIVED;
+
+	ret = init_ops->startup_vcpu(vcpu, this_cpu_read(start_ip));
+	if (ret)
+		return ret;
+
+	vcpu->arch.mp_state = KVM_MP_STATE_RUNNABLE;
+
+	BUG_ON(!cmpxchg(this_cpu_ptr(&waking_up), true, false));
+
+	return 0;
+}

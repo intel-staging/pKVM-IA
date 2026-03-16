@@ -1975,7 +1975,8 @@ static int pkvm_wakeup_host_vcpu(struct kvm_vcpu *vcpu, unsigned long ip, unsign
 
 	/*
 	 * Ensure the per-cpu start_ip is updated before changing the mp_state
-	 * to KVM_MP_STATE_INIT_RECEVIED.
+	 * to KVM_MP_STATE_INIT_RECEVIED. Pairs with the smp_rmb() in the
+	 * pkvm_bringup_vcpu().
 	 */
 	smp_wmb();
 

@@ -12,6 +12,8 @@ typedef int (*host_mmu_finalize_fn_t)(struct pkvm_pgtable *pgt);
 typedef int (*hyp_iommu_init_fn_t)(void);
 typedef int (*hyp_global_init_fn_t)(void);
 typedef void (*reprivilege_cpu_fn_t)(unsigned long *vcpu_regs);
+typedef int (*reset_vcpu_fn_t)(struct kvm_vcpu *vcpu);
+typedef int (*startup_vcpu_fn_t)(struct kvm_vcpu *vcpu, unsigned long ip);
 
 /**
  * pkvm_init_ops - The platform vendor specific pKVM init operations used by the
@@ -24,6 +26,8 @@ typedef void (*reprivilege_cpu_fn_t)(unsigned long *vcpu_regs);
  * @hyp_global_init:	Initialize the hypervisor globally.
  * @reprivilege_cpu:	Switch the cpu back to root mode. Called if deprivilege
  *			or pKVM initialization fails.
+ * @reset_vcpu:		Reset the deprivileged cpu to the initial state.
+ * @startup_vcpu:	Start the deprivileged cpu after it is reset.
  */
 struct pkvm_init_ops {
 	hyp_mmu_finalize_fn_t		hyp_mmu_finalize;
@@ -32,10 +36,13 @@ struct pkvm_init_ops {
 	hyp_iommu_init_fn_t		hyp_iommu_init;
 	hyp_global_init_fn_t		hyp_global_init;
 	reprivilege_cpu_fn_t		reprivilege_cpu;
+	reset_vcpu_fn_t			reset_vcpu;
+	startup_vcpu_fn_t		startup_vcpu;
 };
 
 int pkvm_init(struct pkvm_mem_info infos[], int nr_info);
 int pkvm_init_finalize(void);
 int pkvm_reprivilege_vcpu(struct kvm_vcpu *vcpu);
+int pkvm_bringup_vcpu(struct kvm_vcpu *vcpu);
 
 #endif /* __PKVM_X86_INIT_H */
