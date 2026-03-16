@@ -1420,6 +1420,11 @@ static int __init pkvm_firmware_rmem_clear(void)
 	return 0;
 }
 
+static int pkvm_wakeup_secondary_cpu(u32 apic_id, unsigned long start_ip, unsigned int cpu)
+{
+	return pkvm_hypercall(wakeup_secondary_cpu, start_ip, cpu);
+}
+
 int __init vmx_pkvm_init(void)
 {
 	struct pkvm_hyp *pkvm;
@@ -1512,6 +1517,8 @@ int __init vmx_pkvm_init(void)
 	}
 
 	pkvm_hypercall(init_finalize);
+
+	apic_update_callback(wakeup_secondary_cpu, pkvm_wakeup_secondary_cpu);
 
 	pkvm_init_debugfs();
 
