@@ -12,6 +12,7 @@
 #include "pkvm.h"
 #include "pkvm_iommu.h"
 
+#define CR0			0
 #define CR4			4
 #define MOV_TO_CR		0
 
@@ -27,6 +28,99 @@ static int vmx_hyp_mmu_finalize(struct pkvm_pgtable *pgt)
 	return 0;
 }
 
+static int vmx_reset_host_vcpu(struct kvm_vcpu *vcpu)
+{
+	struct vcpu_vmx *vmx = to_vmx(vcpu);
+	unsigned long cr0;
+
+	if (vcpu->arch.mp_state != KVM_MP_STATE_INIT_RECEIVED)
+		return -EPERM;
+
+	atomic_set(&vcpu->arch.nmi_queued, 0);
+	vcpu->arch.nmi_pending = 0;
+	vcpu->arch.nmi_injected = false;
+	kvm_clear_exception_queue(vcpu);
+
+	set_debugreg(0, 0);
+	set_debugreg(0, 1);
+	set_debugreg(0, 2);
+	set_debugreg(0, 3);
+	set_debugreg(DR6_ACTIVE_LOW, 6);
+	vmcs_writel(GUEST_DR7, DR7_FIXED_1);
+
+	vcpu->arch.cr2 = 0;
+
+	/* All GPRs except RDX (handled below) are zeroed on RESET/INIT. */
+	memset(vcpu->arch.regs, 0, sizeof(vcpu->arch.regs));
+	vcpu->arch.regs[VCPU_REGS_RDX] = native_cpuid_eax(1);
+
+	vmx_seg_setup(VCPU_SREG_CS);
+	vmx_seg_setup(VCPU_SREG_DS);
+	vmx_seg_setup(VCPU_SREG_ES);
+	vmx_seg_setup(VCPU_SREG_FS);
+	vmx_seg_setup(VCPU_SREG_GS);
+	vmx_seg_setup(VCPU_SREG_SS);
+
+	vmcs_write16(GUEST_TR_SELECTOR, 0);
+	vmcs_writel(GUEST_TR_BASE, 0);
+	vmcs_write32(GUEST_TR_LIMIT, 0xffff);
+	vmcs_write32(GUEST_TR_AR_BYTES, 0x008b);
+
+	vmcs_write16(GUEST_LDTR_SELECTOR, 0);
+	vmcs_writel(GUEST_LDTR_BASE, 0);
+	vmcs_write32(GUEST_LDTR_LIMIT, 0xffff);
+	vmcs_write32(GUEST_LDTR_AR_BYTES, 0x00082);
+
+	vmcs_writel(GUEST_GDTR_BASE, 0);
+	vmcs_write32(GUEST_GDTR_LIMIT, 0xffff);
+
+	vmcs_writel(GUEST_IDTR_BASE, 0);
+	vmcs_write32(GUEST_IDTR_LIMIT, 0xffff);
+
+	vmcs_write32(GUEST_ACTIVITY_STATE, GUEST_ACTIVITY_ACTIVE);
+	vmcs_write32(GUEST_INTERRUPTIBILITY_INFO, 0);
+	vmcs_writel(GUEST_PENDING_DBG_EXCEPTIONS, 0);
+
+	vmcs_write32(VM_ENTRY_INTR_INFO_FIELD, 0);
+
+	vmcs_writel(GUEST_RFLAGS, X86_EFLAGS_FIXED);
+	vmcs_writel(GUEST_RIP, 0xfff0);
+	vmcs_writel(GUEST_RSP, 0);
+
+	cr0 = X86_CR0_NE | X86_CR0_ET;
+	cr0 |= vmcs_readl(GUEST_CR0) & (X86_CR0_NW | X86_CR0_CD);
+	vmcs_writel(GUEST_CR0, cr0);
+	vmcs_writel(GUEST_CR3, 0);
+	vmcs_writel(CR4_READ_SHADOW, 0);
+	vmcs_writel(GUEST_CR4, X86_CR4_VMXE);
+	vmcs_write64(GUEST_IA32_EFER, 0);
+
+	/* Set unrestricted guest mode to simplify the real mode emulation. */
+	secondary_exec_controls_setbit(vmx, SECONDARY_EXEC_UNRESTRICTED_GUEST);
+
+	/*
+	 * Clear the IA32E mode to make sure the EFER.LMA will be cleared as the
+	 * host will vmenter to real mode. Intercept the X86_CR0_PG bit so that
+	 * the pKVM hypervisor can set the EFER.LMA when the host is ready to
+	 * vmenter to long mode.
+	 */
+	vm_entry_controls_clearbit(vmx, VM_ENTRY_IA32E_MODE);
+	vmcs_writel(CR0_GUEST_HOST_MASK, X86_CR0_PG);
+
+	if (boot_cpu_has(X86_FEATURE_MPX))
+		vmcs_write64(GUEST_BNDCFGS, 0);
+
+	if (boot_cpu_has(X86_FEATURE_IBT) || boot_cpu_has(X86_FEATURE_SHSTK)) {
+		vmcs_writel(GUEST_S_CET, 0);
+		if (boot_cpu_has(X86_FEATURE_SHSTK)) {
+			vmcs_writel(GUEST_SSP, 0);
+			vmcs_writel(GUEST_INTR_SSP_TABLE, 0);
+		}
+	}
+
+	return 0;
+}
+
 static struct pkvm_init_ops vmx_init_ops = {
 	.hyp_mmu_finalize = vmx_hyp_mmu_finalize,
 	.host_mmu_init = pkvm_host_ept_init,
@@ -34,6 +128,7 @@ static struct pkvm_init_ops vmx_init_ops = {
 	.hyp_global_init = pkvm_vmx_init,
 	.reprivilege_cpu = pkvm_vmx_reprivilege_cpu,
 	.hyp_iommu_init = pkvm_intel_iommu_init,
+	.reset_vcpu = vmx_reset_host_vcpu,
 };
 
 struct pkvm_init_ops *pkvm_vmx_init_ops = &vmx_init_ops;
@@ -85,17 +180,37 @@ static void handle_cr(struct kvm_vcpu *vcpu)
 	cr = exit_qual & 15;
 	type = (exit_qual >> 4)	& 3;
 	reg = (exit_qual >> 8) & 15;
+	val = vcpu->arch.regs[reg];
 
 	switch (type) {
 	case MOV_TO_CR:
 		switch (cr) {
+		case CR0:
+			if (val & X86_CR0_PG) {
+				u64 efer = vmcs_read64(GUEST_IA32_EFER);
+
+				if (efer & EFER_LME) {
+					u64 cr0_guest_host_mask = vmcs_readl(CR0_GUEST_HOST_MASK) &
+								  ~X86_CR0_PG;
+					/*
+					 * Enable the IA32E mode and EFER.LMA to
+					 * active long mode. After this is done,
+					 * no need to intercept the X86_PG_CR0
+					 * bit.
+					 */
+					vm_entry_controls_setbit(to_vmx(vcpu), VM_ENTRY_IA32E_MODE);
+					vmcs_write64(GUEST_IA32_EFER, efer | EFER_LMA);
+					vmcs_writel(CR0_GUEST_HOST_MASK, cr0_guest_host_mask);
+				}
+			}
+			vmcs_writel(GUEST_CR0, val);
+			break;
 		case CR4:
 			/*
 			 * VMXE bit is owned by pkvm, others are owned by host
 			 * So only when guest is trying to modify VMXE bit it
 			 * can cause vmexit and get here.
 			 */
-			val = vcpu->arch.regs[reg];
 			vmcs_writel(CR4_READ_SHADOW, val);
 			break;
 		default:

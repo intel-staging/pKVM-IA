@@ -4290,6 +4290,13 @@ static void seg_setup(int seg)
 	vmcs_write32(sf->ar_bytes, ar);
 }
 
+#ifdef __PKVM_HYP__
+void vmx_seg_setup(int seg)
+{
+	seg_setup(seg);
+}
+#endif
+
 int allocate_vpid(void)
 {
 	int vpid;

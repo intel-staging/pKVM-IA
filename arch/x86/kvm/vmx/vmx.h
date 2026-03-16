@@ -820,6 +820,7 @@ extern struct pkvm_init_ops *pkvm_sym(pkvm_vmx_init_ops);
 
 #ifdef __PKVM_HYP__
 int pkvm_vmx_init(void);
+void vmx_seg_setup(int seg);
 #endif
 
 bool pkvm_interrupt_blocked(struct kvm_vcpu *vcpu);

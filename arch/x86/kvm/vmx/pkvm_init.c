@@ -142,7 +142,8 @@ static __init int pkvm_setup_host_vmcs_config(void)
 			CPU_BASED_ACTIVATE_SECONDARY_CONTROLS,
 		.cpu_based_vm_exec_ctrl_opt = 0,
 		.secondary_vm_exec_ctrl_req =
-			SECONDARY_EXEC_ENABLE_EPT,
+			SECONDARY_EXEC_ENABLE_EPT |
+			SECONDARY_EXEC_UNRESTRICTED_GUEST,
 		.secondary_vm_exec_ctrl_opt =
 			SECONDARY_EXEC_ENABLE_VPID |
 			SECONDARY_EXEC_ENABLE_INVPCID |
@@ -1023,9 +1024,14 @@ static __init void init_execution_control(struct vcpu_vmx *vmx)
 				 CPU_BASED_CR3_STORE_EXITING |
 				 CPU_BASED_INTR_WINDOW_EXITING));
 
-	/* Disable EPT/VPID first, enable after EPT pgtable created */
+	/*
+	 * Disable EPT/VPID first, enable after EPT pgtable created. According
+	 * to SDM Vol3 Checks on VMX Controls, unrestricted guest can only be
+	 * enabled when EPT is enabled. So disable unrestricted guest as well.
+	 */
 	secondary_exec_controls_set(vmx, pkvm_sym(host_vmcs_config).cpu_based_2nd_exec_ctrl &
 					 ~(SECONDARY_EXEC_ENABLE_EPT |
+					   SECONDARY_EXEC_UNRESTRICTED_GUEST |
 					   SECONDARY_EXEC_ENABLE_VPID));
 
 	/*
