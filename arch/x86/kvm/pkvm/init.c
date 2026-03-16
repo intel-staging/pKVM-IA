@@ -350,6 +350,8 @@ int pkvm_bringup_vcpu(struct kvm_vcpu *vcpu)
 	 */
 	smp_rmb();
 
+	pkvm_reset_host_fpu(true);
+
 	ret = init_ops->reset_vcpu(vcpu);
 	if (ret)
 		return ret;

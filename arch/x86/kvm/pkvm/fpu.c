@@ -2,10 +2,12 @@
 #include <linux/sched.h>
 #include <asm/cpufeature.h>
 #include <asm/current.h>
+#include <asm/fpu/signal.h>
 #include "cpu.h"
 #include "internal.h"
 #include "fpu.h"
 #include "xstate.h"
+#include "../x86.h"
 
 /*
  * percpu_fpstate is used to reset the FPU hardware to its initial state
@@ -75,4 +77,41 @@ void pkvm_init_guest_fpu(struct fpu_guest *gfpu)
 	fpstate_init_user(fpstate);
 
 	gfpu->xfeatures		= fpstate->user_xfeatures;
+}
+
+void pkvm_reset_host_fpu(bool init_event)
+{
+	struct fpstate *fpstate = x86_task_fpu(current)->fpstate;
+	u64 xcr0, mask;
+
+	if (!init_event)
+		return;
+
+	/*
+	 * According to SDM Vol. 3 Table IA-32 and Intel® 64 Processor States
+	 * Following Power-up, Reset, or INIT, the MPX(BNDREGS/BNDCSR) and CET
+	 * components in the xsave area will be reset and reset components are
+	 * unchanged. So do reset only if XSAVE is supported.
+	 */
+	if (!boot_cpu_has(X86_FEATURE_XSAVE))
+		return;
+
+	/*
+	 * After exit from the host, the XCR0 and FPU still contain the host's
+	 * value.
+	 */
+	xcr0 = xgetbv(XCR_XFEATURE_ENABLED_MASK);
+	mask = XFEATURE_MASK_BNDREGS | XFEATURE_MASK_BNDCSR | XFEATURE_MASK_CET_ALL;
+
+	if (xcr0 & mask) {
+		/* Save the xfd state as the following will restore it. */
+		fpu_sync_guest_vmexit_xfd_state();
+		/*
+		 * The XSTATE_BV field in the XSAVE header is set to 0 in the
+		 * pkvm_init_percpu_fpu(), so with the components represented by
+		 * (xcr0 & mask) will be set with their initial state by the
+		 * XRSTOR(S) instruction. And other components are unchanged.
+		 */
+		restore_fpregs_from_fpstate(fpstate, xcr0 & mask);
+	}
 }
