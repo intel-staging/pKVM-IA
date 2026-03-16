@@ -121,6 +121,20 @@ static int vmx_reset_host_vcpu(struct kvm_vcpu *vcpu)
 	return 0;
 }
 
+static int vmx_startup_host_vcpu(struct kvm_vcpu *vcpu, unsigned long start_ip)
+{
+	u8 vector = start_ip >> 12;
+
+	if (vcpu->arch.mp_state != KVM_MP_STATE_SIPI_RECEIVED)
+		return -EPERM;
+
+	vmcs_write16(GUEST_CS_SELECTOR, vector << 8);
+	vmcs_writel(GUEST_CS_BASE, vector << 12);
+	vmcs_writel(GUEST_RIP, 0);
+
+	return 0;
+}
+
 static struct pkvm_init_ops vmx_init_ops = {
 	.hyp_mmu_finalize = vmx_hyp_mmu_finalize,
 	.host_mmu_init = pkvm_host_ept_init,
@@ -129,6 +143,7 @@ static struct pkvm_init_ops vmx_init_ops = {
 	.reprivilege_cpu = pkvm_vmx_reprivilege_cpu,
 	.hyp_iommu_init = pkvm_intel_iommu_init,
 	.reset_vcpu = vmx_reset_host_vcpu,
+	.startup_vcpu = vmx_startup_host_vcpu,
 };
 
 struct pkvm_init_ops *pkvm_vmx_init_ops = &vmx_init_ops;
