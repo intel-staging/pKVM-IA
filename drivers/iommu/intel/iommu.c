@@ -3357,7 +3357,8 @@ static bool has_external_pci(void)
 
 static int __init platform_optin_force_iommu(void)
 {
-	if (!dmar_platform_optin() || no_platform_optin || !has_external_pci())
+	if ((!dmar_platform_optin() || no_platform_optin || !has_external_pci()) &&
+	    !pkvm_enabled())
 		return 0;
 
 	if (no_iommu || dmar_disabled)
