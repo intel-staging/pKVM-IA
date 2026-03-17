@@ -413,6 +413,9 @@ static void handle_pending_events(struct kvm_vcpu *vcpu, bool *req_immediate_exi
 			else
 				*req_immediate_exit = true;
 		}
+
+		if (vcpu->arch.mp_state == KVM_MP_STATE_INIT_RECEIVED)
+			pkvm_bringup_vcpu(vcpu);
 	}
 
 	if (kvm_check_request(KVM_REQ_TLB_FLUSH_CURRENT, vcpu))
