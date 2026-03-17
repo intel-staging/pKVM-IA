@@ -2,6 +2,7 @@
 #include <linux/sched.h>
 #include <asm/cpufeature.h>
 #include <asm/current.h>
+#include "cpu.h"
 #include "internal.h"
 #include "fpu.h"
 #include "xstate.h"
@@ -22,6 +23,28 @@ static DEFINE_PER_CPU(struct fpstate, percpu_fpstate);
 void pkvm_init_percpu_fpu(void)
 {
 	struct fpu *fpu = x86_task_fpu(current);
+
+	if (boot_cpu_has(X86_FEATURE_XSAVE)) {
+		unsigned long cr4 = native_read_cr4();
+		unsigned long cr0 = native_read_cr0();
+
+		/*
+		 * According to SDM Vol. 1 Operation Of XSAVE/XRSTOR:
+		 * 1) If the XSAVE feature set is not enabled (CR4.OSXSAVE = 0), an
+		 * invalid-opcode exception (#UD) occurs.
+		 * 2) If CR0.TS[bit 3] is 1, a device-not-available exception (#NM)
+		 * occurs.
+		 * The pKVM's CR4/CR0 are configured with the same value as the host
+		 * before deprivileging, so most likely CR4.OSXSAVE is already set and
+		 * CR0.TS is clear. But still ensure this in case the host is not
+		 * configured properly.
+		 */
+		if (!(cr4 & X86_CR4_OSXSAVE))
+			__pkvm_write_cr4(cr4 | X86_CR4_OSXSAVE);
+
+		if (cr0 & X86_CR0_TS)
+			__pkvm_write_cr0(cr0 & ~X86_CR0_TS);
+	}
 
 	/*
 	 * Set the current fpstate pointer to the percpu_fpstate, which is used

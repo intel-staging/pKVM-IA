@@ -6,6 +6,7 @@
 #include <vmx/vmx.h>
 #include "host_vmx.h"
 #include "vcpu_regs.h"
+#include "pkvm/cpu.h"
 
 struct host_cpu_state {
 	unsigned long cr0, cr3, cr4;
@@ -53,16 +54,6 @@ static inline void read_host_cpu_state(struct host_cpu_state *hcs)
 	hcs->cr3 = vmcs_readl(GUEST_CR3);
 	hcs->cr4 = vmcs_readl(GUEST_CR4);
 }
-
-#define PKVM_WRITE_CR(crnum, val) \
-static inline void __pkvm_write_cr##crnum(unsigned long val) \
-{							\
-	asm volatile("mov %0,%%cr" #crnum : "+r" (val) : : "memory"); \
-}
-
-PKVM_WRITE_CR(0, val)
-PKVM_WRITE_CR(3, val)
-PKVM_WRITE_CR(4, val)
 
 /*
  * Restores register state from memory pointed by rdi
