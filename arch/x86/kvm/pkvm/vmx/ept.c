@@ -231,6 +231,13 @@ int pkvm_host_ept_finalize(struct pkvm_pgtable *pgt)
 
 	ept_sync_global();
 
+	/*
+	 * Re-enable the SECONDARY_EXEC_PT_USE_GPA bit if support Intel PT
+	 * which was disabled together with the EPT before deprivileging.
+	 */
+	if (boot_cpu_has(X86_FEATURE_INTEL_PT))
+		secondary_exec_controls_setbit(to_vmx(hvcpu), SECONDARY_EXEC_PT_USE_GPA);
+
 	return 0;
 }
 
