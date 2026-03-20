@@ -2303,8 +2303,130 @@ static void pkvm_fixup_cpuid_entry(struct kvm_cpuid_entry2 *entry)
 #define CPUID_1_ECX_TSC_DLTIMER		(1 << 24)
 #define CPUID_1_ECX_HYP			(1 << 31)
 #define CPUID_1_EDX_HTT			(1 << 28)
+static bool cpuid_entry_is_empty(struct kvm_cpuid_entry2 *e2);
+
+static bool pkvm_cpuid_entry_has_amx(struct kvm_cpuid_entry2 *entry)
+{
+	u64 xfeatures;
+
+	switch (entry->function) {
+	case 7:
+		if (!entry->index)
+			return cpuid_entry_has(entry, X86_FEATURE_AMX_TILE) ||
+			       cpuid_entry_has(entry, X86_FEATURE_AMX_INT8) ||
+			       cpuid_entry_has(entry, X86_FEATURE_AMX_BF16);
+		if (entry->index == 1)
+			return cpuid_entry_has(entry, X86_FEATURE_AMX_FP16) ||
+			       cpuid_entry_has(entry, X86_FEATURE_AMX_COMPLEX);
+		return false;
+	case 0xd:
+		if (entry->index == 0) {
+			xfeatures = entry->eax | ((u64)entry->edx << 32);
+			return xfeatures & XFEATURE_MASK_XTILE;
+		}
+
+		return entry->index == XFEATURE_XTILE_CFG ||
+		       entry->index == XFEATURE_XTILE_DATA;
+	case 0x1d:
+	case 0x1e:
+		return entry->function || entry->eax || entry->ebx ||
+		       entry->ecx || entry->edx;
+	default:
+		return false;
+	}
+}
+
+static bool pkvm_cpuid_has_amx(struct kvm_cpuid_entry2 *e2, int nent)
+{
+	int i;
+
+	for (i = 0; i < nent; i++) {
+		if (cpuid_entry_is_empty(&e2[i]))
+			continue;
+		if (pkvm_cpuid_entry_has_amx(&e2[i]))
+			return true;
+	}
+
+	return false;
+}
+
+static void pkvm_cpuid_align_amx(struct kvm_cpuid_entry2 *entry,
+				 struct kvm_cpuid_entry2 *host,
+				 bool has_amx)
+{
+	u64 xfeatures;
+
+	switch (entry->function) {
+	case 7:
+		if (!entry->index) {
+			bool keep_tile = host && cpuid_entry_has(host, X86_FEATURE_AMX_TILE);
+			bool keep_int8 = host && cpuid_entry_has(host, X86_FEATURE_AMX_INT8);
+			bool keep_bf16 = host && cpuid_entry_has(host, X86_FEATURE_AMX_BF16);
+
+			cpuid_entry_change(entry, X86_FEATURE_AMX_TILE, keep_tile);
+			cpuid_entry_change(entry, X86_FEATURE_AMX_INT8, keep_int8);
+			cpuid_entry_change(entry, X86_FEATURE_AMX_BF16, keep_bf16);
+		} else if (entry->index == 1) {
+			bool keep_fp16 = host && cpuid_entry_has(host, X86_FEATURE_AMX_FP16);
+			bool keep_complex = host && cpuid_entry_has(host, X86_FEATURE_AMX_COMPLEX);
+
+			cpuid_entry_change(entry, X86_FEATURE_AMX_FP16, keep_fp16);
+			cpuid_entry_change(entry, X86_FEATURE_AMX_COMPLEX, keep_complex);
+		}
+		break;
+	case 0xd:
+		if (!has_amx) {
+			if (entry->index == 0) {
+				xfeatures = entry->eax | ((u64)entry->edx << 32);
+				xfeatures &= ~XFEATURE_MASK_XTILE;
+				entry->eax = xfeatures;
+				entry->edx = xfeatures >> 32;
+				entry->ebx = xstate_required_size(xfeatures, false);
+				entry->ecx = entry->ebx;
+			} else if (entry->index == XFEATURE_XTILE_CFG ||
+				   entry->index == XFEATURE_XTILE_DATA) {
+				memset(entry, 0, sizeof(*entry));
+			}
+		}
+		break;
+	case 0x1d:
+	case 0x1e:
+		if (!has_amx)
+			memset(entry, 0, sizeof(*entry));
+		break;
+	default:
+		break;
+	}
+}
+
+static void pkvm_refresh_xstate_cpuid(struct kvm_cpuid_entry2 *e2, int nent)
+{
+	struct kvm_cpuid_entry2 *d0, *d1;
+	u64 xcr0, xss;
+
+	d0 = kvm_find_cpuid_entry2(e2, nent, 0xd, 0);
+	if (!d0)
+		return;
+
+	xcr0 = d0->eax | ((u64)d0->edx << 32);
+	d0->ebx = xstate_required_size(xcr0, false);
+	d0->ecx = d0->ebx;
+
+	d1 = kvm_find_cpuid_entry2(e2, nent, 0xd, 1);
+	if (!d1)
+		return;
+
+	xss = d1->ecx | ((u64)d1->edx << 32);
+	if (cpuid_entry_has(d1, X86_FEATURE_XSAVES) ||
+	    cpuid_entry_has(d1, X86_FEATURE_XSAVEC))
+		d1->ebx = xstate_required_size(xcr0 | xss, true);
+	else
+		d1->ebx = 0;
+}
+
 static void pkvm_enforce_cpuid_entry(struct kvm_cpuid_entry2 *entry,
-				     struct kvm_cpuid_entry2 *def)
+				     struct kvm_cpuid_entry2 *def,
+				     bool has_amx)
 {
 	struct kvm_cpuid_entry2 tmp = *def;
 
@@ -2323,6 +2445,7 @@ static void pkvm_enforce_cpuid_entry(struct kvm_cpuid_entry2 *entry,
 		break;
 	}
 
+	pkvm_cpuid_align_amx(&tmp, entry, has_amx);
 	*entry = tmp;
 }
 
@@ -2385,6 +2508,7 @@ int pkvm_enforce_cpuid(struct kvm_cpuid_entry2 *e2, int *nent, int max_nent)
 	int def_nent, r, i, n;
 	int orig_nent = *nent;
 	bool has_func4 = false;
+	bool has_amx = pkvm_cpuid_has_amx(e2, orig_nent);
 
 	memset(de2, 0, KVM_MAX_CPUID_ENTRIES * sizeof(struct kvm_cpuid_entry2));
 	def_nent = KVM_MAX_CPUID_ENTRIES;
@@ -2416,7 +2540,7 @@ int pkvm_enforce_cpuid(struct kvm_cpuid_entry2 *e2, int *nent, int max_nent)
 
 		tmp = find_cpuid_entry(de2, def_nent, &e2[i]);
 		if (tmp)
-			pkvm_enforce_cpuid_entry(&e2[i], tmp);
+			pkvm_enforce_cpuid_entry(&e2[i], tmp, has_amx);
 		else
 			memset(&e2[i], 0, sizeof(struct kvm_cpuid_entry2));
 	}
@@ -2448,11 +2572,18 @@ int pkvm_enforce_cpuid(struct kvm_cpuid_entry2 *e2, int *nent, int max_nent)
 		if (n == max_nent)
 			return -ENOSPC;
 
-		e2[n++] = de2[i];
+		e2[n] = de2[i];
+		pkvm_cpuid_align_amx(&e2[n], NULL, has_amx);
+		if (cpuid_entry_is_empty(&e2[n]))
+			continue;
+		n++;
 	}
 
 	if (n > orig_nent)
 		*nent = n;
+
+	if (!has_amx)
+		pkvm_refresh_xstate_cpuid(e2, *nent);
 
 	/* Apply fixed values to the final set of entries */
 	for (i = 0; i < *nent; i++) {
