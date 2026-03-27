@@ -26,5 +26,6 @@ struct pkvm_init_ops {
 };
 
 int pkvm_init(struct pkvm_mem_info infos[], int nr_info);
+bool pkvm_cpu_initialized(int cpu);
 
 #endif /* __PKVM_X86_INIT_H */

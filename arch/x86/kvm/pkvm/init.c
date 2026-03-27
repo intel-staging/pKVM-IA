@@ -268,3 +268,7 @@ int pkvm_init(struct pkvm_mem_info infos[], int nr_infos)
 	this_cpu_write(cpu_initialized, true);
 	return 0;
 }
+bool pkvm_cpu_initialized(int cpu)
+{
+	return READ_ONCE(per_cpu(cpu_initialized, cpu));
+}
