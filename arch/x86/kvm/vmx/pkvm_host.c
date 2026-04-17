@@ -1660,6 +1660,63 @@ static void pkvm_get_entry_info(struct kvm_vcpu *vcpu, u32 *intr_info, u32 *erro
 		*error_code = 0;
 }
 
+static bool pkvm_cpuid_entry_has_amx(struct kvm_cpuid_entry2 *entry)
+{
+	u64 xfeatures;
+
+	switch (entry->function) {
+	case 7:
+		if (!entry->index)
+			return cpuid_entry_has(entry, X86_FEATURE_AMX_TILE) ||
+			       cpuid_entry_has(entry, X86_FEATURE_AMX_INT8) ||
+			       cpuid_entry_has(entry, X86_FEATURE_AMX_BF16);
+		if (entry->index == 1)
+			return cpuid_entry_has(entry, X86_FEATURE_AMX_FP16) ||
+			       cpuid_entry_has(entry, X86_FEATURE_AMX_COMPLEX);
+		return false;
+	case 0xd:
+		if (entry->index == 0) {
+			xfeatures = entry->eax | ((u64)entry->edx << 32);
+			return xfeatures & XFEATURE_MASK_XTILE;
+		}
+
+		return entry->index == XFEATURE_XTILE_CFG ||
+		       entry->index == XFEATURE_XTILE_DATA;
+	case 0x1d:
+	case 0x1e:
+		return entry->function || entry->eax || entry->ebx ||
+		       entry->ecx || entry->edx;
+	default:
+		return false;
+	}
+}
+
+static bool pkvm_cpuid_has_amx(struct kvm_cpuid_entry2 *e2, int nent)
+{
+	int i;
+
+	for (i = 0; i < nent; i++) {
+		if (!e2[i].function && !e2[i].eax)
+			continue;
+		if (pkvm_cpuid_entry_has_amx(&e2[i]))
+			return true;
+	}
+
+	return false;
+}
+
+static size_t pkvm_vcpu_fpstate_size(struct kvm_vcpu *vcpu)
+{
+	size_t size = vcpu->arch.guest_fpu.fpstate->size;
+
+	if (pkvm_is_protected_vcpu(vcpu) &&
+	    (kvm_caps.supported_xcr0 & XFEATURE_MASK_USER_DYNAMIC))
+		size = max_t(size_t, size,
+			     xstate_required_size(kvm_caps.supported_xcr0, false));
+
+	return PAGE_ALIGN(size + ALIGN(offsetof(struct fpstate, regs), 64));
+}
+
 static int pkvm_vcpu_realloc_fpstate(struct kvm_vcpu *vcpu)
 {
 	union pkvm_hc_data out;
@@ -1667,8 +1724,7 @@ static int pkvm_vcpu_realloc_fpstate(struct kvm_vcpu *vcpu)
 	void *fps;
 	int ret;
 
-	fpsize = PAGE_ALIGN(vcpu->arch.guest_fpu.fpstate->size +
-			    ALIGN(offsetof(struct fpstate, regs), 64));
+	fpsize = pkvm_vcpu_fpstate_size(vcpu);
 	fps = alloc_pages_exact(fpsize, GFP_KERNEL_ACCOUNT);
 	if (!fps)
 		return -ENOMEM;
@@ -1694,15 +1750,12 @@ static void pkvm_vcpu_after_set_cpuid(struct kvm_vcpu *vcpu)
 		return;
 
 	/*
-	 * With exposing the FPU dynamic feature via the cpuid, the fpstate
-	 * allocated when creating the vcpu may not be sufficient for the
-	 * guest. As the pVM's FPU state is managed by the pKVM hypervisor
-	 * while the npVM's FPU state is managed by the host, re-allocating the
-	 * fpstate is only necessary for the pVM, and should be done before
-	 * adding the new cpuid entries to the pKVM hypervisor.
+	 * pKVM may append AMX-related CPUID state when the host/VMM chooses to
+	 * expose AMX to the pVM. Size the donated fpstate buffer up front for
+	 * that case before synchronizing CPUID into the hypervisor.
 	 */
-	if ((vcpu->arch.guest_fpu.xfeatures & XFEATURE_MASK_USER_DYNAMIC) &&
-	    pkvm_is_protected_vcpu(vcpu) &&
+	if (pkvm_is_protected_vcpu(vcpu) &&
+	    pkvm_cpuid_has_amx(e2, nent) &&
 	    pkvm_vcpu_realloc_fpstate(vcpu))
 		return;
 
