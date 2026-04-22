@@ -6,6 +6,7 @@
 #include <linux/extable.h>
 #include <asm/e820/api.h>
 #include <asm/pkvm_image.h>
+#include <asm/setup.h>
 #include "pkvm_constants.h"
 #include "vmx.h"
 
@@ -118,6 +119,8 @@ static __init void pkvm_setup_syms(void)
 	if (static_branch_unlikely(&__fpu_state_size_dynamic))
 		static_branch_enable(&pkvm_sym(__fpu_state_size_dynamic));
 #endif
+
+	pkvm_sym(kaslr_offset_val) = kaslr_offset();
 }
 
 static __init int pkvm_setup_host_vmcs_config(void)

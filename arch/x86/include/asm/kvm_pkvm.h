@@ -358,6 +358,8 @@ extern phys_addr_t pkvm_sym(pvmfw_size);
 extern phys_addr_t pkvm_sym(pkvm_ramoops_console_pa);
 extern size_t pkvm_sym(pkvm_ramoops_console_size);
 
+extern unsigned long pkvm_sym(kaslr_offset_val);
+
 u64 pkvm_total_reserve_pages(void);
 PKVM_DECLARE(void *, pkvm_early_alloc_page, (struct pkvm_memcache *mc));
 PKVM_DECLARE(void *, pkvm_early_alloc_contig, (unsigned int nr_pages));
