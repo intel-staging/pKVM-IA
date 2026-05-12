@@ -188,7 +188,7 @@ struct dmar_domain *pkvm_alloc_iommu_domain(struct alloc_domain_data *data,
 struct dmar_domain *pkvm_get_iommu_domain(void *pgd);
 struct dmar_domain *pkvm_get_iommu_domain_noref(void *pgd);
 void pkvm_put_iommu_domain(struct dmar_domain *domain);
-int pkvm_free_iommu_domain(struct dmar_domain *domain, struct pkvm_memcache *teardown_mc);
+int pkvm_free_iommu_domain(u64 pgd_gpa, struct pkvm_memcache *teardown_mc);
 
 struct cache_tag *pkvm_alloc_cache_tag(void);
 void pkvm_free_cache_tag(struct cache_tag *cache_tag);
