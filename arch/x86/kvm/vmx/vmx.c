@@ -7909,6 +7909,19 @@ static void vmx_complete_interrupts(struct vcpu_vmx *vmx)
 
 void vmx_cancel_injection(struct kvm_vcpu *vcpu)
 {
+#ifdef __PKVM_HYP__
+	/*
+	 * A malicious host may request cancel_injection twice to cancel
+	 * a pVM's soft interrupts or exceptions, as the second call finds
+	 * VM_ENTRY_INTR_INFO_FIELD already zeroed and unconditionally clears
+	 * previous canceled events. Prevent this by returning early if
+	 * VM_ENTRY_INTR_INFO_FIELD is already zeroed and thus there is
+	 * nothing to do.
+	 */
+	if (pkvm_is_protected_vcpu(vcpu) &&
+	    !(vmcs_read32(VM_ENTRY_INTR_INFO_FIELD) & VECTORING_INFO_VALID_MASK))
+		return;
+#endif
 	__vmx_complete_interrupts(vcpu,
 				  vmcs_read32(VM_ENTRY_INTR_INFO_FIELD),
 				  VM_ENTRY_INSTRUCTION_LEN,
