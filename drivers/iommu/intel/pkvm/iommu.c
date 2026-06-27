@@ -42,7 +42,7 @@ unsigned int iommu_pglvl_mask = IOMMU_PGT_4LEVEL | IOMMU_PGT_5LEVEL;
 u16 satc_devs[PKVM_MAX_SATC_DEVS];
 int nr_satc_devs;
 
-#define PKVM_MAX_IOMMU_NUM	16
+#define PKVM_MAX_IOMMU_NUM	32
 static struct intel_iommu iommus[PKVM_MAX_IOMMU_NUM];
 static int nr_iommus;
 
