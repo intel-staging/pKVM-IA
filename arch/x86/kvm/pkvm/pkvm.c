@@ -495,6 +495,11 @@ static void postponed_per_vm_setup(struct kvm *kvm)
 
 	pkvm_spin_lock(&pkvm_vm->lock);
 
+	if (pkvm_vm->postponed_setup_done) {
+		pkvm_spin_unlock(&pkvm_vm->lock);
+		return;
+	}
+
 	shared_kvm = pkvm_vm->shared_kvm;
 	/*
 	 * The following setup is per VM, not per vCPU, however it cannot be
@@ -505,14 +510,12 @@ static void postponed_per_vm_setup(struct kvm *kvm)
 	 * creating vCPUs. So it is ok to assume these host's values here are
 	 * up-to-date.
 	 */
-	if (!kvm->arch.bus_lock_detection_enabled &&
-	    shared_kvm->arch.bus_lock_detection_enabled &&
-	    kvm_caps.has_bus_lock_exit)
-		kvm->arch.bus_lock_detection_enabled = true;
 
-	if (!kvm->arch.notify_vmexit_flags &&
-	    shared_kvm->arch.notify_vmexit_flags &&
-	    kvm_caps.has_notify_vmexit) {
+	if (kvm_caps.has_bus_lock_exit)
+		kvm->arch.bus_lock_detection_enabled =
+			shared_kvm->arch.bus_lock_detection_enabled;
+
+	if (kvm_caps.has_notify_vmexit) {
 		kvm->arch.notify_window = shared_kvm->arch.notify_window;
 		kvm->arch.notify_vmexit_flags = shared_kvm->arch.notify_vmexit_flags;
 	}
@@ -524,8 +527,9 @@ static void postponed_per_vm_setup(struct kvm *kvm)
 	if (!pkvm_is_protected_vm(kvm))
 		kvm->arch.disabled_exits = shared_kvm->arch.disabled_exits;
 
-	if (!kvm->created_vcpus)
-		kvm->arch.bsp_vcpu_id = shared_kvm->arch.bsp_vcpu_id;
+	kvm->arch.bsp_vcpu_id = shared_kvm->arch.bsp_vcpu_id;
+
+	pkvm_vm->postponed_setup_done = true;
 
 	pkvm_spin_unlock(&pkvm_vm->lock);
 }

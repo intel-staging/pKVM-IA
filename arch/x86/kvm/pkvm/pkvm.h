@@ -62,6 +62,7 @@ struct pkvm_vm {
 	pkvm_spinlock_t lock;
 	struct pkvm_vcpu *vcpus[KVM_MAX_VCPUS];
 	atomic_t vcpu_refs[KVM_MAX_VCPUS];
+	bool postponed_setup_done;
 	/* Guest MMU (stage-2) page table managed by the hypervisor */
 	struct pkvm_pgtable mmu;
 	struct pkvm_pool mmu_pool;
