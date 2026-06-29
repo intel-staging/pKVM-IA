@@ -370,7 +370,7 @@ static int pkvm_vm_finalize(int vm_handle)
 	struct kvm *kvm, *shared_kvm;
 	struct pkvm_vm *pkvm_vm;
 	struct kvm_vcpu *vcpu;
-	u64 pvmfw_load_addr;
+	gpa_t pvmfw_load_addr;
 	int ret = 0, i;
 
 	pkvm_vm = pkvm_get_vm(vm_handle);
@@ -394,7 +394,10 @@ static int pkvm_vm_finalize(int vm_handle)
 
 	pvmfw_load_addr = READ_ONCE(shared_kvm->arch.pkvm.pvmfw_load_addr);
 	if (pvmfw_load_addr != INVALID_GPA) {
-		if (!pvmfw_present || U64_MAX - pvmfw_load_addr < pvmfw_size) {
+		gpa_t pvmfw_end = pvmfw_load_addr + pvmfw_size;
+
+		if (!pvmfw_present || pvmfw_end < pvmfw_load_addr ||
+		    pvmfw_end > pkvm_pgtable_max_size(&pkvm_vm->mmu)) {
 			ret = -EINVAL;
 			goto unlock;
 		}
