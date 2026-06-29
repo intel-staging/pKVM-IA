@@ -1395,6 +1395,10 @@ int pkvm_host_donate_guest(struct kvm_vcpu *vcpu, unsigned long gpa,
 	if (WARN_ON_ONCE(!pkvm_is_protected_vcpu(vcpu)))
 		return -EPERM;
 
+	/* If the VM is not finalized yet, we don't know if we need to load pvmfw. */
+	if (!smp_load_acquire(&pkvm_vm->kvm.arch.pkvm.finalized))
+		return -EPERM;
+
 	pkvm_host_mmu_lock();
 	pkvm_guest_mmu_lock(pkvm_vm);
 

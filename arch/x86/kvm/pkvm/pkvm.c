@@ -414,7 +414,8 @@ static int pkvm_vm_finalize(int vm_handle)
 		}
 	}
 
-	kvm->arch.pkvm.finalized = true;
+	/* Pairs with smp_load_acquire() in pkvm_host_donate_guest(). */
+	smp_store_release(&kvm->arch.pkvm.finalized, true);
 	shared_kvm->arch.pkvm.finalized = true;
 unlock:
 	pkvm_spin_unlock(&pkvm_vm->lock);
