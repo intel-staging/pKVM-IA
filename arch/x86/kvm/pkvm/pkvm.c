@@ -1303,7 +1303,10 @@ static int pkvm_vcpu_after_set_cpuid(struct kvm_vcpu *vcpu,
 	int new_nent, old_nent, ret;
 	u64 size, aligned_size;
 
-	new_nent = to_pkvm_vcpu(vcpu)->shared_vcpu->arch.cpuid_nent;
+	new_nent = READ_ONCE(to_pkvm_vcpu(vcpu)->shared_vcpu->arch.cpuid_nent);
+	if (new_nent < 0 || new_nent > KVM_MAX_CPUID_ENTRIES)
+		return -EINVAL;
+
 	size = sizeof(struct kvm_cpuid_entry2) * new_nent;
 	aligned_size = PAGE_ALIGN(size);
 	ret = pkvm_host_donate_hyp(cpuid_pa, aligned_size, false);
