@@ -5021,6 +5021,11 @@ static int vmx_alloc_ipiv_pid_table(struct kvm *kvm)
 {
 #ifndef __PKVM_HYP__
 	struct page *pages;
+#else
+	struct kvm *shared_kvm = to_pkvm(kvm)->shared_kvm;
+	u64 *pid_table;
+	int ret;
+#endif
 	struct kvm_vmx *kvm_vmx = to_kvm_vmx(kvm);
 
 	if (!irqchip_in_kernel(kvm) || !enable_ipiv)
@@ -5029,45 +5034,18 @@ static int vmx_alloc_ipiv_pid_table(struct kvm *kvm)
 	if (kvm_vmx->pid_table)
 		return 0;
 
+#ifndef __PKVM_HYP__
 	pages = alloc_pages(GFP_KERNEL_ACCOUNT | __GFP_ZERO,
 			    vmx_get_pid_table_order(kvm));
 	if (!pages)
 		return -ENOMEM;
 
 	kvm_vmx->pid_table = (void *)page_address(pages);
-	return 0;
 #else
-	struct kvm *shared_kvm = to_pkvm(kvm)->shared_kvm;
-	struct kvm_vmx *kvm_vmx = to_kvm_vmx(kvm);
-	struct kvm_vmx *shared_kvm_vmx;
-	u32 max_vcpu_ids;
-	u64 *pid_table;
-	int ret, mode;
+	pid_table = kern_pkvm_va(READ_ONCE(to_kvm_vmx(shared_kvm)->pid_table));
+	if (!pid_table)
+		return -EINVAL;
 
-	mode = READ_ONCE(shared_kvm->arch.irqchip_mode);
-
-	if (!enable_ipiv || (mode != KVM_IRQCHIP_KERNEL && mode != KVM_IRQCHIP_SPLIT))
-		return 0;
-
-	pkvm_spin_lock(&to_pkvm(kvm)->lock);
-
-	if (kvm_vmx->pid_table) {
-		/* The pid_table is already set. */
-		ret = 0;
-		goto unlock;
-	}
-
-	max_vcpu_ids = READ_ONCE(shared_kvm->arch.max_vcpu_ids);
-	shared_kvm_vmx = to_kvm_vmx(shared_kvm);
-	pid_table = kern_pkvm_va(READ_ONCE(shared_kvm_vmx->pid_table));
-
-	if (max_vcpu_ids == 0 || max_vcpu_ids > KVM_MAX_VCPU_IDS || !pid_table) {
-		ret = -EINVAL;
-		goto unlock;
-	}
-
-	kvm->arch.irqchip_mode = mode;
-	kvm->arch.max_vcpu_ids = max_vcpu_ids;
 	/*
 	 * Although the contents in pid_table is not secret since it is
 	 * constructed following the SDM, still donate the pid_table pages to
@@ -5078,13 +5056,11 @@ static int vmx_alloc_ipiv_pid_table(struct kvm *kvm)
 				   PAGE_SIZE << vmx_get_pid_table_order(kvm),
 				   true);
 	if (ret)
-		goto unlock;
+		return ret;
 
 	kvm_vmx->pid_table = pid_table;
-unlock:
-	pkvm_spin_unlock(&to_pkvm(kvm)->lock);
-	return ret;
 #endif
+	return 0;
 }
 
 int vmx_vcpu_precreate(struct kvm *kvm)
