@@ -98,6 +98,7 @@ static int allocate_pkvm_vm_handle(struct pkvm_vm *pkvm_vm)
 	}
 	__set_bit(idx, pkvm_vms_bitmap);
 
+	pkvm_vm->kvm.arch.pkvm.handle = idx;
 	pkvm_vm_ref = &pkvm_vms_ref[idx];
 	pkvm_vm_ref->pkvm_vm = pkvm_vm;
 	atomic_set(&pkvm_vm_ref->refcount, 1);
@@ -184,8 +185,6 @@ static int pkvm_vm_init(phys_addr_t host_kvm_pa, phys_addr_t pkvm_vm_pa,
 	ret = allocate_pkvm_vm_handle(pkvm_vm);
 	if (ret < 0)
 		goto mmu_destroy;
-
-	kvm->arch.pkvm.handle = ret;
 
 	ret = kvm_x86_call(vm_init)(kvm);
 	if (ret)
