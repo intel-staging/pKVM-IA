@@ -46,6 +46,13 @@ static unsigned int intercept_w_msrs[] = {
 	MSR_CORE_PERF_GLOBAL_CTRL,
 	MSR_IA32_APICBASE,
 	X2APIC_MSR(APIC_ID),
+	/* User-return MSRs (except MSR_EFER which is isolated via VMCS): */
+	MSR_SYSCALL_MASK,
+	MSR_LSTAR,
+	MSR_CSTAR,
+	MSR_TSC_AUX,
+	MSR_STAR,
+	MSR_IA32_TSX_CTRL,
 };
 
 unsigned long __init pkvm_vmx_reserve_pages(void)
