@@ -234,7 +234,7 @@ int pkvm_pasid_setup_fl(struct device_domain_info *info, phys_addr_t fsptptr,
 	data->phys = iommu->reg_phys;
 	data->fsptptr_gpa = fsptptr;
 	data->pasid = pasid;
-	data->flags = flags;
+	data->force_snoop = !!(flags & PASID_FLAG_PAGE_SNOOP);
 	data->did = did;
 	data->bus = info->bus;
 	data->devfn = info->devfn;
