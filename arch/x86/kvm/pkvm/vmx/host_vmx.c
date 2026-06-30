@@ -199,6 +199,34 @@ static int handle_write_msr(struct kvm_vcpu *vcpu)
 			break;
 		}
 		break;
+	case MSR_SYSCALL_MASK:
+	case MSR_LSTAR:
+	case MSR_CSTAR:
+	case MSR_TSC_AUX:
+	case MSR_STAR:
+	case MSR_IA32_TSX_CTRL: {
+		int slot;
+		u64 cur;
+
+		BUG_ON(!pkvm_cpu_initialized(vcpu->cpu));
+
+		slot = kvm_find_user_return_msr(msr);
+		BUG_ON(slot < 0);
+
+		cur = kvm_get_user_return_msr(slot);
+		if (val != cur) {
+			pkvm_warn("Host attempt to modify user-return MSR 0x%lx: 0x%llx (expected 0x%llx)\n",
+				  msr, val, cur);
+			ret = X86EMUL_UNHANDLEABLE;
+			break;
+		}
+
+		if (wrmsr_safe(msr, low, high)) {
+			ret = X86EMUL_UNHANDLEABLE;
+			break;
+		}
+		break;
+	}
 	case MSR_IA32_APICBASE:
 	case APIC_BASE_MSR ... APIC_BASE_MSR + 0xff:
 		if (pkvm_lapic_msr_write(msr, val))
