@@ -365,6 +365,14 @@ unshare_apic:
 	return ret;
 }
 
+/*
+ * TODO: simplify the code by consolidating pkvm_vm_finalize() and
+ * postponed_per_vm_setup(). I.e. instead of finalizing the VM before
+ * running the first vCPU and using a dedicated hypercall for that,
+ * finalize it when creating the first vCPU, same way as the setup in
+ * postponed_per_vm_setup(), and then combine postponed_per_vm_setup()
+ * into pkvm_vm_finalize().
+ */
 static int pkvm_vm_finalize(int vm_handle)
 {
 	struct kvm *kvm, *shared_kvm;
