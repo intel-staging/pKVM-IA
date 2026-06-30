@@ -1465,6 +1465,9 @@ static void iommu_disable_translation(struct intel_iommu *iommu)
 	u32 sts;
 	unsigned long flag;
 
+	if (pkvm_enabled())
+		return;
+
 	if (iommu_skip_te_disable && iommu->drhd->gfx_dedicated &&
 	    (cap_read_drain(iommu->cap) || cap_write_drain(iommu->cap)))
 		return;
