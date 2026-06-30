@@ -2067,9 +2067,14 @@ void domain_context_clear_one(struct device_domain_info *info, u8 bus, u8 devfn,
 	did = context_domain_id(context);
 	context_clear_present(context);
 	__iommu_flush_cache(iommu, context, sizeof(*context));
+#ifndef __PKVM_HYP__
 	spin_unlock(&iommu->lock);
+#endif
 	intel_context_flush_no_pasid(info, context, did);
 	context_clear_entry(context);
+#ifdef __PKVM_HYP__
+	spin_unlock(&iommu->lock);
+#endif
 	__iommu_flush_cache(iommu, context, sizeof(*context));
 
 #ifdef __PKVM_HYP__
