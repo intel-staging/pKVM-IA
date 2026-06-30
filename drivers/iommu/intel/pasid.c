@@ -212,12 +212,9 @@ retry:
 /*
  * Interfaces for PASID table entry manipulation:
  */
-static void
 #ifndef __PKVM_HYP__
+static void
 intel_pasid_clear_entry(struct device *dev, u32 pasid, bool fault_ignore)
-#else
-intel_pasid_clear_entry(struct pkvm_device *dev, u32 pasid, bool fault_ignore)
-#endif
 {
 	struct pasid_entry *pe;
 
@@ -230,6 +227,7 @@ intel_pasid_clear_entry(struct pkvm_device *dev, u32 pasid, bool fault_ignore)
 	else
 		pasid_clear_entry(pe);
 }
+#endif
 
 static void
 pasid_cache_invalidation_with_pasid(struct intel_iommu *iommu,
@@ -352,7 +350,9 @@ void intel_pasid_tear_down_entry(struct intel_iommu *iommu, struct pkvm_device *
 		BUG();
 #endif
 	pasid_clear_present(pte);
+#ifndef __PKVM_HYP__
 	spin_unlock(&iommu->lock);
+#endif
 
 	if (!ecap_coherent(iommu->ecap))
 		clflush_cache_range(pte, sizeof(*pte));
@@ -365,7 +365,19 @@ void intel_pasid_tear_down_entry(struct intel_iommu *iommu, struct pkvm_device *
 		iommu->flush.flush_iotlb(iommu, did, 0, 0, DMA_TLB_DSI_FLUSH);
 
 	devtlb_invalidation_with_pasid(iommu, dev, pasid);
+#ifndef __PKVM_HYP__
 	intel_pasid_clear_entry(dev, pasid, fault_ignore);
+#else
+	/*
+	 * iommu->lock has been held continuously since the present bit was
+	 * cleared above, so no racing setup could have swapped the PASID
+	 * table or reinstalled this entry in the interim. It is therefore
+	 * safe to clear it directly instead of re-deriving and re-validating
+	 * it from scratch.
+	 */
+	pasid_clear_entry(pte);
+	spin_unlock(&iommu->lock);
+#endif
 	if (!ecap_coherent(iommu->ecap))
 		clflush_cache_range(pte, sizeof(*pte));
 
