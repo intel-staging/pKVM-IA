@@ -512,6 +512,10 @@ static int postponed_per_vm_setup(struct kvm *kvm)
 	if (bsp_vcpu_id >= max_vcpu_ids)
 		return -EINVAL;
 
+	apic_bus_cycle_ns = READ_ONCE(shared_kvm->arch.apic_bus_cycle_ns);
+	if (!apic_bus_cycle_ns)
+		return -EINVAL;
+
 	/*
 	 * The following setup is per VM, not per vCPU, however it cannot be
 	 * done during VM creation, since these values are set by the host VMM
@@ -525,6 +529,7 @@ static int postponed_per_vm_setup(struct kvm *kvm)
 	kvm->arch.irqchip_mode = irqchip_mode;
 	kvm->arch.max_vcpu_ids = max_vcpu_ids;
 	kvm->arch.bsp_vcpu_id = bsp_vcpu_id;
+	kvm->arch.apic_bus_cycle_ns = apic_bus_cycle_ns;
 
 	if (kvm_caps.has_bus_lock_exit)
 		kvm->arch.bus_lock_detection_enabled =
@@ -534,10 +539,6 @@ static int postponed_per_vm_setup(struct kvm *kvm)
 		kvm->arch.notify_window = shared_kvm->arch.notify_window;
 		kvm->arch.notify_vmexit_flags = shared_kvm->arch.notify_vmexit_flags;
 	}
-
-	apic_bus_cycle_ns = READ_ONCE(shared_kvm->arch.apic_bus_cycle_ns);
-	if (apic_bus_cycle_ns)
-		kvm->arch.apic_bus_cycle_ns = apic_bus_cycle_ns;
 
 	if (!pkvm_is_protected_vm(kvm))
 		kvm->arch.disabled_exits = shared_kvm->arch.disabled_exits;
