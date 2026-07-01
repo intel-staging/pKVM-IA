@@ -134,21 +134,6 @@ struct pasid_table *intel_pasid_get_table(struct pkvm_device *dev)
 }
 
 #ifndef __PKVM_HYP__
-static int intel_pasid_get_dev_max_id(struct device *dev)
-#else
-static int intel_pasid_get_dev_max_id(struct pkvm_device *dev)
-#endif
-{
-	struct device_domain_info *info;
-
-	info = dev_iommu_priv_get(dev);
-	if (!info || !info->pasid_table)
-		return 0;
-
-	return info->pasid_table->max_pasid;
-}
-
-#ifndef __PKVM_HYP__
 static struct pasid_entry *intel_pasid_get_entry(struct device *dev, u32 pasid)
 #else
 static struct pasid_entry *intel_pasid_get_entry(struct pkvm_device *dev, u32 pasid)
@@ -161,7 +146,7 @@ static struct pasid_entry *intel_pasid_get_entry(struct pkvm_device *dev, u32 pa
 	int dir_index, index;
 
 	pasid_table = intel_pasid_get_table(dev);
-	if (WARN_ON(!pasid_table || pasid >= intel_pasid_get_dev_max_id(dev)))
+	if (WARN_ON(!pasid_table || pasid >= pasid_table->max_pasid))
 		return ERR_PTR(-ENODEV);
 
 	dir = pasid_table->table;
