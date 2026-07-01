@@ -397,7 +397,8 @@ static int pkvm_vm_finalize(int vm_handle)
 		gpa_t pvmfw_end = pvmfw_load_addr + pvmfw_size;
 
 		if (!pvmfw_present || pvmfw_end < pvmfw_load_addr ||
-		    pvmfw_end > pkvm_pgtable_max_size(&pkvm_vm->mmu)) {
+		    pvmfw_end > pkvm_pgtable_max_size(&pkvm_vm->mmu) ||
+		    pvmfw_end > SZ_4G) {
 			ret = -EINVAL;
 			goto unlock;
 		}
