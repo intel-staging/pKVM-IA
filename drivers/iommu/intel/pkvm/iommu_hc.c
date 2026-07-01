@@ -59,8 +59,6 @@ int pkvm_iommu_clear_ce(struct clear_ce_data *data)
 	info.bus = data->bus;
 	info.devfn = data->devfn;
 	info.ats_qdep = data->ats_qdep;
-	info.ats_supported = data->ats_supported;
-	info.ats_enabled = info.ats_supported;
 
 	pkvm_dbg("%s: dev[%x:%x], ats_qdep: %d\n",
 		 __func__, data->bus, data->devfn, data->ats_qdep);
@@ -279,8 +277,6 @@ static int iommu_pasid_setup_fl(struct pasid_setup_fl_data *data)
 	info.bus = data->bus;
 	info.devfn = data->devfn;
 	info.ats_qdep = data->ats_qdep;
-	info.ats_supported = data->ats_supported;
-	info.ats_enabled = info.ats_supported;
 	info.iommu = iommu;
 
 	ret = accept_page_donation(iommu, &data->donation_page_gpa);
@@ -365,8 +361,6 @@ static int iommu_pasid_setup_sl(struct pasid_setup_sl_data *data)
 	info.devfn = data->devfn;
 	info.iommu = iommu;
 	info.ats_qdep = data->ats_qdep;
-	info.ats_supported = data->ats_supported;
-	info.ats_enabled = info.ats_supported;
 
 	ret = accept_page_donation(iommu, &data->donation_page_gpa);
 	if (ret)
@@ -426,8 +420,6 @@ int pkvm_iommu_pasid_teardown(struct pasid_teardown_data *data)
 	info.bus = data->bus;
 	info.devfn = data->devfn;
 	info.ats_qdep = data->ats_qdep;
-	info.ats_supported = data->ats_supported;
-	info.ats_enabled = info.ats_supported;
 	info.iommu = iommu;
 
 	pkvm_dbg("%s: dev[%x:%x], pasid: %x, ats_qdep: %d\n", __func__,

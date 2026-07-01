@@ -977,6 +977,20 @@ struct device_domain_info {
 	struct pasid_table _pasid_table;
 	struct pasid_table *pasid_table; /* pasid table */
 };
+
+static inline void pkvm_populate_dev_info_from_ce(struct device_domain_info *info,
+						  struct context_entry *ce)
+{
+	/*
+	 * Derive the device's ATS state from the live context entry so
+	 * the device-TLB flush below is driven by hardware state rather
+	 * than a host-supplied flag. Bit 2 is CE.DTE in scalable mode;
+	 * in legacy mode the only translation type that sets it is
+	 * CONTEXT_TT_DEV_IOTLB, so the same test is valid for both.
+	 */
+	info->ats_supported = !!(ce->lo & BIT_ULL(2));
+	info->ats_enabled = info->ats_supported;
+}
 #endif /* !__PKVM_HYP__ */
 
 static inline void __iommu_flush_cache(

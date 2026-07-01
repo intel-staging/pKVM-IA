@@ -2049,6 +2049,7 @@ void domain_context_clear_one(struct device_domain_info *info, u8 bus, u8 devfn,
 
 #ifdef __PKVM_HYP__
 	if (context_present(context)) {
+		pkvm_populate_dev_info_from_ce(info, context);
 		if (sm) {
 			pasid_dir = __pkvm_va(context->lo & VTD_PAGE_MASK);
 			pasid_dir_sz = get_pasid_dir_size(context);
