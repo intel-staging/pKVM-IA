@@ -233,31 +233,12 @@ int pkvm_iommu_set_sm_ce(struct set_sm_ce_data *in, struct set_sm_ce_data *out)
 	return ret;
 }
 
-static int __get_pasid_table(struct intel_iommu *iommu, u8 bus, u8 devfn, struct pasid_table *table)
-{
-	struct context_entry *context = iommu_context_addr(iommu, bus, devfn, false);
-	u32 pds;
-
-	if (!context || !context_present(context)) {
-		pkvm_err("%s: pasid directory table not found: device[%x:%x]\n",
-			 __func__, bus, devfn);
-		return -EINVAL;
-	}
-
-	pds = get_pasid_dir_size(context);
-	table->table = __pkvm_va(context->lo & VTD_PAGE_MASK);
-	table->max_pasid = pds << PASID_PDE_SHIFT;
-
-	return 0;
-}
-
 static int iommu_pasid_setup_fl(struct pasid_setup_fl_data *data)
 {
 	struct intel_iommu *iommu = iommu_from_phys(data->phys);
 	u16 bdf = PCI_DEVID(data->bus, data->devfn);
 	struct device_domain_info info = { 0 };
 	struct pkvm_device dev = { .info = &info };
-	struct pasid_table table = { 0 };
 	struct dmar_domain *domain;
 	int flags = 0, level, ret;
 	void *pgd;
@@ -286,16 +267,11 @@ static int iommu_pasid_setup_fl(struct pasid_setup_fl_data *data)
 		return -EINVAL;
 	}
 
-	ret = __get_pasid_table(iommu, data->bus, data->devfn, &table);
-	if (ret)
-		return ret;
-
 	info.bus = data->bus;
 	info.devfn = data->devfn;
 	info.ats_qdep = data->ats_qdep;
 	info.ats_supported = data->ats_supported;
 	info.ats_enabled = info.ats_supported;
-	info.pasid_table = &table;
 	info.iommu = iommu;
 
 	ret = accept_page_donation(iommu, &data->donation_page_gpa);
@@ -356,7 +332,6 @@ static int iommu_pasid_setup_sl(struct pasid_setup_sl_data *data)
 	u16 bdf = PCI_DEVID(data->bus, data->devfn);
 	struct device_domain_info info = { 0 };
 	struct pkvm_device dev = { .info = &info };
-	struct pasid_table table = { 0 };
 	struct dmar_domain *domain;
 	void *pgd;
 	int ret;
@@ -374,13 +349,8 @@ static int iommu_pasid_setup_sl(struct pasid_setup_sl_data *data)
 		return -EPERM;
 	}
 
-	ret = __get_pasid_table(iommu, data->bus, data->devfn, &table);
-	if (ret)
-		return ret;
-
 	info.bus = data->bus;
 	info.devfn = data->devfn;
-	info.pasid_table = &table;
 	info.iommu = iommu;
 	info.ats_qdep = data->ats_qdep;
 	info.ats_supported = data->ats_supported;
@@ -423,8 +393,6 @@ int pkvm_iommu_pasid_teardown(struct pasid_teardown_data *data)
 	u16 bdf = PCI_DEVID(data->bus, data->devfn);
 	struct device_domain_info info = { 0 };
 	struct pkvm_device dev = { .info = &info };
-	struct pasid_table table = { 0 };
-	int ret;
 	struct dmar_domain *domain;
 
 	if (!iommu)
@@ -440,16 +408,11 @@ int pkvm_iommu_pasid_teardown(struct pasid_teardown_data *data)
 		return -EPERM;
 	}
 
-	ret = __get_pasid_table(iommu, data->bus, data->devfn, &table);
-	if (ret)
-		return ret;
-
 	info.bus = data->bus;
 	info.devfn = data->devfn;
 	info.ats_qdep = data->ats_qdep;
 	info.ats_supported = data->ats_supported;
 	info.ats_enabled = info.ats_supported;
-	info.pasid_table = &table;
 	info.iommu = iommu;
 
 	pkvm_dbg("%s: dev[%x:%x], pasid: %x, ats_qdep: %d\n", __func__,
