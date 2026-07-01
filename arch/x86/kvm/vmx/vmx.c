@@ -9780,11 +9780,20 @@ static void update_protected_vcpu_state(struct kvm_vcpu *vcpu,
 					struct kvm_vcpu *shared_vcpu)
 {
 	switch (vmx_get_exit_reason(vcpu).basic) {
-	case EXIT_REASON_IO_INSTRUCTION:
-		/* Only need to update RAX for the input data */
-		if ((vmx_get_exit_qual(vcpu) & 8) != 0)
-			kvm_rax_write(vcpu, shared_vcpu->arch.regs[VCPU_REGS_RAX]);
+	case EXIT_REASON_IO_INSTRUCTION: {
+		unsigned long exit_qual = vmx_get_exit_qual(vcpu);
+
+		/* Only need to update RAX for the input data (IN) */
+		if ((exit_qual & 8) != 0) {
+			unsigned int size = (exit_qual & 7) + 1;
+			unsigned long val = (size < 4) ? kvm_rax_read(vcpu) : 0;
+			unsigned long host_rax = shared_vcpu->arch.regs[VCPU_REGS_RAX];
+
+			memcpy(&val, &host_rax, size);
+			kvm_rax_write(vcpu, val);
+		}
 		fallthrough;
+	}
 	case EXIT_REASON_WBINVD:
 	case EXIT_REASON_PAUSE_INSTRUCTION:
 		WARN_ON_ONCE(kvm_skip_emulated_instruction(vcpu) != 1);
@@ -9919,10 +9928,21 @@ static void share_protected_vcpu_state(struct kvm_vcpu *vcpu,
 	int reg;
 
 	switch (vmx_get_exit_reason(vcpu).basic) {
-	case EXIT_REASON_IO_INSTRUCTION:
-		/* IO output/Input data */
-		shared_vcpu->arch.regs[VCPU_REGS_RAX] = kvm_rax_read(vcpu);
+	case EXIT_REASON_IO_INSTRUCTION: {
+		unsigned long exit_qual = vmx_get_exit_qual(vcpu);
+
+		/*
+		 * Only share RAX for OUT instructions to prevent leaking
+		 * register residue, and mask it to the I/O operand size.
+		 */
+		if ((exit_qual & 8) == 0) { /* OUT */
+			unsigned int size = (exit_qual & 7) + 1;
+
+			shared_vcpu->arch.regs[VCPU_REGS_RAX] =
+				kvm_rax_read(vcpu) & GENMASK(size * 8 - 1, 0);
+		}
 		break;
+	}
 	case EXIT_REASON_MSR_WRITE:
 		shared_vcpu->arch.regs[VCPU_REGS_RAX] = kvm_rax_read(vcpu);
 		shared_vcpu->arch.regs[VCPU_REGS_RDX] = kvm_rdx_read(vcpu);
