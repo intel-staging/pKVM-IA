@@ -148,6 +148,8 @@ struct pasid_table *intel_pasid_get_table(struct pkvm_device *dev)
 	info->_pasid_table.max_pasid = pds << PASID_PDE_SHIFT;
 	info->pasid_table = &info->_pasid_table;
 
+	pkvm_populate_dev_info_from_ce(info, context);
+
 	return info->pasid_table;
 }
 #endif
