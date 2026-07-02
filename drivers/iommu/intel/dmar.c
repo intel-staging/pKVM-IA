@@ -1373,6 +1373,18 @@ static int qi_check_fault(struct intel_iommu *iommu, int index, int wait_index)
 		 *
 		 * 0 value of ite_sid means old VT-d device, no ite_sid value.
 		 * see Intel VT-d spec r4.1, section 11.4.9.9
+		 *
+		 * NOTE: with pKVM, ATS is only enabled for devices listed in
+		 * SATC (see is_dev_in_satc() gating in iommu_set_lm_ce()/
+		 * iommu_set_sm_ce()), and SATC devices are SoC-integrated and
+		 * not hot-removable, so the device-released/not-present
+		 * scenario handled here cannot occur as a result of device
+		 * unplug by the user. It may still occur if the device is
+		 * malfunctioning or if an abrupt device removal is triggered
+		 * by host kernel or (importantly!) by privileged host userspace
+		 * via sysfs. Thus it may still cause a hard lockup of the
+		 * system due to an infinite ATS invalidate retry loop in these
+		 * cases.
 		 */
 		if (ite_sid) {
 			dev = device_rbtree_find(iommu, ite_sid);
