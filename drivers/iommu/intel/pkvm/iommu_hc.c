@@ -112,7 +112,7 @@ static int iommu_set_lm_ce(struct set_lm_ce_data *data)
 		return ret;
 
 	pgd = pkvm_host_gpa_to_virt(data->pgd_gpa);
-	domain = pkvm_get_iommu_domain(pgd, data->did);
+	domain = pkvm_get_iommu_domain(pgd, data->did, iommu);
 	if (!domain) {
 		pkvm_err("%s: Failed to locate domain with pgd: %p\n",
 			 __func__, pgd);
@@ -267,7 +267,7 @@ static int iommu_pasid_setup_fl(struct pasid_setup_fl_data *data)
 		return ret;
 
 	pgd = pkvm_host_gpa_to_virt(data->fsptptr_gpa);
-	domain = pkvm_get_iommu_domain(pgd, data->did);
+	domain = pkvm_get_iommu_domain(pgd, data->did, iommu);
 	if (!domain) {
 		pkvm_err("%s: Failed to locate domain with pgd: %p\n",
 			 __func__, pgd);
@@ -342,7 +342,7 @@ static int iommu_pasid_setup_sl(struct pasid_setup_sl_data *data)
 		return ret;
 
 	pgd = pkvm_host_gpa_to_virt(data->ssptptr_gpa);
-	domain = pkvm_get_iommu_domain(pgd, data->did);
+	domain = pkvm_get_iommu_domain(pgd, data->did, iommu);
 	if (!domain) {
 		pkvm_err("%s: Failed to locate domain with pgd: %p\n",
 			 __func__, pgd);

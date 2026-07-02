@@ -85,12 +85,62 @@ static struct dmar_domain *__pkvm_get_iommu_domain_noref(void *pgd)
 	return domain;
 }
 
-struct dmar_domain *pkvm_get_iommu_domain(void *pgd, u16 did)
+/*
+ * Check the domain properties that affect how an IOMMU walks and caches the
+ * domain page tables. A domain may be shared by multiple IOMMUs, but only if
+ * each IOMMU is compatible with the properties selected at allocation time.
+ */
+static bool iommu_domain_compatible(struct intel_iommu *iommu,
+				    struct dmar_domain *domain)
 {
+	int addr_width;
+
+	if (domain->use_first_level) {
+		if (!sm_supported(iommu) || !ecap_flts(iommu->ecap))
+			return false;
+	} else {
+		if (sm_supported(iommu) && !ecap_slts(iommu->ecap))
+			return false;
+
+		if (cap_caching_mode(iommu->cap) && !domain->iotlb_sync_map)
+			return false;
+	}
+
+	if (domain->iommu_superpage >
+	    iommu_superpage_capability(iommu, domain->use_first_level))
+		return false;
+
+	if (domain->iommu_coherency !=
+	    iommu_paging_structure_coherency(iommu))
+		return false;
+
+	addr_width = agaw_to_width(iommu->agaw);
+	if (addr_width > cap_mgaw(iommu->cap))
+		addr_width = cap_mgaw(iommu->cap);
+	if (domain->gaw > addr_width || domain->agaw > iommu->agaw)
+		return false;
+
+	return true;
+}
+
+struct dmar_domain *pkvm_get_iommu_domain(void *pgd, u16 did,
+					  struct intel_iommu *iommu)
+{
+	struct dmar_domain *domain;
+
 	if (did == FLPT_DEFAULT_DID)
 		return &pt_domain;
 
-	return __pkvm_get_iommu_domain(pgd);
+	domain = __pkvm_get_iommu_domain(pgd);
+
+	if (domain && !iommu_domain_compatible(iommu, domain)) {
+		pkvm_err("%s: domain[pgd:%p] is incompatible with iommu%d\n",
+			 __func__, pgd, iommu->seq_id);
+		pkvm_put_iommu_domain(domain);
+		domain = NULL;
+	}
+
+	return domain;
 }
 
 struct dmar_domain *pkvm_get_iommu_domain_noref(void *pgd, u16 did)
