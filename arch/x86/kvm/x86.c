@@ -15030,6 +15030,9 @@ int pkvm_vcpu_enter_guest(struct kvm_vcpu *vcpu, bool force_immediate_exit,
 
 	vcpu->arch.last_vmentry_cpu = vcpu->cpu;
 
+	/* Snapshot host PKRU on every entry to prevent host-tampering bypasses */
+	vcpu->arch.host_pkru = read_pkru();
+
 	kvm_load_guest_fpu(vcpu);
 
 	/* Save the host debug registers */
