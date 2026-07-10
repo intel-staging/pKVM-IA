@@ -643,7 +643,7 @@ static int __host_unshare_guest(unsigned long gpa, unsigned long hpa,
 	int ret;
 
 	ret = pkvm_pgtable_unmap(&pkvm_vm->mmu, gpa, hpa, size);
-	if (WARN_ON_ONCE(ret))
+	if (ret)
 		return ret;
 
 	for_each_pkvm_page(page, hpa, size) {
