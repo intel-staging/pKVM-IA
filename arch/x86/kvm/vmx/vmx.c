@@ -9832,7 +9832,7 @@ static void update_protected_vcpu_state(struct kvm_vcpu *vcpu,
 		break;
 	case EXIT_REASON_VMCALL:
 		/*
-		 * If the memory share hypercall has been handled by the host,
+		 * If the memory (un)share hypercall has been handled by the host,
 		 * not by pKVM alone, it indicates that there were not enough
 		 * pages in the memcache for pKVM to handle the hypercall, and
 		 * now the host has refilled the memcache with the needed number
@@ -9840,7 +9840,8 @@ static void update_protected_vcpu_state(struct kvm_vcpu *vcpu,
 		 * the instruction, to let the guest re-issue the hypercall.
 		 * See also comments in kvm_pkvm_hypercall().
 		 */
-		if (kvm_rax_read(vcpu) == PKVM_GHC_SHARE_MEM)
+		if (kvm_rax_read(vcpu) == PKVM_GHC_SHARE_MEM ||
+		    kvm_rax_read(vcpu) == PKVM_GHC_UNSHARE_MEM)
 			break;
 
 		/*
