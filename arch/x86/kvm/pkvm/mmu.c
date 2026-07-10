@@ -688,7 +688,8 @@ static int __guest_unshare_host(unsigned long gpa, unsigned long hpa,
 	set_host_mem_pgstate(hpa, size, PKVM_PAGE_NONE, PKVM_ID_GUEST);
 
 	prot = pkvm_pte_set_pgstate(prot, &pkvm_vm->mmu, PKVM_PAGE_OWNED);
-	return pkvm_pgtable_map(&pkvm_vm->mmu, gpa, hpa, size, prot, NULL);
+	return pkvm_pgtable_map(&pkvm_vm->mmu, gpa, hpa, size, prot,
+				&vcpu->arch.pkvm.guest_mmu_memcache);
 }
 
 static bool gpa_range_overlaps_pvmfw(struct kvm *kvm,
