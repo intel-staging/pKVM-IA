@@ -795,40 +795,6 @@ struct pkvm_memcache {
 	unsigned long flags;
 };
 
-struct pkvm_mapping {
-	struct rb_node node;
-	gfn_t gfn;
-	kvm_pfn_t pfn;
-	gfn_t nr_pages;
-	gfn_t __subtree_last;	/* Internal member for interval tree */
-
-	struct page *pinned_page;
-};
-
-void pkvm_mapping_insert(struct pkvm_mapping *node,
-			 struct rb_root_cached *root);
-void pkvm_mapping_remove(struct pkvm_mapping *node,
-			 struct rb_root_cached *root);
-struct pkvm_mapping *pkvm_mapping_iter_first(struct rb_root_cached *root,
-					     gfn_t start, gfn_t last);
-struct pkvm_mapping *pkvm_mapping_iter_next(struct pkvm_mapping *node,
-					    gfn_t start, gfn_t last);
-
-/*
- * Iterates the interval tree safely, allowing removing __map node from it
- * while iterating.
- * Caution: __start and __end are evaluated multiple times.
- */
-#define for_each_pkvm_mapping(__kvm, __start, __end, __map)					\
-	for (struct pkvm_mapping *__tmp = pkvm_mapping_iter_first(&(__kvm)->arch.pkvm.mappings,	\
-								  (__start), (__end) - 1);	\
-	     __tmp && ({									\
-				__map = __tmp;							\
-				__tmp = pkvm_mapping_iter_next(__map, (__start), (__end) - 1);	\
-				true;								\
-		       });									\
-	    )
-
 #define PKVM_HOST_VM_HANDLE	INT_MAX
 
 struct kvm_pkvm_vm {
