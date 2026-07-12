@@ -56,6 +56,8 @@ struct pkvm_mem_info {
 	u64 prot;
 };
 
+#define PKVM_HOST_VM_HANDLE	INT_MAX
+
 #ifdef CONFIG_PKVM_INTEL
 struct clear_ce_data {
 	u64 phys;
