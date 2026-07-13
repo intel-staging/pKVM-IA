@@ -1796,34 +1796,32 @@ static int hardware_largepage_caps(struct dmar_domain *domain, unsigned long iov
  */
 static void switch_to_super_page(struct dmar_domain *domain,
 				 unsigned long start_pfn,
-				 unsigned long end_pfn, int level)
+				 unsigned long end_pfn, int level,
+				 struct dma_pte *pte)
 {
 	unsigned long lvl_pages = lvl_to_nr_pages(level);
-	struct dma_pte *pte = NULL;
+	unsigned long orig_start_pfn = start_pfn;
+	bool flush = false;
 
 	if (WARN_ON(!IS_ALIGNED(start_pfn, lvl_pages) ||
 		    !IS_ALIGNED(end_pfn + 1, lvl_pages)))
 		return;
 
 	while (start_pfn <= end_pfn) {
-		if (!pte)
-			pte = pfn_to_dma_pte(domain, start_pfn, &level,
-					     GFP_ATOMIC);
-
 		if (dma_pte_present(pte)) {
 			dma_pte_free_pagetable(domain, start_pfn,
 					       start_pfn + lvl_pages - 1,
 					       level + 1);
-
-			cache_tag_flush_range(domain, start_pfn << VTD_PAGE_SHIFT,
-					      end_pfn << VTD_PAGE_SHIFT, 0);
+			flush = true;
 		}
 
 		pte++;
 		start_pfn += lvl_pages;
-		if (first_pte_in_page(pte))
-			pte = NULL;
 	}
+
+	if (flush)
+		cache_tag_flush_range(domain, orig_start_pfn << VTD_PAGE_SHIFT,
+				      end_pfn << VTD_PAGE_SHIFT, 0);
 }
 
 int domain_map(struct dmar_domain *domain, unsigned long iov_pfn,
@@ -1903,7 +1901,7 @@ int domain_map(struct dmar_domain *domain, unsigned long iov_pfn,
 							round_down(nr_pages, lvl_pages),
 							nr_pte_to_next_page(pte) * lvl_pages);
 				end_pfn = iov_pfn + pages_to_remove - 1;
-				switch_to_super_page(domain, iov_pfn, end_pfn, largepage_lvl);
+				switch_to_super_page(domain, iov_pfn, end_pfn, largepage_lvl, pte);
 			} else {
 				pteval &= ~(uint64_t)DMA_PTE_LARGE_PAGE;
 			}
