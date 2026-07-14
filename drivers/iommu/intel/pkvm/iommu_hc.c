@@ -212,9 +212,16 @@ static int iommu_set_sm_ce(struct set_sm_ce_data *data)
 		 data->bus, data->devfn, info.ats_qdep, data->pasid_table_gpa);
 	ret = device_pasid_table_setup(&dev, data->bus, data->devfn);
 
-	if (ret)
+	if (ret) {
 		pkvm_hyp_donate_host(pkvm_host_gpa_to_phys(data->pasid_table_gpa),
 				     pasid_dir_size(data->max_pasid), false);
+		/*
+		 * If entry already exists, the host expects
+		 * the hypercall to succeed.
+		 */
+		if (ret == -EEXIST)
+			ret = 0;
+	}
 	return ret;
 }
 

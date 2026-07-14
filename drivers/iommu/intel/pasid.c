@@ -1054,7 +1054,11 @@ int device_pasid_table_setup(struct pkvm_device *dev, u8 bus, u8 devfn)
 
 	if (context_present(context) && !context_copied(iommu, bus, devfn)) {
 		spin_unlock(&iommu->lock);
+#ifndef __PKVM_HYP__
 		return 0;
+#else
+		return -EEXIST;
+#endif
 	}
 
 #ifndef __PKVM_HYP__
