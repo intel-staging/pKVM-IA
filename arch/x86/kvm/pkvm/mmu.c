@@ -725,6 +725,20 @@ static bool is_valid_addr_range(unsigned long addr, unsigned long size, bool pag
 	return page_aligned ? PAGE_ALIGNED(addr) && PAGE_ALIGNED(size) : true;
 }
 
+static int need_memcache_topup(struct pkvm_memcache *mc, unsigned long size,
+			       unsigned long *need_pages)
+{
+	/* Assume the worst case. */
+	unsigned long min_pages = __pkvm_pgtable_max_pages(size >> PAGE_SHIFT);
+
+	if (mc->count < min_pages) {
+		*need_pages = min_pages;
+		return -E2BIG;
+	}
+
+	return 0;
+}
+
 int pkvm_hyp_mmu_init(void *pool_base, unsigned long pool_pages)
 {
 	struct pkvm_pgtable_cap cap = {
@@ -1628,6 +1642,7 @@ int pkvm_host_test_clear_young_guest(struct kvm *kvm, unsigned long gpa,
  * @vcpu:	Guest's vCPU in whose context the sharing is requested.
  * @gpa:	Guest physical address of the memory region to share.
  * @size:	Size of the memory region to share.
+ * @need_mc_pages: To return the required number of pages in memcache.
  *
  * Changes the ownership state of the pages mapped by the GPA range [@gpa,
  * @gpa + @size) in the guest mmu from exclusively owned by the guest to shared
@@ -1636,10 +1651,16 @@ int pkvm_host_test_clear_young_guest(struct kvm *kvm, unsigned long gpa,
  * previously donated to this guest. The @gpa and @size are required to be
  * PAGE_SIZE aligned.
  *
+ * If the return value is -E2BIG, it indicates that there are not enough pages
+ * in the guest mmu memcache, as pkvm_guest_share_host() may need to allocate
+ * additional pages for guest page table in order to split a huge mapping into
+ * smaller ones. In this case the required number of pages is returned in
+ * @need_mc_pages. Otherwise @need_mc_pages is not updated.
+ *
  * Returns: 0 on success, or a negative error code on failure.
  */
 int pkvm_guest_share_host(struct kvm_vcpu *vcpu, unsigned long gpa,
-			  unsigned long size)
+			  unsigned long size, unsigned long *need_mc_pages)
 {
 	struct pkvm_vm *pkvm_vm = to_pkvm_vcpu(vcpu)->pkvm_vm;
 	int ret;
@@ -1652,6 +1673,11 @@ int pkvm_guest_share_host(struct kvm_vcpu *vcpu, unsigned long gpa,
 
 	ret = check_guest_host_state(pkvm_vm, gpa, size, PKVM_PAGE_OWNED,
 				     PKVM_PAGE_NONE);
+	if (ret)
+		goto unlock;
+
+	ret = need_memcache_topup(&vcpu->arch.pkvm.guest_mmu_memcache,
+				  size, need_mc_pages);
 	if (ret)
 		goto unlock;
 
@@ -1674,6 +1700,7 @@ unlock:
  * @vcpu:	Guest's vCPU in whose context the unsharing is requested.
  * @gpa:	Guest physical address of the memory region to unshare.
  * @size:	Size of the memory region to unshare.
+ * @need_mc_pages: To return the required number of pages in memcache.
  *
  * Changes the ownership state of the pages mapped by the GPA range [@gpa,
  * @gpa + @size) in the guest mmu from shared with the host to exclusively
@@ -1682,10 +1709,16 @@ unlock:
  * previously donated to this guest and then shared by it with the host.
  * The @gpa and @size are required to be PAGE_SIZE aligned.
  *
+ * If the return value is -E2BIG, it indicates that there are not enough pages
+ * in the guest mmu memcache, as pkvm_guest_unshare_host() may need to allocate
+ * additional pages for guest page table in order to split a huge mapping into
+ * smaller ones. In this case the required number of pages is returned in
+ * @need_mc_pages. Otherwise @need_mc_pages is not updated.
+ *
  * Returns: 0 on success, or a negative error code on failure.
  */
 int pkvm_guest_unshare_host(struct kvm_vcpu *vcpu, unsigned long gpa,
-			    unsigned long size)
+			    unsigned long size, unsigned long *need_mc_pages)
 {
 	struct pkvm_vm *pkvm_vm = to_pkvm_vcpu(vcpu)->pkvm_vm;
 	int ret;
@@ -1698,6 +1731,11 @@ int pkvm_guest_unshare_host(struct kvm_vcpu *vcpu, unsigned long gpa,
 
 	ret = check_guest_host_state(pkvm_vm, gpa, size, PKVM_PAGE_SHARED_OWNED,
 				     PKVM_PAGE_SHARED_BORROWED);
+	if (ret)
+		goto unlock;
+
+	ret = need_memcache_topup(&vcpu->arch.pkvm.guest_mmu_memcache,
+				  size, need_mc_pages);
 	if (ret)
 		goto unlock;
 

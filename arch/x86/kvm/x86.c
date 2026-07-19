@@ -15088,13 +15088,11 @@ int pkvm_emulate_hypercall(struct kvm_vcpu *vcpu)
 	case PKVM_GHC_UNSHARE_MEM:
 		pkvm_guest_mmu_refill_memcache(pkvm_vcpu);
 
-		/*
-		 * May need to allocate additional pages for guest page table
-		 * in order to split a huge mapping into smaller ones. Assume
-		 * the worst case.
-		 */
-		min_pages = __pkvm_pgtable_max_pages(a1 >> PAGE_SHIFT);
-		if (vcpu->arch.pkvm.guest_mmu_memcache.count < min_pages) {
+		if (nr == PKVM_GHC_SHARE_MEM)
+			ret = pkvm_guest_share_host(vcpu, a0, a1, &min_pages);
+		else
+			ret = pkvm_guest_unshare_host(vcpu, a0, a1, &min_pages);
+		if (ret == -E2BIG) {
 			/*
 			 * If not enough pages in the memcache, forward request
 			 * to the host for refilling the memcache with the needed
@@ -15104,11 +15102,6 @@ int pkvm_emulate_hypercall(struct kvm_vcpu *vcpu)
 			pkvm_vcpu->shared_vcpu->arch.pkvm.req_param = min_pages;
 			return 0;
 		}
-
-		if (nr == PKVM_GHC_SHARE_MEM)
-			ret = pkvm_guest_share_host(vcpu, a0, a1);
-		else
-			ret = pkvm_guest_unshare_host(vcpu, a0, a1);
 		break;
 	case PKVM_GHC_IOREAD:
 	case PKVM_GHC_IOWRITE:
