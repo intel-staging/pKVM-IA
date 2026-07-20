@@ -69,6 +69,7 @@ static unsigned int intercept_w_msrs[] = {
 	MSR_CORE_PERF_GLOBAL_CTRL,
 	MSR_IA32_APICBASE,
 	X2APIC_MSR(APIC_ID),
+	MSR_IA32_XSS,
 };
 
 u64 pkvm_total_reserve_pages(void)
