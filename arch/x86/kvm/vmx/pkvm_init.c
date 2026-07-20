@@ -53,6 +53,7 @@ static unsigned int intercept_w_msrs[] = {
 	MSR_TSC_AUX,
 	MSR_STAR,
 	MSR_IA32_TSX_CTRL,
+	MSR_IA32_XSS,
 };
 
 unsigned long __init pkvm_vmx_reserve_pages(void)
