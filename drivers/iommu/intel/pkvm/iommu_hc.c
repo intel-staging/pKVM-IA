@@ -264,6 +264,11 @@ static int iommu_pasid_setup_fl(struct pasid_setup_fl_data *data)
 		return -EPERM;
 	}
 
+	if (data->did == FLPT_DEFAULT_DID) {
+		pkvm_err("%s: First-level setup not allowed for default domain\n", __func__);
+		return -EPERM;
+	}
+
 	ret = __get_pasid_table(iommu, data->bus, data->devfn, &table);
 	if (ret)
 		return ret;
