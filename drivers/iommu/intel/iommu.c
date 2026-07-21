@@ -1654,6 +1654,8 @@ int domain_context_mapping_one(struct dmar_domain *domain,
 	struct device_domain_info *info =
 			domain_lookup_dev_info(domain, iommu, bus, devfn);
 	u16 did = domain_id_iommu(domain, iommu);
+#else
+	struct pkvm_device dev = { .info = info };
 #endif
 	int translation = CONTEXT_TT_MULTI_LEVEL;
 	struct dma_pte *pgd = domain->pgd;
@@ -1683,7 +1685,11 @@ int domain_context_mapping_one(struct dmar_domain *domain,
 	if (!context)
 		goto out_unlock;
 
+#ifndef __PKVM_HYP__
 	ret = 0;
+#else
+	ret = -EEXIST;
+#endif
 	if (context_present(context) && !context_copied(iommu, bus, devfn))
 		goto out_unlock;
 
@@ -1692,13 +1698,9 @@ int domain_context_mapping_one(struct dmar_domain *domain,
 #endif
 
 #ifdef __PKVM_HYP__
-	ret = pkvm_get_domain_cache_tag_assign(pgd, did,
-					       IOMMU_NO_PASID, info);
-	if (ret) {
-		pr_err("iommu%d: failed to get the domain for pgd: %p\n",
-		       iommu->seq_id, pgd);
+	ret = cache_tag_assign_domain(domain, did, &dev, IOMMU_NO_PASID);
+	if (ret)
 		goto out_unlock;
-	}
 #endif
 	context_clear_entry(context);
 	context_set_domain_id(context, did);
@@ -2005,7 +2007,12 @@ static void pasid_free_table(struct pasid_dir_entry *dir, int max_pde)
 }
 #endif /* __PKVM_HYP__ */
 
+#ifndef __PKVM_HYP__
 void domain_context_clear_one(struct device_domain_info *info, u8 bus, u8 devfn)
+#else
+void domain_context_clear_one(struct device_domain_info *info, u8 bus, u8 devfn,
+			      struct dmar_domain **domain)
+#endif
 {
 	struct intel_iommu *iommu = info->iommu;
 	struct context_entry *context;
@@ -2014,6 +2021,8 @@ void domain_context_clear_one(struct device_domain_info *info, u8 bus, u8 devfn)
 	bool sm = sm_supported(iommu);
 	u64 pasid_dir_sz;
 	void *pgd = NULL;
+
+	*domain = NULL;
 #endif
 	u16 did;
 
@@ -2063,9 +2072,12 @@ void domain_context_clear_one(struct device_domain_info *info, u8 bus, u8 devfn)
 #ifdef __PKVM_HYP__
 	if (pasid_dir)
 		pasid_free_table(pasid_dir, pasid_dir_sz);
-	else if (pgd)
-		pkvm_put_domain_cache_tag_unassign(pgd, did,
-						   IOMMU_NO_PASID, info);
+	else if (pgd) {
+		struct pkvm_device dev = { .info = info };
+
+		*domain = pkvm_get_iommu_domain_noref(pgd, did);
+		cache_tag_unassign_domain(*domain, did, &dev, IOMMU_NO_PASID);
+	}
 #endif
 }
 

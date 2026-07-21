@@ -1250,8 +1250,14 @@ static inline void context_clear_entry(struct context_entry *context)
 	context->hi = 0;
 }
 
+#ifndef __PKVM_HYP__
 void domain_context_clear_one(struct device_domain_info *info,
 			      u8 bus, u8 devfn);
+#else
+void domain_context_clear_one(struct device_domain_info *info,
+			      u8 bus, u8 devfn,
+			      struct dmar_domain **domain);
+#endif
 int domain_context_mapping_one(struct dmar_domain *domain,
 			       struct intel_iommu *iommu,
 #ifdef __PKVM_HYP__

@@ -282,15 +282,20 @@ devtlb_invalidation_with_pasid(struct intel_iommu *iommu,
 
 #ifndef __PKVM_HYP__
 void intel_pasid_tear_down_entry(struct intel_iommu *iommu, struct device *dev,
-#else
-void intel_pasid_tear_down_entry(struct intel_iommu *iommu, struct pkvm_device *dev,
-#endif
 				 u32 pasid, bool fault_ignore)
+#else
+void intel_pasid_tear_down_entry(struct intel_iommu *iommu,
+				 struct pkvm_device *dev, u32 pasid,
+				 bool fault_ignore,
+				 struct dmar_domain **domain)
+#endif
 {
 	struct pasid_entry *pte;
 	u16 did, pgtt;
 #ifdef __PKVM_HYP__
 	void *pgd = NULL;
+
+	*domain = NULL;
 #endif
 
 #ifndef __PKVM_HYP__
@@ -377,6 +382,9 @@ void intel_pasid_tear_down_entry(struct intel_iommu *iommu, struct pkvm_device *
 	 */
 	pasid_clear_entry(pte);
 	spin_unlock(&iommu->lock);
+
+	*domain = pkvm_get_iommu_domain_noref(pgd, did);
+	cache_tag_unassign_domain(*domain, did, dev, pasid);
 #endif
 	if (!ecap_coherent(iommu->ecap))
 		clflush_cache_range(pte, sizeof(*pte));
@@ -386,10 +394,6 @@ void intel_pasid_tear_down_entry(struct intel_iommu *iommu, struct pkvm_device *
 		intel_iommu_drain_pasid_prq(dev, pasid);
 #endif
 
-#ifdef __PKVM_HYP__
-	pkvm_put_domain_cache_tag_unassign(pgd, did, pasid,
-					   dev_iommu_priv_get(dev));
-#endif
 }
 
 /*
@@ -482,7 +486,9 @@ static void pasid_pte_config_first_level(struct intel_iommu *iommu,
 #ifndef __PKVM_HYP__
 int intel_pasid_setup_first_level(struct intel_iommu *iommu, struct device *dev,
 #else
-int intel_pasid_setup_first_level(struct intel_iommu *iommu, struct pkvm_device *dev,
+int intel_pasid_setup_first_level(struct intel_iommu *iommu,
+				  struct dmar_domain *domain,
+				  struct pkvm_device *dev,
 #endif
 				  phys_addr_t fsptptr, u32 pasid, u16 did,
 				  int flags)
@@ -531,11 +537,8 @@ int intel_pasid_setup_first_level(struct intel_iommu *iommu, struct pkvm_device 
 	}
 
 #ifdef __PKVM_HYP__
-	ret = pkvm_get_domain_cache_tag_assign(__pkvm_va(fsptptr), did,
-					       pasid, dev_iommu_priv_get(dev));
+	ret = cache_tag_assign_domain(domain, did, dev, pasid);
 	if (ret) {
-		pr_err("iommu%d: failed to get the domain for did: %d, fsptptr: %llx\n",
-		       iommu->seq_id, did, fsptptr);
 		spin_unlock(&iommu->lock);
 		return ret;
 	}
@@ -635,8 +638,7 @@ int intel_pasid_setup_second_level(struct intel_iommu *iommu,
 	}
 
 #ifdef __PKVM_HYP__
-	ret = pkvm_get_domain_cache_tag_assign(domain->pgd, did, pasid,
-					       dev_iommu_priv_get(dev));
+	ret = cache_tag_assign_domain(domain, did, dev, pasid);
 	if (ret) {
 		spin_unlock(&iommu->lock);
 		return ret;

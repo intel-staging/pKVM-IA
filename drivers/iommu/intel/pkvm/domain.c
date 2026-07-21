@@ -109,39 +109,6 @@ void pkvm_put_iommu_domain(struct dmar_domain *domain)
 	WARN_ON_ONCE(atomic_dec_if_positive(&domain->refcount) <= 0);
 }
 
-int pkvm_get_domain_cache_tag_assign(void *pgd, int did, u32 pasid,
-				     struct device_domain_info *info)
-{
-	struct pkvm_device dev = { .info = info };
-	struct dmar_domain *domain;
-	int ret;
-
-	domain = pkvm_get_iommu_domain(pgd, did);
-	if (!domain) {
-		pkvm_err("%s: Failed to locate domain with pgd: %p\n",
-			 __func__, pgd);
-		return -EFAULT;
-	}
-
-	ret = cache_tag_assign_domain(domain, did, &dev, pasid);
-	if (ret) {
-		pkvm_put_iommu_domain(domain);
-		return ret;
-	}
-	return 0;
-}
-
-void pkvm_put_domain_cache_tag_unassign(void *pgd, int did, u32 pasid,
-					struct device_domain_info *info)
-{
-	struct pkvm_device dev = { .info = info };
-	struct dmar_domain *domain;
-
-	domain = pkvm_get_iommu_domain_noref(pgd, did);
-	cache_tag_unassign_domain(domain, did, &dev, pasid);
-	pkvm_put_iommu_domain(domain);
-}
-
 static int refill_domain_memcache(struct dmar_domain *domain,
 				  struct pkvm_memcache *host_mc)
 {

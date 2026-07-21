@@ -34,6 +34,7 @@ int pkvm_iommu_clear_ce(struct clear_ce_data *data)
 	struct intel_iommu *iommu = iommu_from_phys(data->phys);
 	u16 bdf = PCI_DEVID(data->bus, data->devfn);
 	struct device_domain_info info = { 0 };
+	struct dmar_domain *domain;
 
 	if (!iommu)
 		return -EINVAL;
@@ -63,7 +64,9 @@ int pkvm_iommu_clear_ce(struct clear_ce_data *data)
 
 	pkvm_dbg("%s: dev[%x:%x], ats_qdep: %d\n",
 		 __func__, data->bus, data->devfn, data->ats_qdep);
-	domain_context_clear_one(&info, data->bus, data->devfn);
+	domain_context_clear_one(&info, data->bus, data->devfn, &domain);
+	if (domain)
+		pkvm_put_iommu_domain(domain);
 
 	return 0;
 }
@@ -96,7 +99,8 @@ static int iommu_set_lm_ce(struct set_lm_ce_data *data)
 	struct intel_iommu *iommu = iommu_from_phys(data->phys);
 	u16 bdf = PCI_DEVID(data->bus, data->devfn);
 	struct device_domain_info info = { 0 };
-	struct dmar_domain domain = { 0 };
+	struct dmar_domain *domain;
+	void *pgd;
 	int ret;
 
 	if (!iommu)
@@ -118,29 +122,35 @@ static int iommu_set_lm_ce(struct set_lm_ce_data *data)
 	info.ats_qdep = data->ats_qdep;
 	info.ats_supported = data->ats_supported;
 	info.ats_enabled = info.ats_supported;
-	if (data->did == FLPT_DEFAULT_DID) {
-		/*
-		 * Passthrough will break pkvm security guarantees as
-		 * device would be able to access the whole physical
-		 * memory range. Use Second stage translation with host ept
-		 * as second stage pagetable so as to limit device access
-		 * to host memory.
-		 */
-		domain.pgd = __pkvm_va(pkvm_host_ept_root());
-		domain.agaw = level_to_agaw(pkvm_host_ept_level());
-	} else {
-		domain.pgd = pkvm_host_gpa_to_virt(data->pgd_gpa);
-		domain.agaw = iommu->agaw;
-	}
 
 	ret = accept_page_donation(iommu, &data->donation_page_gpa);
 	if (ret)
 		return ret;
 
+	pgd = pkvm_host_gpa_to_virt(data->pgd_gpa);
+	domain = pkvm_get_iommu_domain(pgd, data->did);
+	if (!domain) {
+		pkvm_err("%s: Failed to locate domain with pgd: %p\n",
+			 __func__, pgd);
+		return -EINVAL;
+	}
+
 	pkvm_dbg("%s: dev[%x:%x], did: %d, pgd: %p, agaw: %d\n", __func__,
-		 data->bus, data->devfn, data->did, domain.pgd, domain.agaw);
-	return domain_context_mapping_one(&domain, iommu, &info, data->did,
-					  data->bus, data->devfn);
+		 data->bus, data->devfn, data->did, domain->pgd,
+		 domain->agaw);
+	ret = domain_context_mapping_one(domain, iommu, &info, data->did,
+					 data->bus, data->devfn);
+	if (ret) {
+		pkvm_put_iommu_domain(domain);
+		/*
+		 * If entry already exists, the host expects
+		 * the hypercall to succeed.
+		 */
+		if (ret == -EEXIST)
+			ret = 0;
+	}
+
+	return ret;
 }
 
 int pkvm_iommu_set_lm_ce(struct set_lm_ce_data *in, struct set_lm_ce_data *out)
@@ -248,7 +258,8 @@ static int iommu_pasid_setup_fl(struct pasid_setup_fl_data *data)
 	struct device_domain_info info = { 0 };
 	struct pkvm_device dev = { .info = &info };
 	struct pasid_table table = { 0 };
-	u64 fsptptr;
+	struct dmar_domain *domain;
+	void *pgd;
 	int ret;
 
 	if (!iommu)
@@ -273,7 +284,6 @@ static int iommu_pasid_setup_fl(struct pasid_setup_fl_data *data)
 	if (ret)
 		return ret;
 
-	fsptptr = pkvm_host_gpa_to_phys(data->fsptptr_gpa);
 	info.bus = data->bus;
 	info.devfn = data->devfn;
 	info.ats_qdep = data->ats_qdep;
@@ -286,11 +296,24 @@ static int iommu_pasid_setup_fl(struct pasid_setup_fl_data *data)
 	if (ret)
 		return ret;
 
+	pgd = pkvm_host_gpa_to_virt(data->fsptptr_gpa);
+	domain = pkvm_get_iommu_domain(pgd, data->did);
+	if (!domain) {
+		pkvm_err("%s: Failed to locate domain with pgd: %p\n",
+			 __func__, pgd);
+		return -EINVAL;
+	}
+
 	pkvm_dbg("%s: dev[%x:%x], pasid: %x, fsptptr_gpa: %llx, did: %d\n", __func__,
 		 data->bus, data->devfn, data->pasid, data->fsptptr_gpa, data->did);
 
-	return intel_pasid_setup_first_level(iommu, &dev, fsptptr,
-					     data->pasid, data->did, data->flags);
+	ret = intel_pasid_setup_first_level(iommu, domain, &dev,
+					    __pkvm_pa(pgd),
+					    data->pasid, data->did, data->flags);
+	if (ret)
+		pkvm_put_iommu_domain(domain);
+
+	return ret;
 }
 
 int pkvm_iommu_pasid_setup_fl(struct pasid_setup_fl_data *in, struct pasid_setup_fl_data *out)
@@ -307,8 +330,9 @@ static int iommu_pasid_setup_sl(struct pasid_setup_sl_data *data)
 	u16 bdf = PCI_DEVID(data->bus, data->devfn);
 	struct device_domain_info info = { 0 };
 	struct pkvm_device dev = { .info = &info };
-	struct dmar_domain domain = { 0 };
 	struct pasid_table table = { 0 };
+	struct dmar_domain *domain;
+	void *pgd;
 	int ret;
 
 	if (!iommu)
@@ -336,30 +360,27 @@ static int iommu_pasid_setup_sl(struct pasid_setup_sl_data *data)
 	info.ats_supported = data->ats_supported;
 	info.ats_enabled = info.ats_supported;
 
-	if (data->did == FLPT_DEFAULT_DID) {
-		/*
-		 * Passthrough will break pkvm security guarantees as
-		 * device would be able to access the whole physical
-		 * memory range. Use Second stage translation with host ept
-		 * as second stage pagetable so as to limit device access
-		 * to host memory.
-		 */
-		domain.pgd = __pkvm_va(pkvm_host_ept_root());
-		domain.agaw = level_to_agaw(pkvm_host_ept_level());
-	} else {
-		domain.pgd = pkvm_host_gpa_to_virt(data->ssptptr_gpa);
-		domain.agaw = iommu->agaw;
-	}
-
 	ret = accept_page_donation(iommu, &data->donation_page_gpa);
 	if (ret)
 		return ret;
 
+	pgd = pkvm_host_gpa_to_virt(data->ssptptr_gpa);
+	domain = pkvm_get_iommu_domain(pgd, data->did);
+	if (!domain) {
+		pkvm_err("%s: Failed to locate domain with pgd: %p\n",
+			 __func__, pgd);
+		return -EINVAL;
+	}
+
 	pkvm_dbg("%s: dev[%x:%x], pasid: %x ssptptr_gpa: %llx, did: %d\n", __func__,
 		 data->bus, data->devfn, data->pasid, data->ssptptr_gpa, data->did);
 
-	return intel_pasid_setup_second_level(iommu, &domain, &dev,
-					      data->did, data->pasid);
+	ret = intel_pasid_setup_second_level(iommu, domain, &dev,
+					     data->did, data->pasid);
+	if (ret)
+		pkvm_put_iommu_domain(domain);
+
+	return ret;
 }
 
 int pkvm_iommu_pasid_setup_sl(struct pasid_setup_sl_data *in, struct pasid_setup_sl_data *out)
@@ -378,6 +399,7 @@ int pkvm_iommu_pasid_teardown(struct pasid_teardown_data *data)
 	struct pkvm_device dev = { .info = &info };
 	struct pasid_table table = { 0 };
 	int ret;
+	struct dmar_domain *domain;
 
 	if (!iommu)
 		return -EINVAL;
@@ -406,7 +428,10 @@ int pkvm_iommu_pasid_teardown(struct pasid_teardown_data *data)
 
 	pkvm_dbg("%s: dev[%x:%x], pasid: %x, ats_qdep: %d\n", __func__,
 		 data->bus, data->devfn, data->pasid, data->ats_qdep);
-	intel_pasid_tear_down_entry(iommu, &dev, data->pasid, false);
+	intel_pasid_tear_down_entry(iommu, &dev, data->pasid, false, &domain);
+	if (domain)
+		pkvm_put_iommu_domain(domain);
+
 	return 0;
 }
 
