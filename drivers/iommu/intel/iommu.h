@@ -978,6 +978,21 @@ struct device_domain_info {
 	struct pasid_table *pasid_table; /* pasid table */
 };
 
+static inline void pkvm_populate_pfsid(struct device_domain_info *info)
+{
+	if (info->ats_supported && ecap_dit(info->iommu->ecap)) {
+		/*
+		 * Device is in SATC and optimistically assuming that a well crafted SATC
+		 * would contain only physical functions, its safe to set pfsid = bdf.
+		 * TODO: We should probably be verifying SATC for existence of only
+		 * physical functions during pkvm initialization.
+		 */
+		info->pfsid = PCI_DEVID(info->bus, info->devfn);
+	} else {
+		info->pfsid = 0;
+	}
+}
+
 static inline void pkvm_populate_dev_info_from_ce(struct device_domain_info *info,
 						  struct context_entry *ce)
 {
@@ -990,6 +1005,8 @@ static inline void pkvm_populate_dev_info_from_ce(struct device_domain_info *inf
 	 */
 	info->ats_supported = !!(ce->lo & BIT_ULL(2));
 	info->ats_enabled = info->ats_supported;
+
+	pkvm_populate_pfsid(info);
 }
 #endif /* !__PKVM_HYP__ */
 
