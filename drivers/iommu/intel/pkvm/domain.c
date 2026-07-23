@@ -53,7 +53,7 @@ static struct dmar_domain *__pkvm_get_iommu_domain_locked(void *pgd, bool inc_re
 	return NULL;
 }
 
-struct dmar_domain *pkvm_get_iommu_domain(void *pgd)
+static struct dmar_domain *__pkvm_get_iommu_domain(void *pgd)
 {
 	struct dmar_domain *domain;
 
@@ -69,7 +69,7 @@ struct dmar_domain *pkvm_get_iommu_domain(void *pgd)
  * This is useful when there is a refcount on the domain which is guaranteed
  * to be >1 (at least one reference).
  */
-struct dmar_domain *pkvm_get_iommu_domain_noref(void *pgd)
+static struct dmar_domain *__pkvm_get_iommu_domain_noref(void *pgd)
 {
 	struct dmar_domain *domain;
 
@@ -85,8 +85,27 @@ struct dmar_domain *pkvm_get_iommu_domain_noref(void *pgd)
 	return domain;
 }
 
+struct dmar_domain *pkvm_get_iommu_domain(void *pgd, u16 did)
+{
+	if (did == FLPT_DEFAULT_DID)
+		return &pt_domain;
+
+	return __pkvm_get_iommu_domain(pgd);
+}
+
+struct dmar_domain *pkvm_get_iommu_domain_noref(void *pgd, u16 did)
+{
+	if (did == FLPT_DEFAULT_DID)
+		return &pt_domain;
+
+	return __pkvm_get_iommu_domain_noref(pgd);
+}
+
 void pkvm_put_iommu_domain(struct dmar_domain *domain)
 {
+	if (domain == &pt_domain)
+		return;
+
 	WARN_ON_ONCE(atomic_dec_if_positive(&domain->refcount) <= 0);
 }
 
@@ -97,10 +116,7 @@ int pkvm_get_domain_cache_tag_assign(void *pgd, int did, u32 pasid,
 	struct dmar_domain *domain;
 	int ret;
 
-	if (did == FLPT_DEFAULT_DID)
-		return cache_tag_assign_domain(&pt_domain, did, &dev, pasid);
-
-	domain = pkvm_get_iommu_domain(pgd);
+	domain = pkvm_get_iommu_domain(pgd, did);
 	if (!domain) {
 		pkvm_err("%s: Failed to locate domain with pgd: %p\n",
 			 __func__, pgd);
@@ -121,12 +137,7 @@ void pkvm_put_domain_cache_tag_unassign(void *pgd, int did, u32 pasid,
 	struct pkvm_device dev = { .info = info };
 	struct dmar_domain *domain;
 
-	if (did == FLPT_DEFAULT_DID) {
-		cache_tag_unassign_domain(&pt_domain, did, &dev, pasid);
-		return;
-	}
-
-	domain = pkvm_get_iommu_domain_noref(pgd);
+	domain = pkvm_get_iommu_domain_noref(pgd, did);
 	cache_tag_unassign_domain(domain, did, &dev, pasid);
 	pkvm_put_iommu_domain(domain);
 }
@@ -273,7 +284,7 @@ static int iommu_domain_map(struct domain_map_data *data)
 	if (check_add_overflow(phys, size, &end))
 		return -EINVAL;
 
-	domain = pkvm_get_iommu_domain(pkvm_host_gpa_to_virt(data->pgd_gpa));
+	domain = __pkvm_get_iommu_domain(pkvm_host_gpa_to_virt(data->pgd_gpa));
 	if (!domain) {
 		pkvm_err("%s: failed to get the domain [pgd:%llx]\n",
 			 __func__, data->pgd_gpa);
@@ -316,7 +327,7 @@ int pkvm_iommu_domain_unmap(u64 pgd_gpa, u64 start_pfn, u64 last_pfn)
 {
 	struct dmar_domain *domain;
 
-	domain = pkvm_get_iommu_domain(pkvm_host_gpa_to_virt(pgd_gpa));
+	domain = __pkvm_get_iommu_domain(pkvm_host_gpa_to_virt(pgd_gpa));
 	if (!domain) {
 		pkvm_err("%s, failed to get the domain [pgd:%llx]\n",
 			 __func__, pgd_gpa);
