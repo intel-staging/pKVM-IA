@@ -7,6 +7,7 @@
 #include "pkvm.h"
 #include "pkvm/debug.h"
 #include "pkvm/memory.h"
+#include "pkvm/vmx/ept.h"
 #include "../iommu.h"
 
 /*
@@ -17,6 +18,13 @@ static DEFINE_HASHTABLE(iommu_domain_hasht, 8);
 static DECLARE_BITMAP(iommu_domains_bitmap, MAX_IOMMU_DOMAIN_NUM);
 static struct dmar_domain iommu_domains[MAX_IOMMU_DOMAIN_NUM];
 static DEFINE_PKVM_SPINLOCK(iommu_domain_lock);
+
+/*
+ * Passthrough domain for implementing passthrough (identity) mode for the host,
+ * signified by the default DID (FLPT_DEFAULT_DID). A real passthrough mode
+ * (no translation) would allow devices to access all physical memory. So model
+ * passthrough mode as a second-stage domain backed by the host EPT instead.
+ */
 struct dmar_domain pt_domain;
 
 void init_pt_domain(void)
@@ -24,6 +32,8 @@ void init_pt_domain(void)
 	INIT_LIST_HEAD(&pt_domain.cache_tags);
 	pkvm_spin_lock_init(&pt_domain.cache_lock);
 	pt_domain.qi_batch = &pt_domain._qi_batch;
+	pt_domain.pgd = __pkvm_va(pkvm_host_ept_root());
+	pt_domain.agaw = level_to_agaw(pkvm_host_ept_level());
 }
 
 static struct dmar_domain *__pkvm_get_iommu_domain_locked(void *pgd, bool inc_ref)
