@@ -185,8 +185,8 @@ bool pkvm_iommu_paging_structure_coherency(void);
 
 struct dmar_domain *pkvm_alloc_iommu_domain(struct alloc_domain_data *data,
 					    bool need_iotlb_sync_map);
-struct dmar_domain *pkvm_get_iommu_domain(void *pgd);
-struct dmar_domain *pkvm_get_iommu_domain_noref(void *pgd);
+struct dmar_domain *pkvm_get_iommu_domain(void *pgd, u16 did);
+struct dmar_domain *pkvm_get_iommu_domain_noref(void *pgd, u16 did);
 void pkvm_put_iommu_domain(struct dmar_domain *domain);
 int pkvm_free_iommu_domain(u64 pgd_gpa, struct pkvm_memcache *teardown_mc);
 
