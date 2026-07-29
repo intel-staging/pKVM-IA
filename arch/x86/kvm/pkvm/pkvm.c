@@ -77,13 +77,6 @@ static struct pkvm_x86_ops pkvm_x86_ops __read_mostly;
 static int __pkvm_vcpu_free(struct pkvm_vm *pkvm_vm, int vcpu_handle,
 			    struct pkvm_memcache *mc);
 
-static int pkvm_enable_virtualization_cpu(void)
-{
-	kvm_user_return_msr_cpu_online();
-
-	return kvm_x86_call(enable_virtualization_cpu)();
-}
-
 static int allocate_pkvm_vm_handle(struct pkvm_vm *pkvm_vm)
 {
 	struct pkvm_vm_ref *pkvm_vm_ref;
@@ -2038,9 +2031,6 @@ void pkvm_handle_host_hypercall(struct kvm_vcpu *vcpu)
 		break;
 	case __pkvm__check_processor_compatibility:
 		ret = kvm_x86_call(check_processor_compatibility)();
-		break;
-	case __pkvm__enable_virtualization_cpu:
-		ret = pkvm_enable_virtualization_cpu();
 		break;
 	case __pkvm__vm_init:
 		ret = pkvm_vm_init(pkvm_host_gpa_to_phys(pkvm_hc_input1(vcpu)),
