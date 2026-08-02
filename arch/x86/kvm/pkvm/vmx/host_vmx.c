@@ -211,14 +211,14 @@ static int handle_write_msr(struct kvm_vcpu *vcpu)
 		BUG_ON(!pkvm_cpu_initialized(vcpu->cpu));
 
 		slot = kvm_find_user_return_msr(msr);
-		BUG_ON(slot < 0);
-
-		cur = kvm_get_user_return_msr(slot);
-		if (val != cur) {
-			pkvm_warn("Host attempt to modify user-return MSR 0x%lx: 0x%llx (expected 0x%llx)\n",
-				  msr, val, cur);
-			ret = X86EMUL_UNHANDLEABLE;
-			break;
+		if (slot >= 0) {
+			cur = kvm_get_user_return_msr(slot);
+			if (val != cur) {
+				pkvm_warn("Host attempt to modify user-return MSR 0x%lx: 0x%llx (expected 0x%llx)\n",
+					  msr, val, cur);
+				ret = X86EMUL_UNHANDLEABLE;
+				break;
+			}
 		}
 
 		if (wrmsr_safe(msr, low, high)) {
