@@ -461,7 +461,8 @@ void pkvm_handle_host_ept_violation(struct kvm_vcpu *vcpu)
 {
 	struct range range, cur;
 	int level, ret = -EPERM;
-	unsigned long hpa, gpa;
+	unsigned long gpa;
+	u64 pte;
 
 	BUG_ON(!host_ept);
 
@@ -479,13 +480,13 @@ void pkvm_handle_host_ept_violation(struct kvm_vcpu *vcpu)
 
 	pkvm_host_mmu_lock();
 
-	ret = pkvm_pgtable_lookup(host_ept, gpa, &hpa, NULL, &level);
+	ret = pkvm_pgtable_lookup(host_ept, gpa, &pte, &level);
 	if (ret) {
 		pkvm_host_mmu_unlock();
 		goto failed;
 	}
 
-	if (VALID_PAGE(hpa)) {
+	if (ept_pte_present(&pte)) {
 		/*
 		 * Some other CPU has just mapped in the host EPT. Vmenter
 		 * the host VM and retry.
