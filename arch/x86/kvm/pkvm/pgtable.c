@@ -839,23 +839,30 @@ int pkvm_pgtable_set_owner(struct pkvm_pgtable *pgt, unsigned long vaddr,
  * via @level. If the leaf entry is non-present, will return INVALID_PAGE via
  * @phys, 0 via @prot and the non-present leaf entry level via @level. So @level
  * always contains a valid number, regardless the leaf entry is present or not.
+ *
+ * Return: 0 on success, negative value on failure.
  */
-void pkvm_pgtable_lookup(struct pkvm_pgtable *pgt, unsigned long vaddr,
-			 unsigned long *phys, u64 *prot, int *level)
+int pkvm_pgtable_lookup(struct pkvm_pgtable *pgt, unsigned long vaddr,
+			unsigned long *phys, u64 *prot, int *level)
 {
 	struct pgt_lookup_data data = {
 		.vaddr = vaddr,
 		.phys = INVALID_PAGE,
 		.prot = 0,
-		.level = pgt->cap.level,
 	};
 	struct pkvm_pgtable_walker walker = {
 		.cb = lookup_walker,
 		.arg = &data,
 		.walk_flags = PKVM_PGTABLE_WALK_LEAF,
 	};
+	int ret;
 
-	pkvm_pgtable_walk(pgt, ALIGN_DOWN(vaddr, PAGE_SIZE), PAGE_SIZE, &walker);
+	ret = pkvm_pgtable_walk(pgt, ALIGN_DOWN(vaddr, PAGE_SIZE), PAGE_SIZE,
+				&walker);
+	if (ret != PGTABLE_WALK_DONE) {
+		BUG_ON(!ret);
+		return ret;
+	}
 
 	if (phys)
 		*phys = data.phys;
@@ -863,6 +870,8 @@ void pkvm_pgtable_lookup(struct pkvm_pgtable *pgt, unsigned long vaddr,
 		*prot = data.prot;
 	if (level)
 		*level = data.level;
+
+	return 0;
 }
 
 /*

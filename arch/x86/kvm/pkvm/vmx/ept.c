@@ -479,7 +479,12 @@ void pkvm_handle_host_ept_violation(struct kvm_vcpu *vcpu)
 
 	pkvm_host_mmu_lock();
 
-	pkvm_pgtable_lookup(host_ept, gpa, &hpa, NULL, &level);
+	ret = pkvm_pgtable_lookup(host_ept, gpa, &hpa, NULL, &level);
+	if (ret) {
+		pkvm_host_mmu_unlock();
+		goto failed;
+	}
+
 	if (VALID_PAGE(hpa)) {
 		/*
 		 * Some other CPU has just mapped in the host EPT. Vmenter
@@ -489,6 +494,7 @@ void pkvm_handle_host_ept_violation(struct kvm_vcpu *vcpu)
 		return;
 	}
 
+	ret = -EFAULT;
 	BUG_ON(level > host_ept->cap.level);
 	/*
 	 * Based on the looked up level, find out the possible maximum page-size
