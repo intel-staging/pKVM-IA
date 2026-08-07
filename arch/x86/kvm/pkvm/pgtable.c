@@ -428,28 +428,17 @@ static int free_walker(struct pkvm_pgtable_visit_ctx *ctx, unsigned long walk_fl
 }
 
 struct pgt_lookup_data {
-	unsigned long vaddr;
-	unsigned long phys;
-	u64 prot;
+	u64 pte;
 	int level;
 };
 
 static int lookup_walker(struct pkvm_pgtable_visit_ctx *ctx, unsigned long walk_flags,
 			 void *const arg)
 {
-	const struct pkvm_pgtable_ops *pgt_ops = ctx->pgt->pgt_ops;
-	u64 pte = pgt_ops->pte_get(ctx->ptep);
 	struct pgt_lookup_data *data = arg;
-	int level = ctx->level;
 
-	data->level = level;
-
-	if (pgt_ops->pte_present(&pte)) {
-		unsigned long offset = data->vaddr & ~pgt_ops->level_to_mask(level);
-
-		data->phys = pgt_ops->pte_to_phys(&pte) + offset;
-		data->prot = pgt_ops->pte_to_prot(&pte);
-	}
+	data->pte = ctx->pgt->pgt_ops->pte_get(ctx->ptep);
+	data->level = ctx->level;
 
 	return PGTABLE_WALK_DONE;
 }
@@ -827,29 +816,22 @@ int pkvm_pgtable_set_owner(struct pkvm_pgtable *pgt, unsigned long vaddr,
  *			   in a page table.
  * @pgt:	The page table to lookup.
  * @vaddr:	The virtual address of the lookup mapping.
- * @phys:	To return the physical address bits in the present leaf entry.
- * @prot:	To return the property bits in the present leaf entry.
+ * @pte:	To return raw value of the leaf entry.
  * @level:	To return page table level of the leaf entry.
  *
  * @vaddr is aligned down to the PAGE_SIZE, and the lookup size is PAGE_SIZE.
  *
- * The page table is walked based on @vaddr to look up for the leaf entry. If
- * the leaf entry is present, will return physical address + the offset within
- * a page via @phys, property bits via @prot and the present leaf entry level
- * via @level. If the leaf entry is non-present, will return INVALID_PAGE via
- * @phys, 0 via @prot and the non-present leaf entry level via @level. So @level
- * always contains a valid number, regardless the leaf entry is present or not.
+ * The page table is walked based on @vaddr to look up for the leaf entry.
+ * Regardless of whether the leaf entry is present or non-present, the entry
+ * value is returned via @pte and the entry level in the page table is returned
+ * via @level.
  *
  * Return: 0 on success, negative value on failure.
  */
 int pkvm_pgtable_lookup(struct pkvm_pgtable *pgt, unsigned long vaddr,
-			unsigned long *phys, u64 *prot, int *level)
+			u64 *pte, int *level)
 {
-	struct pgt_lookup_data data = {
-		.vaddr = vaddr,
-		.phys = INVALID_PAGE,
-		.prot = 0,
-	};
+	struct pgt_lookup_data data;
 	struct pkvm_pgtable_walker walker = {
 		.cb = lookup_walker,
 		.arg = &data,
@@ -864,10 +846,8 @@ int pkvm_pgtable_lookup(struct pkvm_pgtable *pgt, unsigned long vaddr,
 		return ret;
 	}
 
-	if (phys)
-		*phys = data.phys;
-	if (prot)
-		*prot = data.prot;
+	if (pte)
+		*pte = data.pte;
 	if (level)
 		*level = data.level;
 

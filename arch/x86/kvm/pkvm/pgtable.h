@@ -149,7 +149,7 @@ int pkvm_pgtable_unmap(struct pkvm_pgtable *pgt, unsigned long vaddr,
 int pkvm_pgtable_set_owner(struct pkvm_pgtable *pgt, unsigned long vaddr,
 			   unsigned long size, enum pkvm_owner_id owner);
 int pkvm_pgtable_lookup(struct pkvm_pgtable *pgt, unsigned long vaddr,
-			unsigned long *phys, u64 *prot, int *level);
+			u64 *pte, int *level);
 void pkvm_pgtable_lookup_range(struct pkvm_pgtable *pgt,
 			       unsigned long vaddr, unsigned long size,
 			       unsigned long *range_vaddr,
