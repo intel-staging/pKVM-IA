@@ -232,67 +232,6 @@ static int check_host_mem_pgstate(unsigned long phys, unsigned long size,
 					   check_zero_refcnt);
 }
 
-struct page_ownership {
-	const enum pkvm_owner_id *owner;
-	const enum pkvm_page_state *state;
-};
-
-static int check_page_ownership_walker(struct pkvm_pgtable_visit_ctx *ctx,
-				       unsigned long walk_flags,
-				       void *const arg)
-{
-	struct pkvm_pgtable *pgt = ctx->pgt;
-	struct page_ownership *expected = arg;
-	void *ptep = ctx->ptep;
-
-	if (expected->owner) {
-		/* The pte should be a non-present entry to contain owner id. */
-		if (pgt->pgt_ops->pte_present(ptep))
-			return -EPERM;
-
-		if (*expected->owner != pkvm_pte_owner_id(pgt, ptep))
-			return -EPERM;
-	}
-
-	if (expected->state && (*expected->state != pkvm_pte_pgstate(pgt, ptep)))
-		return -EPERM;
-
-	return 0;
-}
-
-static int check_page_state(struct pkvm_pgtable *pgt, unsigned long vaddr,
-			    unsigned long size, const enum pkvm_page_state expected_state)
-{
-	struct page_ownership expected_ownership = {
-		.owner = NULL,
-		.state = &expected_state,
-	};
-	struct pkvm_pgtable_walker walker = {
-		.cb = check_page_ownership_walker,
-		.arg = &expected_ownership,
-		.walk_flags = PKVM_PGTABLE_WALK_LEAF,
-	};
-
-	return pkvm_pgtable_walk(pgt, vaddr, size, &walker);
-}
-
-static int check_page_owner_and_state(struct pkvm_pgtable *pgt, unsigned long vaddr,
-				      unsigned long size, const enum pkvm_owner_id expected_owner,
-				      const enum pkvm_page_state expected_state)
-{
-	struct page_ownership expected_ownership = {
-		.owner = &expected_owner,
-		.state = &expected_state,
-	};
-	struct pkvm_pgtable_walker walker = {
-		.cb = check_page_ownership_walker,
-		.arg = &expected_ownership,
-		.walk_flags = PKVM_PGTABLE_WALK_LEAF,
-	};
-
-	return pkvm_pgtable_walk(pgt, vaddr, size, &walker);
-}
-
 static u64 host_mmu_pte_prot(bool write, bool mmio)
 {
 	return host_mmu.pgt_ops->calc_pte_perm(true, write, true) |
@@ -305,7 +244,6 @@ static int fix_host_mmu_pgstate_walker(struct pkvm_pgtable_visit_ctx *ctx,
 {
 	const struct pkvm_pgtable_ops *pgt_ops = ctx->pgt->pgt_ops;
 	unsigned long phys = ctx->addr, size;
-	u64 pte;
 
 	size = pgt_ops->level_to_size(ctx->level);
 
@@ -315,36 +253,40 @@ static int fix_host_mmu_pgstate_walker(struct pkvm_pgtable_visit_ctx *ctx,
 		/* A present pte could map either memory pages or MMIO pages. */
 		if (is_mmio_range(phys, size)) {
 			/*
-			 * Store PKVM_PAGE_OWNED page state in pte for the MMIO
-			 * pages. No need to flush TLB as the page state bits in
-			 * pte are ignored bits.
+			 * Mapped host-owned MMIO pages must already be effectively set
+			 * to the desired state PKVM_PAGE_OWNED, since corresponding pte
+			 * bits are zero.
 			 */
-			pte = pgt_ops->pte_get(ctx->ptep) |
-			      pgt_ops->pte_mk_pgstate(PKVM_PAGE_OWNED);
-
-			pgt_ops->pte_set(ctx->ptep, pte);
+			BUG_ON(pkvm_pte_pgstate(ctx->pgt, ctx->ptep) != PKVM_PAGE_OWNED);
 		} else {
 			/*
 			 * Must be normal memory pages, not pvmfw pages, since
 			 * pvmfw is unmapped.
 			 */
 			BUG_ON(!is_memory_range(phys, size));
-			set_host_mem_pgstate(phys, size, PKVM_PAGE_OWNED, PKVM_ID_HOST);
+			/*
+			 * Mapped host-owned memory pages must already be effectively set
+			 * to the desired state (PKVM_PAGE_OWNED, PKVM_ID_HOST), since
+			 * corresponding pkvm_page struct fields are zero-initialized.
+			 *
+			 * Page refcounts are expected to be zero, since the host is not
+			 * requesting DMA-mapping its pages at this point yet.
+			 */
+			BUG_ON(check_host_mem_pgstate(phys, size, PKVM_PAGE_OWNED,
+						      PKVM_ID_HOST, true));
 		}
 	} else {
 		if (is_mmio_range(phys, size)) {
 			/*
-			 * A non-present MMIO pte will be used by the pKVM to
-			 * install MMIO mappings at runtime. Set the page state
-			 * as PKVM_PAGE_NONE since it is non-present leaf.
-			 * Meanwhile set the owner ID as PKVM_ID_HYP so that
-			 * only the pKVM can initiate the transition of this
-			 * MMIO page to the host.
+			 * All MMIO pages are initially owned by the host. A non-present
+			 * pte means that the MMIO page was not mapped initially in
+			 * pkvm_host_mmu_init() (it may be mapped later on the first host
+			 * access). However, its desired state (PKVM_PAGE_OWNED,
+			 * PKVM_ID_HOST) must already be effectively set since the pte
+			 * is zeroed.
 			 */
-			pte = pgt_ops->pte_mk_pgstate(PKVM_PAGE_NONE) |
-			      pkvm_pte_mk_owner_id(PKVM_ID_HYP);
-
-			pgt_ops->pte_set(ctx->ptep, pte);
+			BUG_ON(pkvm_pte_pgstate(ctx->pgt, ctx->ptep) != PKVM_PAGE_OWNED);
+			BUG_ON(pkvm_pte_owner_id(ctx->pgt, ctx->ptep) != PKVM_ID_HOST);
 		} else if (is_memory_range(phys, size)) {
 			/*
 			 * Unmapped (hyp-owned) memory pages ownership must already be
@@ -640,6 +582,72 @@ static int for_each_contig_range(struct pkvm_pgtable *pgt,
 	return 0;
 }
 
+struct check_walk_data {
+	enum pkvm_page_state expected_state;
+	enum pkvm_page_state (*get_page_state)(struct pkvm_pgtable *pgt, void *ptep);
+};
+
+static int check_pgstate_walker(struct pkvm_pgtable_visit_ctx *ctx,
+				unsigned long walk_flags,
+				void *const arg)
+{
+	struct check_walk_data *data = arg;
+	enum pkvm_page_state state = data->get_page_state(ctx->pgt, ctx->ptep);
+
+	return state == data->expected_state ? 0 : -EPERM;
+}
+
+static int __check_pgstate(struct pkvm_pgtable *pgt, unsigned long vaddr,
+			   unsigned long size, struct check_walk_data *data)
+{
+	struct pkvm_pgtable_walker walker = {
+		.cb = check_pgstate_walker,
+		.arg = data,
+		.walk_flags = PKVM_PGTABLE_WALK_LEAF,
+	};
+
+	return pkvm_pgtable_walk(pgt, vaddr, size, &walker);
+}
+
+static enum pkvm_page_state host_get_mmio_page_state(struct pkvm_pgtable *pgt, void *ptep)
+{
+	if (pgt->pgt_ops->pte_annotated(ptep))
+		return PKVM_PAGE_NONE;
+
+	return pgt->pgt_ops->pte_pgstate(ptep);
+}
+
+static enum pkvm_page_state guest_get_page_state(struct pkvm_pgtable *pgt, void *ptep)
+{
+	if (!pgt->pgt_ops->pte_present(ptep))
+		return PKVM_PAGE_NONE;
+
+	return pgt->pgt_ops->pte_pgstate(ptep);
+}
+
+static int check_host_mmio_pgstate(unsigned long phys, unsigned long size,
+				   enum pkvm_page_state expected_state)
+{
+	struct check_walk_data data = {
+		.expected_state = expected_state,
+		.get_page_state = host_get_mmio_page_state,
+	};
+
+	return __check_pgstate(&host_mmu, phys, size, &data);
+}
+
+static int check_guest_pgstate(struct pkvm_vm *pkvm_vm,
+			       unsigned long gpa, unsigned long size,
+			       enum pkvm_page_state expected_state)
+{
+	struct check_walk_data data = {
+		.expected_state = expected_state,
+		.get_page_state = guest_get_page_state,
+	};
+
+	return __check_pgstate(&pkvm_vm->mmu, gpa, size, &data);
+}
+
 static int __check_guest_host_state(unsigned long gpa, unsigned long hpa,
 				    unsigned long size, u64 prot, void *arg)
 {
@@ -658,7 +666,7 @@ static int check_guest_host_state(struct pkvm_vm *pkvm_vm,
 {
 	int ret;
 
-	ret = check_page_state(&pkvm_vm->mmu, gpa, size, guest_state);
+	ret = check_guest_pgstate(pkvm_vm, gpa, size, guest_state);
 	if (ret)
 		return ret;
 
@@ -1248,47 +1256,6 @@ int pkvm_host_donate_hyp_mmio(unsigned long phys, unsigned long size)
 }
 
 /**
- * pkvm_hyp_donate_host_mmio_locked() - Donate MMIO pages from hypervisor to
- *					host with the host mmu already locked
- *					by the caller.
- * @phys:	Physical address of the MMIO region to donate.
- * @size:	Size of the MMIO region to donate.
- *
- * The donation transfers ownership of the MMIO pages in range
- * [@phys, @phys + @size) from the hypervisor to the host, thus allowing the
- * host to access. This expects the caller has already locked the host mmu. The
- * @phys and @size are required to be PAGE_SIZE aligned (@size is also required
- * to be non-zeroed value) to make sure the caller aware only PAGE_SIZE aligned
- * memory range can be donated.
- *
- * The donated MMIO pages are mapped in the host mmu with read/write/exec
- * permission and UC memory type in the host mmu, with the page states being
- * updated to PKVM_PAGE_OWNED to indicate the ownership has been transferred to
- * the host.
- *
- * Returns: 0 on success, or a negative error code on failure.
- */
-int pkvm_hyp_donate_host_mmio_locked(unsigned long phys, unsigned long size)
-{
-	u64 prot = host_mmu.pgt_ops->pte_mk_pgstate(PKVM_PAGE_OWNED) |
-		   host_mmu_pte_prot(true, true);
-	int ret;
-
-	if (!is_valid_addr_range(phys, size, true))
-		return -EINVAL;
-
-	if (!is_mmio_range(phys, size))
-		return -EINVAL;
-
-	/* The vaddr == phys for the host MMU */
-	ret = check_page_owner_and_state(&host_mmu, phys, size, PKVM_ID_HYP, PKVM_PAGE_NONE);
-	if (ret)
-		return ret;
-
-	return pkvm_pgtable_map(&host_mmu, phys, phys, size, prot, NULL);
-}
-
-/**
  * pkvm_host_share_hyp() - Shares host pages with the pKVM hypervisor.
  * @phys:	Physical address of the memory region to share.
  * @size:	Size of the memory region to share.
@@ -1454,7 +1421,7 @@ int pkvm_host_donate_guest(struct kvm_vcpu *vcpu, unsigned long gpa,
 	if (ret)
 		goto unlock;
 
-	ret = check_page_state(&pkvm_vm->mmu, gpa, size, PKVM_PAGE_NONE);
+	ret = check_guest_pgstate(pkvm_vm, gpa, size, PKVM_PAGE_NONE);
 	if (ret)
 		goto unlock;
 
@@ -1536,7 +1503,7 @@ int pkvm_host_share_guest(struct kvm_vcpu *vcpu, unsigned long gpa,
 	pkvm_host_mmu_lock();
 	pkvm_guest_mmu_lock(pkvm_vm);
 
-	ret = check_page_state(&pkvm_vm->mmu, gpa, size, PKVM_PAGE_NONE);
+	ret = check_guest_pgstate(pkvm_vm, gpa, size, PKVM_PAGE_NONE);
 	if (ret)
 		goto unlock;
 
@@ -1816,20 +1783,8 @@ int pkvm_host_use_dma(unsigned long phys, unsigned long size)
 		 * not tracked in pkvm's vmemmap and thus have no refcount. This is ok
 		 * as long as pKVM doesn't support device assignment, so it never
 		 * donates MMIO pages at runtime.
-		 *
-		 * FIXME: this assumes that any such reserved memory regions are
-		 * in holes between memory memblocks (so they have been already
-		 * mapped in the host MMU with PKVM_PAGE_OWNED by pkvm_host_mmu_init())
-		 * which is generally not guaranteed.
-		 * To fix this cleanly, we could e.g. rework pKVM to set PKVM_ID_HOST
-		 * (instead of PKVM_ID_HYP) as the initial owner for those MMIO pages
-		 * that are allowed to be used by the host but haven't been lazily
-		 * mapped in the host MMU yet (while still keep their state as
-		 * PKVM_PAGE_NONE until they are lazily mapped), to let pKVM easily
-		 * distinguish between them and those MMIO pages that are not allowed
-		 * to be mapped for the host (e.g. IOMMU MMIO).
 		 */
-		ret = check_page_state(&host_mmu, phys, size, PKVM_PAGE_OWNED);
+		ret = check_host_mmio_pgstate(phys, size, PKVM_PAGE_OWNED);
 	} else {
 		/*
 		 * For simplicity don't support DMA-mapping a range which is a mix of

@@ -171,15 +171,10 @@ static inline bool iommu_supports_5levels(void)
 }
 
 struct intel_iommu *iommu_from_phys(unsigned long phys);
-static inline bool is_iommu_mmio(unsigned long phys)
-{
-	return !!iommu_from_phys(phys);
-}
 
 extern struct dmar_domain pt_domain;
 void init_pt_domain(void);
 
-bool overlaps_iommu_mmio(unsigned long phys, unsigned long size);
 bool is_dev_in_satc(u16 bdf);
 bool pkvm_iommu_paging_structure_coherency(void);
 
