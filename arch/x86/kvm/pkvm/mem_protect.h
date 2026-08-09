@@ -6,9 +6,7 @@
 
 /**
  * enum pkvm_page_state - Track how a page is owned and mapped among page tables
- * @PKVM_PAGE_NONE:		The page is not mapped in this page table and
- *				not owned by this page table owner.
- * @PKVM_PAGE_OWNED:		The page is mapped in this page table and
+ * @PKVM_PAGE_OWNED:		The page is mapped in this page table [*] and
  *				exclusively owned by this page table owner.
  * @PKVM_PAGE_SHARED_OWNED:	The page is mapped in this page table and owned
  *				by this page table owner. But it is also mapped
@@ -17,6 +15,8 @@
  *				owned by this page table owner. It is owned by
  *				another page table owner, and mapped in the
  *				owner's page table as well.
+ * @PKVM_PAGE_NONE:		The page is not mapped in this page table and
+ *				not owned by this page table owner.
  *
  * The page state would be stored either in the pkvm_page structure or in the
  * page table leaf entry (both present leaf and non-present leaf), depending on
@@ -37,7 +37,7 @@
  * host MMIO page state will be stored in the host mmu pte. The hypervisor mmu
  * by default maps all the memory pages, and doesn't have to store page states
  * in its ignore bits. A guest page state will always be stored in the guest mmu
- * pte.
+ * pte. [**]
  *
  * After pKVM init finalized, all the memory pages are mapped in the host mmu
  * with PKVM_PAGE_OWNED page state, which represents owned by the host
@@ -47,12 +47,22 @@
  *
  * At the running time, a page state can be transferred from one to another
  * by the pKVM hypervisor via the memory protection API.
+ *
+ * [*]  Exception: host MMIO page state may be already PKVM_PAGE_OWNED while the
+ *      page is still not mapped in the host mmu. This happens in the case when
+ *      the MMIO page is allowed to be accessed by the host but hasn't been
+ *      lazily mapped for the host yet.
+ *
+ * [**] The PKVM_PAGE_NONE state is a bit special: it is not explicitly stored
+ *      in a pte. For host MMIO pages, PKVM_PAGE_NONE is derived from the fact
+ *      that the page owner is not PKVM_ID_HOST. For guest pages, PKVM_PAGE_NONE
+ *      is derived from the fact that the page is not mapped in the guest mmu.
  */
 enum pkvm_page_state {
-	PKVM_PAGE_NONE = 0ULL,
-	PKVM_PAGE_OWNED,
+	PKVM_PAGE_OWNED = 0ULL,
 	PKVM_PAGE_SHARED_OWNED,
 	PKVM_PAGE_SHARED_BORROWED,
+	PKVM_PAGE_NONE,
 	NR_PKVM_PAGE_STATES,
 };
 
@@ -81,7 +91,6 @@ int pkvm_host_donate_hyp_share_ro(unsigned long phys, unsigned long size,
 				  bool clear);
 void pkvm_hyp_donate_host(unsigned long phys, unsigned long size, bool clear);
 int pkvm_host_donate_hyp_mmio(unsigned long phys, unsigned long size);
-int pkvm_hyp_donate_host_mmio_locked(unsigned long phys, unsigned long size);
 int pkvm_host_share_hyp(unsigned long phys, unsigned long size);
 void pkvm_host_unshare_hyp(unsigned long phys, unsigned long size);
 int pkvm_host_donate_guest(struct kvm_vcpu *vcpu, unsigned long gpa,
