@@ -1246,9 +1246,6 @@ out:
  * to be non-zeroed value) to make sure the caller is aware that only PAGE_SIZE
  * aligned memory range can be donated.
  *
- * NOTE: This API doesn't map the MMIO space in hyp mmu and expects the caller
- * to do that before calling this API.
- *
  * Returns: 0 on success, or a negative error code on failure.
  */
 int pkvm_host_donate_hyp_mmio(unsigned long phys, unsigned long size)
@@ -1269,6 +1266,21 @@ int pkvm_host_donate_hyp_mmio(unsigned long phys, unsigned long size)
 
 	/* The vaddr == phys for the host MMU. */
 	ret = pkvm_pgtable_set_owner(&host_mmu, phys, size, PKVM_ID_HYP);
+	if (ret)
+		goto unlock;
+
+	ret = pkvm_hyp_mmu_map((unsigned long)__pkvm_va(phys), phys, size,
+			       (u64)pgprot_val(PAGE_KERNEL_IO_NOCACHE));
+	if (ret) {
+		WARN_ON(ret != -ENOMEM);
+		/*
+		 * TODO: clean up on failure: unmap any pages we've mapped in
+		 * the hyp mmu (if mapping failed in the middle) and restore
+		 * host ownership.
+		 * This would require, in particular, implementing TLB shootdown
+		 * for the hyp mmu.
+		 */
+	}
 unlock:
 	pkvm_host_mmu_unlock();
 	return ret;
