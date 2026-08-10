@@ -2,6 +2,7 @@
 #include <linux/kvm_host.h>
 #include <linux/pgtable.h>
 #include <asm/kvm_pkvm.h>
+#include <asm/pkvm_spinlock.h>
 #include "debug.h"
 #include "early_alloc.h"
 #include "gfp.h"
@@ -13,7 +14,7 @@ static struct pkvm_pgtable hyp_mmu;
 static struct pkvm_pool hyp_mmu_pool;
 
 static struct pkvm_pgtable host_mmu;
-pkvm_spinlock_t host_mmu_lock;
+static pkvm_spinlock_t host_mmu_lock;
 
 static const struct pkvm_pgtable_ops *guest_mmu_pgt_ops;
 static struct pkvm_pgtable_cap guest_mmu_pgt_cap;
@@ -193,6 +194,16 @@ static int fix_hyp_mmu_page_refcnt(void)
 #endif
 
 	return pkvm_pgtable_walk(&hyp_mmu, 0, size, &walker);
+}
+
+static void pkvm_host_mmu_lock(void)
+{
+	pkvm_spin_lock(&host_mmu_lock);
+}
+
+static void pkvm_host_mmu_unlock(void)
+{
+	pkvm_spin_unlock(&host_mmu_lock);
 }
 
 static void set_host_mem_pgstate(unsigned long phys, unsigned long size,
