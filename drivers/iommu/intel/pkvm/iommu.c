@@ -879,13 +879,6 @@ static int iommu_init(struct intel_iommu *iommu)
 		return -EFAULT;
 
 	iommu->reg = __pkvm_va(iommu->reg_phys);
-	ret = pkvm_hyp_mmu_map((unsigned long)iommu->reg, iommu->reg_phys,
-			       iommu->reg_size, (u64)pgprot_val(PAGE_KERNEL_IO_NOCACHE));
-	if (ret) {
-		pkvm_err("iommu%d: failed to map MMIO space in hyp(err=%d)\n",
-			 iommu->seq_id, ret);
-		return ret;
-	}
 
 	ret = pkvm_host_donate_hyp_mmio(iommu->reg_phys, PAGE_ALIGN(iommu->reg_size));
 	if (ret) {
