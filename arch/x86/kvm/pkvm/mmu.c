@@ -1222,11 +1222,6 @@ out:
  * NOTE: This API doesn't map the MMIO space in hyp mmu and expects the caller
  * to do that before calling this API.
  *
- * NOTE: another hacky assumption is that this API should only be used during
- * pKVM initialization, not at runtime. Otherwise it doesn't ensure protection
- * of these MMIO pages from the host DMA (see pkvm_host_use_dma()).
- * TODO: clean this mess.
- *
  * Returns: 0 on success, or a negative error code on failure.
  */
 int pkvm_host_donate_hyp_mmio(unsigned long phys, unsigned long size)
@@ -1773,15 +1768,33 @@ int pkvm_host_use_dma(unsigned long phys, unsigned long size)
 		for_each_pkvm_page(page, phys, size)
 			pkvm_page_ref_inc(page);
 	} else if (is_mmio_range(phys, size)) {
+		unsigned long addr;
+		u64 prot;
+
 		/*
 		 * Host may need to DMA-map reserved memory (e.g. RMRRs on Intel)
 		 * which is treated as MMIO by pKVM. Allow it, as long as the host is
 		 * allowed to access this memory. Cannot pin it, since MMIO pages are
-		 * not tracked in pkvm's vmemmap and thus have no refcount. This is ok
-		 * as long as pKVM doesn't support device assignment, so it never
-		 * donates MMIO pages at runtime.
+		 * not tracked in pkvm's vmemmap and thus have no refcount. Instead,
+		 * taint these pages by marking them as shared borrowed, thus
+		 * permanently prevent donating these pages later.
 		 */
-		ret = check_host_mmio_pgstate(phys, size, PKVM_PAGE_OWNED);
+		for (addr = phys; addr < phys + size; addr += PAGE_SIZE) {
+			ret = check_host_mmio_pgstate(addr, PAGE_SIZE,
+						      PKVM_PAGE_SHARED_BORROWED);
+			/* Page already borrowed */
+			if (!ret)
+				continue;
+			ret = check_host_mmio_pgstate(addr, PAGE_SIZE, PKVM_PAGE_OWNED);
+			if (ret)
+				goto unlock;
+		}
+
+		prot = host_mmu.pgt_ops->pte_mk_pgstate(PKVM_PAGE_SHARED_BORROWED) |
+		       host_mmu_pte_prot(true, true);
+
+		ret = pkvm_pgtable_map(&host_mmu, phys, phys, size, prot, NULL);
+		WARN_ON_ONCE(ret && ret != -ENOMEM);
 	} else {
 		/*
 		 * For simplicity don't support DMA-mapping a range which is a mix of
