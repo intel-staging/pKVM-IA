@@ -2,6 +2,7 @@
 #include <linux/kvm_host.h>
 #include <linux/pgtable.h>
 #include <asm/kvm_pkvm.h>
+#include "debug.h"
 #include "early_alloc.h"
 #include "gfp.h"
 #include "mmu.h"
@@ -963,6 +964,83 @@ int pkvm_host_mmu_init(void *pool_base, unsigned long pool_pages,
 int pkvm_host_mmu_finalize(host_mmu_finalize_fn_t fn)
 {
 	return fn ? fn(&host_mmu) : 0;
+}
+
+int pkvm_host_mmu_handle_fault(unsigned long gpa)
+{
+	struct range range, cur;
+	int level, ret;
+	u64 pte;
+
+	/*
+	 * All the memory and MMIO holes have already been mapped in the host MMU
+	 * during initialization, except for the MMIO in the high-end addresses.
+	 * Handle MMIO only.
+	 */
+	if (pkvm_find_addr_range(gpa, &range)) {
+		pkvm_err_ratelimited("Host access to protected memory at 0x%lx\n", gpa);
+		return -EPERM;
+	}
+
+	pkvm_host_mmu_lock();
+
+	ret = pkvm_pgtable_lookup(&host_mmu, gpa, &pte, &level);
+	if (ret) {
+		pkvm_host_mmu_unlock();
+		return ret;
+	}
+
+	if (host_mmu.pgt_ops->pte_present(&pte)) {
+		/*
+		 * Some other CPU has just mapped this gpa in the host MMU. Vmenter
+		 * the host VM and retry.
+		 */
+		pkvm_host_mmu_unlock();
+		return 0;
+	}
+
+	if (host_mmu.pgt_ops->pte_annotated(&pte)) {
+		pkvm_err_ratelimited("Host access to %s at 0x%lx\n",
+				     is_pvmfw(gpa) ? "pvmfw memory" : "protected MMIO",
+				     gpa);
+		pkvm_host_mmu_unlock();
+		return -EPERM;
+	}
+
+	ret = -EFAULT;
+	BUG_ON(level > host_mmu.cap.level);
+	/*
+	 * Based on the looked up level, find out the maximum possible page-size
+	 * aligned address range which contains the GPA address for installing
+	 * the MMIO mapping, to minimize memory consumption.
+	 */
+	for (; level > PG_LEVEL_NONE; level--) {
+		unsigned long size;
+
+		if (!((1 << level) & host_mmu.cap.allowed_pgsz))
+			continue;
+
+		size = host_mmu.pgt_ops->level_to_size(level);
+		cur.start = ALIGN_DOWN(gpa, size);
+		cur.end = cur.start + size - 1;
+
+		if (range_contains(&range, &cur)) {
+			/*
+			 * TODO: In case the host mmu free pages are not
+			 * enough, -ENOMEM will be returned. This could be
+			 * handled by unmaping some other MMIO mapped for the
+			 * host VM to reclaim some mmu pages and try again.
+			 */
+			ret = host_mmu_map(cur.start, size, true);
+			break;
+		}
+	}
+
+	if (ret)
+		pkvm_err("No valid range found to map host GPA 0x%lx, err %d\n", gpa, ret);
+
+	pkvm_host_mmu_unlock();
+	return ret;
 }
 
 void pkvm_guest_mmu_setup(const struct pkvm_pgtable_ops *pgt_ops,
