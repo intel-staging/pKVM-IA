@@ -1219,13 +1219,6 @@ out:
  * to be non-zeroed value) to make sure the caller is aware that only PAGE_SIZE
  * aligned memory range can be donated.
  *
- * NOTE: Unlike the memory donation APIs, this API doesn't check the current
- * ownership of the MMIO pages, i.e. doesn't check if they are already owned
- * by the host with PKVM_PAGE_OWNED state before donating them to the hypervisor.
- * This is ok for now, so long as pKVM does not support device assignment so
- * there is no guest MMIO, i.e. MMIO pages may only be either exclusively owned
- * by the host or exclusively owned by the hypervisor, not donated to guests or
- * shared with guests
  * NOTE: This API doesn't map the MMIO space in hyp mmu and expects the caller
  * to do that before calling this API.
  *
@@ -1248,9 +1241,13 @@ int pkvm_host_donate_hyp_mmio(unsigned long phys, unsigned long size)
 
 	pkvm_host_mmu_lock();
 
+	ret = check_host_mmio_pgstate(phys, size, PKVM_PAGE_OWNED);
+	if (ret)
+		goto unlock;
+
 	/* The vaddr == phys for the host MMU. */
 	ret = pkvm_pgtable_set_owner(&host_mmu, phys, size, PKVM_ID_HYP);
-
+unlock:
 	pkvm_host_mmu_unlock();
 	return ret;
 }
