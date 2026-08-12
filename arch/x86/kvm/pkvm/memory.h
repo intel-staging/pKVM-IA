@@ -98,6 +98,12 @@ static inline bool is_pvmfw(unsigned long phys)
 				(phys < pvmfw_base + pvmfw_size);
 }
 
+static inline bool is_pvmfw_range(unsigned long phys, unsigned long size)
+{
+	return pvmfw_present && (phys >= pvmfw_base) &&
+				(phys + size <= pvmfw_base + pvmfw_size);
+}
+
 static inline bool overlaps_pvmfw(unsigned long phys, unsigned long size)
 {
 	return pvmfw_present && (phys < pvmfw_base + pvmfw_size) &&
