@@ -11,17 +11,27 @@
  */
 #define PKVM_ALIAS(sym)  pkvm_sym(sym) = sym;
 
+#ifdef CONFIG_PRINTK
 PKVM_ALIAS(_printk);
+PKVM_ALIAS(mem_dump_obj);
+#endif
+
 #ifdef CONFIG_BUG
 PKVM_ALIAS(__warn_printk);
 #endif
-PKVM_ALIAS(___ratelimit);
+
+#ifdef CONFIG_TRACING
 PKVM_ALIAS(__trace_bputs);
 PKVM_ALIAS(__trace_bprintk);
+#endif
+
+#ifdef CONFIG_DYNAMIC_DEBUG_CORE
 PKVM_ALIAS(__dynamic_pr_debug);
-PKVM_ALIAS(mem_dump_obj);
+#endif
+
+PKVM_ALIAS(___ratelimit);
 PKVM_ALIAS(vmalloc_base);
 PKVM_ALIAS(get_cpu_entry_area);
-#endif
+#endif /* CONFIG_PKVM_X86_DEBUG */
 
 #endif /* _ASM_X86_PKVM_IMAGE_VARS_H */
