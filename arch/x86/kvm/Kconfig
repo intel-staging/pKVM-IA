@@ -137,7 +137,7 @@ config PKVM_X86
 config PKVM_INTEL
 	bool "pKVM for Intel processors support"
 	depends on KVM_INTEL=y
-	depends on INTEL_IOMMU
+	depends on INTEL_IOMMU && IRQ_REMAP
 	depends on BLK_DEV_FD=n
 	depends on X86_64
 	depends on X86_X2APIC
