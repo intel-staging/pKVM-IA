@@ -238,9 +238,9 @@ static u64 host_mmu_pte_prot(bool write, bool mmio)
 	       host_mmu.pgt_ops->calc_pte_memtype(mmio);
 }
 
-static int fix_host_mmu_pgstate_walker(struct pkvm_pgtable_visit_ctx *ctx,
-				       unsigned long walk_flags,
-				       void *const arg)
+static int verify_host_mmu_pgstate_walker(struct pkvm_pgtable_visit_ctx *ctx,
+					  unsigned long walk_flags,
+					  void *const arg)
 {
 	const struct pkvm_pgtable_ops *pgt_ops = ctx->pgt->pgt_ops;
 	unsigned long phys = ctx->addr, size;
@@ -315,10 +315,10 @@ static int fix_host_mmu_pgstate_walker(struct pkvm_pgtable_visit_ctx *ctx,
 	return 0;
 }
 
-static int fix_host_mmu_pgstate(void)
+static int verify_host_mmu_pgstate(void)
 {
 	struct pkvm_pgtable_walker walker = {
-		.cb = fix_host_mmu_pgstate_walker,
+		.cb = verify_host_mmu_pgstate_walker,
 		.arg = NULL,
 		.walk_flags = PKVM_PGTABLE_WALK_LEAF,
 	};
@@ -949,7 +949,7 @@ int pkvm_host_mmu_init(void *pool_base, unsigned long pool_pages,
 			return ret;
 	}
 
-	return fix_host_mmu_pgstate();
+	return verify_host_mmu_pgstate();
 }
 
 int pkvm_host_mmu_finalize(host_mmu_finalize_fn_t fn)
