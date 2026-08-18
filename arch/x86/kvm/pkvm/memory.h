@@ -146,12 +146,23 @@ static inline bool is_mmio_range(unsigned long phys, unsigned long size)
 }
 
 /*
- * Convert a linux host kernel direct mapping virtual address to a pKVM mapping
- * virtual address. Currently the two virtual addresses are the same.
+ * Convert a linux host kernel virtual address to a pKVM direct mapping
+ * virtual address.
+ *
+ * The input address can be either a direct mapping VA (i.e. below
+ * __START_KERNEL_map) or a kernel text/data/bss VA (i.e. above
+ * __START_KERNEL_map). In the former case the output address is the same
+ * as the input one, since pKVM currently uses the same VA offset for its
+ * direct mapping as the host kernel. In the latter case the output address
+ * is the direct mapping VA representing the same physical address as the
+ * input VA.
+ *
+ * Thereby pKVM can safely rely on __pkvm_va(__pkvm_pa(addr)) == addr
+ * being true for any address returned by kern_pkvm_va().
  */
 static inline void *kern_pkvm_va(void *va)
 {
-	return va;
+	return __pkvm_va(__pkvm_pa(va));
 }
 
 void clflush_cache_range(void *vaddr, unsigned int size);
