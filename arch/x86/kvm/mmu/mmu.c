@@ -1645,24 +1645,41 @@ static bool __kvm_rmap_zap_gfn_range(struct kvm *kvm,
 				 start, end - 1, can_yield, true, flush);
 }
 #ifdef CONFIG_PKVM_X86
-static bool __pkvm_unmap_gfn_range(struct kvm *kvm, gfn_t start, gfn_t end)
+static bool __pkvm_unmap_gfn_range(struct kvm *kvm, gfn_t start, gfn_t end,
+				   bool can_yield)
 {
-	struct pkvm_mapping *m;
-
 	lockdep_assert_held_write(&kvm->mmu_lock);
 
 	if (pkvm_is_protected_vm(kvm))
 		return false;
 
-	for_each_pkvm_mapping(kvm, start, end, m) {
-		int err = pkvm_hypercall(vm_mmu_unmap, kvm->arch.pkvm.handle,
-					 m->gfn << PAGE_SHIFT,
-					 m->nr_pages << PAGE_SHIFT);
+	while (start < end) {
+		struct pkvm_mapping *m;
+		int err;
+
+		/*
+		 * Since mmu_lock may be dropped when yielding, the interval tree
+		 * may be rebuilt between iterations. To walk the range safely,
+		 * retrieve the first mapping in the remaining range anew on every
+		 * iteration, rather than use for_each_pkvm_mapping().
+		 */
+		m = pkvm_mapping_iter_first(&kvm->arch.pkvm.mappings, start, end - 1);
+		if (!m)
+			break;
+
+		err = pkvm_hypercall(vm_mmu_unmap, kvm->arch.pkvm.handle,
+				     m->gfn << PAGE_SHIFT,
+				     m->nr_pages << PAGE_SHIFT);
 		WARN_ONCE(err, "pkvm unmap gfn[%llx..%llx] failed, err = %d\n",
 			  m->gfn, m->gfn + m->nr_pages, err);
 
+		start = m->gfn + m->nr_pages;
+
 		pkvm_mapping_remove(m, &kvm->arch.pkvm.mappings);
 		kfree(m);
+
+		if (can_yield && start < end)
+			cond_resched_rwlock_write(&kvm->mmu_lock);
 	}
 
 	/* pKVM itself always flushes TLB on unmap */
@@ -1671,7 +1688,8 @@ static bool __pkvm_unmap_gfn_range(struct kvm *kvm, gfn_t start, gfn_t end)
 
 static bool pkvm_unmap_gfn_range(struct kvm *kvm, struct kvm_gfn_range *range)
 {
-	return __pkvm_unmap_gfn_range(kvm, range->start, range->end);
+	return __pkvm_unmap_gfn_range(kvm, range->start, range->end,
+				      range->may_block);
 }
 
 static bool pkvm_age_gfn_range(struct kvm *kvm, struct kvm_gfn_range *range,
@@ -7510,7 +7528,7 @@ static void kvm_mmu_zap_all(struct kvm *kvm)
 #ifdef CONFIG_PKVM_X86
 	if (enable_pkvm) {
 		write_lock(&kvm->mmu_lock);
-		__pkvm_unmap_gfn_range(kvm, 0, U64_MAX);
+		__pkvm_unmap_gfn_range(kvm, 0, U64_MAX, true);
 		write_unlock(&kvm->mmu_lock);
 		return;
 	}
