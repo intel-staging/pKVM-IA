@@ -61,10 +61,7 @@
  * the host's metadata.
  */
 #undef BUG
-#define BUG() do { panic("\n==================================\n"	\
-			 "pKVM BUG at %s:%u\n"				\
-			 "==================================\n",	\
-			 __FILE__, __LINE__);				\
+#define BUG() do { panic("pKVM BUG at %s:%u\n",  __FILE__, __LINE__);	\
 		  __builtin_unreachable();				\
 		} while (0)
 
