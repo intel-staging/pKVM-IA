@@ -89,7 +89,6 @@
 #define CREATE_TRACE_POINTS
 #include "trace.h"
 
-#ifndef __PKVM_HYP__
 /*
  * Note, kvm_caps fields should *never* have default values, all fields must be
  * recomputed from scratch during vendor module load, e.g. to account for a
@@ -101,6 +100,7 @@ EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_caps);
 struct kvm_host_values kvm_host __read_mostly;
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_host);
 
+#ifndef __PKVM_HYP__
 #define  ERR_PTR_USR(e)  ((void __user *)ERR_PTR(e))
 
 #define emul_to_vcpu(ctxt) \
@@ -133,24 +133,6 @@ EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_host);
 #define KVM_CLOCK_VALID_FLAGS						\
 	(KVM_CLOCK_TSC_STABLE | KVM_CLOCK_REALTIME | KVM_CLOCK_HOST_TSC)
 
-#define KVM_X86_VALID_QUIRKS			\
-	(KVM_X86_QUIRK_LINT0_REENABLED |	\
-	 KVM_X86_QUIRK_CD_NW_CLEARED |		\
-	 KVM_X86_QUIRK_LAPIC_MMIO_HOLE |	\
-	 KVM_X86_QUIRK_OUT_7E_INC_RIP |		\
-	 KVM_X86_QUIRK_MISC_ENABLE_NO_MWAIT |	\
-	 KVM_X86_QUIRK_FIX_HYPERCALL_INSN |	\
-	 KVM_X86_QUIRK_MWAIT_NEVER_UD_FAULTS |	\
-	 KVM_X86_QUIRK_SLOT_ZAP_ALL |		\
-	 KVM_X86_QUIRK_STUFF_FEATURE_MSRS |	\
-	 KVM_X86_QUIRK_IGNORE_GUEST_PAT |	\
-	 KVM_X86_QUIRK_VMCS12_ALLOW_FREEZE_IN_SMM |	\
-	 KVM_X86_QUIRK_NESTED_SVM_SHARED_PAT)
-
-#define KVM_X86_CONDITIONAL_QUIRKS		\
-	(KVM_X86_QUIRK_CD_NW_CLEARED |		\
-	 KVM_X86_QUIRK_IGNORE_GUEST_PAT)
-
 #define KVM_BUS_LOCK_DETECTION_VALID_MODE	(KVM_BUS_LOCK_DETECTION_OFF | \
 						 KVM_BUS_LOCK_DETECTION_EXIT)
 
@@ -162,8 +144,10 @@ static void store_regs(struct kvm_vcpu *vcpu);
 static int sync_regs(struct kvm_vcpu *vcpu);
 
 static DEFINE_MUTEX(vendor_module_lock);
+#endif /* !__PKVM_HYP__ */
 
 struct kvm_x86_ops kvm_x86_ops __read_mostly;
+#ifndef __PKVM_HYP__
 struct kvm_x86_nested_ops kvm_nested_ops __read_mostly;
 
 #define KVM_X86_OP(func)					     \
@@ -208,20 +192,6 @@ module_param(pi_inject_timer, bint, 0644);
 /* Enable/disable SMT_RSB bug mitigation */
 static bool __read_mostly mitigate_smt_rsb;
 module_param(mitigate_smt_rsb, bool, 0444);
-
-#define KVM_SUPPORTED_XCR0     (XFEATURE_MASK_FP | XFEATURE_MASK_SSE \
-				| XFEATURE_MASK_YMM | XFEATURE_MASK_BNDREGS \
-				| XFEATURE_MASK_BNDCSR | XFEATURE_MASK_AVX512 \
-				| XFEATURE_MASK_PKRU | XFEATURE_MASK_XTILE)
-
-#define XFEATURE_MASK_CET_ALL	(XFEATURE_MASK_CET_USER | XFEATURE_MASK_CET_KERNEL)
-/*
- * Note, KVM supports exposing PT to the guest, but does not support context
- * switching PT via XSTATE (KVM's PT virtualization relies on perf; swapping
- * PT via guest XSTATE would clobber perf state), i.e. KVM doesn't support
- * IA32_XSS[bit 8] (guests can/must use RDMSR/WRMSR to save/restore PT MSRs).
- */
-#define KVM_SUPPORTED_XSS	(XFEATURE_MASK_CET_ALL)
 
 bool __read_mostly allow_smaller_maxphyaddr = 0;
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(allow_smaller_maxphyaddr);
@@ -6923,8 +6893,13 @@ void kvm_setup_xss_caps(void)
 	}
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_setup_xss_caps);
+#endif /* !__PKVM_HYP__ */
 
+#ifndef __PKVM_HYP__
 static void kvm_setup_efer_caps(void)
+#else
+void kvm_setup_efer_caps(void)
+#endif
 {
 	/* Enable syscall by default because its emulated by KVM */
 	kvm_caps.supported_efer_bits = (u64)EFER_SCE;
@@ -6948,6 +6923,7 @@ static void kvm_setup_efer_caps(void)
 	}
 }
 
+#ifndef __PKVM_HYP__
 static void kvm_nested_ops_update(const struct kvm_x86_nested_ops *nested_ops)
 {
 	memcpy(&kvm_nested_ops, nested_ops, sizeof(kvm_nested_ops));
