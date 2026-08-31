@@ -75,6 +75,8 @@ static __init void pkvm_setup_syms(void)
 #endif
 	cpumask_copy(&pkvm_sym(__cpu_possible_mask), cpu_possible_mask);
 	pkvm_sym(nr_cpu_ids) = nr_cpu_ids;
+
+	pkvm_sym(tsc_khz) = tsc_khz;
 }
 
 static __init int pkvm_setup_host_vmcs_config(void)

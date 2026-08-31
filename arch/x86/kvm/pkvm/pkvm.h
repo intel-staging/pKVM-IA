@@ -41,5 +41,6 @@ static inline void pkvm_set_vcpu_outside_guest(struct kvm_vcpu *vcpu)
 
 void pkvm_handle_host_hypercall(struct kvm_vcpu *vcpu);
 void pkvm_kick_vcpu(struct kvm_vcpu *vcpu);
+void pkvm_wait_vcpu_kicked_out(struct kvm_vcpu *vcpu);
 
 #endif /* __PKVM_X86_PKVM_H */
