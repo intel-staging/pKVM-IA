@@ -16,6 +16,9 @@ pkvm-hyp-y			:= early_alloc.o memory.o cpu.o \
 				   init.o pgtable.o mmu.o page_alloc.o \
 				   lapic.o trace.o
 
+fpu				:= ../../kernel/fpu
+pkvm-hyp-y			+= $(fpu)/core.o
+
 pkvm-lib			:= lib
 pkvm-hyp-y			+= $(pkvm-lib)/find_bit.o
 

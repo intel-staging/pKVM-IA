@@ -225,6 +225,8 @@ extern struct cpumask pkvm_sym(__cpu_possible_mask);
 extern unsigned int pkvm_sym(nr_cpu_ids);
 DECLARE_STATIC_KEY_FALSE(pkvm_sym(switch_vcpu_ibpb));
 extern unsigned int pkvm_sym(tsc_khz);
+extern struct fpu_state_config pkvm_sym(fpu_kernel_cfg);
+extern struct fpu_state_config pkvm_sym(fpu_user_cfg);
 
 PKVM_DECLARE(void *, pkvm_early_alloc_page, (void));
 PKVM_DECLARE(void *, pkvm_early_alloc_contig, (unsigned int nr_pages));
