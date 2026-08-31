@@ -329,6 +329,11 @@ static void handle_pending_events(struct kvm_vcpu *vcpu, bool *req_immediate_exi
 	}
 }
 
+static void fixup_host_vmx(struct vcpu_vmx *vmx)
+{
+	this_cpu_write(host_vcpu_fixup, false);
+}
+
 void pkvm_host_vmexit_main(struct vcpu_vmx *vmx)
 {
 	struct kvm_vcpu *vcpu = &vmx->vcpu;
@@ -413,4 +418,7 @@ void pkvm_host_vmexit_main(struct vcpu_vmx *vmx)
 
 	if (vcpu->arch.cr2 != native_read_cr2())
 		native_write_cr2(vcpu->arch.cr2);
+
+	if (unlikely(this_cpu_read(host_vcpu_fixup)))
+		fixup_host_vmx(vmx);
 }
