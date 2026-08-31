@@ -127,6 +127,10 @@ static __init void pkvm_setup_syms(void)
 #endif
 
 	pkvm_sym(kaslr_offset_val) = kaslr_offset();
+
+	/* Respect below host KVM's module parameters */
+	pkvm_sym(enable_apicv) = enable_apicv;
+	pkvm_sym(enable_ipiv) = enable_ipiv;
 }
 
 static __init int pkvm_setup_host_vmcs_config(void)
