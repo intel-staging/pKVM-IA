@@ -100,6 +100,12 @@ static __init void pkvm_setup_syms(void)
 	pkvm_sym(fpu_user_cfg) = fpu_user_cfg;
 	if (static_branch_unlikely(&__fpu_state_size_dynamic))
 		static_branch_enable(&pkvm_sym(__fpu_state_size_dynamic));
+
+	/* Respect below host KVM's module parameters */
+	pkvm_sym(enable_apicv) = enable_apicv;
+	pkvm_sym(enable_ipiv) = enable_ipiv;
+	pkvm_sym(enable_vpid) = enable_vpid;
+	pkvm_sym(enable_cet) = enable_cet;
 }
 
 static __init int pkvm_setup_host_vmcs_config(void)

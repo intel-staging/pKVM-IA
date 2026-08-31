@@ -355,6 +355,11 @@ extern struct fpu_state_config pkvm_sym(fpu_kernel_cfg);
 extern struct fpu_state_config pkvm_sym(fpu_user_cfg);
 DECLARE_STATIC_KEY_FALSE(pkvm_sym(__fpu_state_size_dynamic));
 
+extern bool __read_mostly pkvm_sym(enable_apicv);
+extern bool __read_mostly pkvm_sym(enable_ipiv);
+extern bool __read_mostly pkvm_sym(enable_vpid);
+extern bool __read_mostly pkvm_sym(enable_cet);
+
 PKVM_DECLARE(void *, pkvm_early_alloc_page, (void));
 PKVM_DECLARE(void *, pkvm_early_alloc_contig, (unsigned int nr_pages));
 PKVM_DECLARE(void, pkvm_early_alloc_init, (void *virt, unsigned long size));
