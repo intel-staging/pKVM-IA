@@ -24,10 +24,12 @@ struct idt_page {
 
 struct pkvm_pcpu {
 	u8 stack[PKVM_STACK_SIZE] __aligned(16);
-	int cpu;
 	struct gdt_page gdt_page;
 	struct idt_page idt_page;
 	struct tss_struct tss;
+	u32 apic_id;
+	u32 msi_dest_id;
+	int cpu;
 };
 
 struct pkvm_hyp {
@@ -676,6 +678,8 @@ extern unsigned long pkvm_sym(kaslr_offset_val);
 extern bool __read_mostly pkvm_sym(enable_apicv);
 extern bool __read_mostly pkvm_sym(enable_ipiv);
 extern bool __read_mostly pkvm_sym(enable_vpid);
+
+extern bool pkvm_sym(msi_dest_mode_logical);
 
 u64 pkvm_total_reserve_pages(void);
 PKVM_DECLARE(void *, pkvm_early_alloc_page, (struct pkvm_memcache *mc));

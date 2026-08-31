@@ -133,6 +133,8 @@ static __init void pkvm_setup_syms(void)
 	pkvm_sym(enable_apicv) = enable_apicv;
 	pkvm_sym(enable_ipiv) = enable_ipiv;
 	pkvm_sym(enable_vpid) = enable_vpid;
+
+	pkvm_sym(msi_dest_mode_logical) = apic->dest_mode_logical;
 }
 
 static __init int pkvm_setup_host_vmcs_config(void)
@@ -375,15 +377,16 @@ static __init int pkvm_setup_pcpu(int cpu)
 	init_idt(pcpu);
 	init_tss(pcpu);
 
-	pcpu->cpu = cpu;
-	per_cpu(pkvm_pcpu, cpu) = pcpu;
-
 	ret = pkvm_alloc_vmxarea(cpu);
 	if (ret) {
 		pr_err("alloc vmxarea for CPU%d failed with ret %d\n", cpu, ret);
 		return ret;
 	}
 
+	pcpu->apic_id = per_cpu(x86_cpu_to_apicid, cpu);
+	pcpu->msi_dest_id = apic->calc_dest_apicid(cpu);
+	pcpu->cpu = cpu;
+	per_cpu(pkvm_pcpu, cpu) = pcpu;
 	return 0;
 }
 
