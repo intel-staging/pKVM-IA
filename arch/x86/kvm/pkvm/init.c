@@ -6,6 +6,7 @@
 #include "../x86.h"
 #include "early_alloc.h"
 #include "fpu.h"
+#include "gsmi.h"
 #include "init.h"
 #include "lapic.h"
 #include "memory.h"
@@ -247,6 +248,10 @@ static int initialize_global(struct pkvm_mem_info infos[], int nr_infos)
 	 * guest VMs.
 	 */
 	kvm_init_xstate_sizes();
+
+	ret = pkvm_init_gsmi();
+	if (ret)
+		return ret;
 
 	if (hyp_iommu_init) {
 		ret = hyp_iommu_init();

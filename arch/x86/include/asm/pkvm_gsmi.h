@@ -10,8 +10,14 @@
  * src/drivers/elog/gsmi.c in coreboot.
  */
 #define GSMI_CALLBACK			0xef
+#define GSMI_CMD_SET_EVENT_LOG		0x08
+#define GSMI_CMD_CLEAR_EVENT_LOG	0x09
+#define GSMI_CMD_LOG_S0IX_SUSPEND	0x0a
+#define GSMI_CMD_LOG_S0IX_RESUME	0x0b
 #define GSMI_CMD_HANDSHAKE_TYPE		0xc1
 #define GSMI_HANDSHAKE_NONE		0x7f
+#define GSMI_INVALID_PARAMETER		0x82
+#define GSMI_UNSUPPORTED		0x83
 
 struct gsmi_set_eventlog_param {
 	u32	data_ptr;

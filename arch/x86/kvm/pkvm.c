@@ -395,5 +395,10 @@ int __init pkvm_gsmi_init(void)
 		return -EOPNOTSUPP;
 	}
 
+	pkvm_sym(gsmi_present) = true;
+	pkvm_sym(smi_command_port) = acpi_gbl_FADT.smi_command;
+	pkvm_sym(pkvm_gsmi_mem_base) = pkvm_mem32_base;
+	pkvm_sym(pkvm_gsmi_mem_size) = pkvm_mem32_size;
+
 	return 0;
 }

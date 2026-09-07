@@ -669,6 +669,11 @@ extern phys_addr_t pkvm_sym(pvmfw_size);
 extern phys_addr_t pkvm_sym(pkvm_ramoops_console_pa);
 extern size_t pkvm_sym(pkvm_ramoops_console_size);
 
+extern bool pkvm_sym(gsmi_present);
+extern u16 pkvm_sym(smi_command_port);
+extern phys_addr_t pkvm_sym(pkvm_gsmi_mem_base);
+extern phys_addr_t pkvm_sym(pkvm_gsmi_mem_size);
+
 extern unsigned long pkvm_sym(kaslr_offset_val);
 
 extern bool __read_mostly pkvm_sym(enable_apicv);
