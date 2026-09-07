@@ -18,6 +18,8 @@ static unsigned int pkvm_memblock_nr;
 
 phys_addr_t pkvm_mem_base;
 phys_addr_t pkvm_mem_size;
+phys_addr_t pkvm_mem32_base;
+phys_addr_t pkvm_mem32_size;
 
 bool pvmfw_present;
 phys_addr_t pvmfw_base;
@@ -90,6 +92,22 @@ void __init pkvm_reserve(void)
 
 	kvm_info("Reserved %lld MiB at 0x%llx for pkvm\n", pkvm_mem_size >> 20,
 		 pkvm_mem_base);
+
+	pkvm_mem32_size = pkvm_gsmi_pages() << PAGE_SHIFT;
+	pkvm_mem32_base = memblock_phys_alloc_range(pkvm_mem32_size, PAGE_SIZE,
+						    0, U32_MAX);
+	if (!pkvm_mem32_base) {
+		kvm_err("Failed to reserve pkvm 32-bit memory\n");
+
+		/* All or nothing, to keep things simple. */
+		memblock_phys_free(pkvm_mem_base, pkvm_mem_size);
+		pkvm_mem_base = 0;
+
+		return;
+	}
+
+	kvm_info("Reserved %lld KiB at 0x%llx for pkvm\n", pkvm_mem32_size >> 10,
+		 pkvm_mem32_base);
 }
 
 static phys_addr_t kvm_host_pa(void *addr)
