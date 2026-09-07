@@ -9,6 +9,7 @@
 #include <linux/mm.h>
 #include <asm/desc.h>
 #include <asm/kvm_para.h>
+#include <asm/pkvm_gsmi.h>
 #include <asm/pkvm_image.h>
 #include <asm/pkvm_redef.h>
 

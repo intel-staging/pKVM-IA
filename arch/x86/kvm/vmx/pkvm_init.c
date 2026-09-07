@@ -1306,6 +1306,13 @@ static void do_pkvm_hyp_init(void *data)
 			.prot	= pgprot_val(PAGE_KERNEL),
 		},
 		{
+			.type	= PKVM_RESERVED_USED_MEMORY,
+			.va	= (unsigned long)__va(pkvm_mem32_base),
+			.pa	= pkvm_mem32_base,
+			.size	= pkvm_mem32_size,
+			.prot	= pgprot_val(PAGE_KERNEL),
+		},
+		{
 			.type	= PKVM_TEXT_DATA,
 			.va	= (unsigned long)pkvm_sym(text_start),
 			.pa	= __pa_symbol(pkvm_sym(text_start)),
@@ -1531,6 +1538,8 @@ int __init vmx_pkvm_init(void)
 	 */
 	WARN_ON(set_memory_np((unsigned long)__va(pkvm_mem_base),
 			      pkvm_mem_size >> PAGE_SHIFT));
+	WARN_ON(set_memory_np((unsigned long)__va(pkvm_mem32_base),
+			      pkvm_mem32_size >> PAGE_SHIFT));
 
 	pkvm_hypercall(init_finalize);
 
