@@ -6,6 +6,7 @@
 #include <vmx/x86_ops.h>
 #include "debug.h"
 #include "ept.h"
+#include "gsmi.h"
 #include "host_vmx.h"
 #include "pkvm/init.h"
 #include "pkvm/lapic.h"
@@ -108,6 +109,48 @@ static void handle_cr(struct kvm_vcpu *vcpu)
 	default:
 		break;
 	}
+}
+
+static int handle_io(struct kvm_vcpu *vcpu)
+{
+	struct vcpu_vt *vt = to_vt(vcpu);
+	unsigned long exit_qual;
+	bool in, string;
+	int size;
+	u16 port;
+	u8 val;
+
+	exit_qual = vt->exit_qualification;
+	port = exit_qual >> 16;
+	size = (exit_qual & 7) + 1;
+	in = (exit_qual & 8) != 0;
+	string = (exit_qual & 16) != 0;
+
+	/* We only intercept the SMI command port. */
+	BUG_ON(port > smi_command_port || port + size <= smi_command_port);
+
+	/*
+	 * For simplicity, only allow single-byte non-string accesses
+	 * to the SMI command port. This covers Linux kernel's needs.
+	 */
+	if (size != 1 || string) {
+		kvm_inject_gp(vcpu, 0);
+		return X86EMUL_UNHANDLEABLE;
+	}
+
+	if (in) {
+		val = inb(port);
+		vcpu->arch.regs[VCPU_REGS_RAX] &= ~0xffUL;
+		vcpu->arch.regs[VCPU_REGS_RAX] |= val;
+	} else {
+		val = vcpu->arch.regs[VCPU_REGS_RAX] & 0xff;
+		if (val == GSMI_CALLBACK)
+			pkvm_handle_gsmi(vcpu);
+		else
+			outb(val, port);
+	}
+
+	return X86EMUL_CONTINUE;
 }
 
 static bool is_msr_in_bitmap_range(u32 msr)
@@ -435,6 +478,10 @@ void pkvm_host_vmexit_main(struct vcpu_vmx *vmx)
 	case EXIT_REASON_CR_ACCESS:
 		handle_cr(vcpu);
 		skip_instruction = true;
+		break;
+	case EXIT_REASON_IO_INSTRUCTION:
+		if (handle_io(vcpu) == X86EMUL_CONTINUE)
+			skip_instruction = true;
 		break;
 	case EXIT_REASON_MSR_READ:
 		if (handle_read_msr(vcpu) == X86EMUL_CONTINUE)

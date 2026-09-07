@@ -279,6 +279,9 @@ static __init int pkvm_setup_host_vm(struct pkvm_hyp *pkvm)
 		return -ENOMEM;
 	}
 
+	if (pkvm_sym(gsmi_present))
+		__set_bit(pkvm_sym(smi_command_port), kvmx->io_bitmap);
+
 	kvmx->kvm.arch.pkvm.handle = PKVM_HOST_VM_HANDLE;
 	/*
 	 * Only a few fields in the kvm structure will be used, e.g.,
@@ -1464,6 +1467,10 @@ int __init vmx_pkvm_init(void)
 
 	pkvm_setup_syms();
 
+	/*
+	 * Must be before pkvm_setup_host_vm(), since io_bitmap setup depends
+	 * on whether gsmi is present or not.
+	 */
 	ret = pkvm_gsmi_init();
 	if (ret)
 		goto out;
