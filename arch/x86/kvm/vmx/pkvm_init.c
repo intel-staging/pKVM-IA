@@ -147,6 +147,7 @@ static __init int pkvm_setup_host_vmcs_config(void)
 	struct vmcs_config_setting setting = {
 		.cpu_based_vm_exec_ctrl_req =
 			CPU_BASED_INTR_WINDOW_EXITING |
+			CPU_BASED_USE_IO_BITMAPS |
 			CPU_BASED_USE_MSR_BITMAPS |
 			CPU_BASED_ACTIVATE_SECONDARY_CONTROLS,
 		.cpu_based_vm_exec_ctrl_opt = 0,
@@ -269,6 +270,12 @@ static __init int pkvm_setup_host_vm(struct pkvm_hyp *pkvm)
 
 	if (!kvmx) {
 		pr_err("no kvm_vmx memory\n");
+		return -ENOMEM;
+	}
+
+	kvmx->io_bitmap = pkvm_sym(pkvm_early_alloc_contig)(2);
+	if (!kvmx->io_bitmap) {
+		pr_err("no io_bitmap pages\n");
 		return -ENOMEM;
 	}
 
@@ -1021,6 +1028,8 @@ static __init void init_host_state_area(struct vcpu_vmx *vmx)
 
 static __init void init_execution_control(struct vcpu_vmx *vmx)
 {
+	struct kvm_vmx *kvmx = to_kvm_vmx(vmx->vcpu.kvm);
+
 	/* Preemption timer is toggled dynamically */
 	pin_controls_set(vmx, pkvm_sym(host_vmcs_config).pin_based_exec_ctrl &
 			      ~PIN_BASED_VMX_PREEMPTION_TIMER);
@@ -1056,6 +1065,9 @@ static __init void init_execution_control(struct vcpu_vmx *vmx)
 	vmcs_write32(EXCEPTION_BITMAP, 0);
 
 	vmcs_write64(MSR_BITMAP, __pa(vmx->vmcs01.msr_bitmap));
+
+	vmcs_write64(IO_BITMAP_A, __pa(kvmx->io_bitmap));
+	vmcs_write64(IO_BITMAP_B, __pa((u8 *)kvmx->io_bitmap + PAGE_SIZE));
 
 	/*
 	 * Host VM owns cr0 and cr4 except VMXE bit.
