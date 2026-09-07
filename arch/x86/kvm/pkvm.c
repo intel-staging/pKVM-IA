@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <linux/acpi.h>
+#include <linux/dmi.h>
 #include <linux/kvm_host.h>
 #include <linux/memblock.h>
 #include <linux/module.h>
@@ -328,4 +329,71 @@ void __init pkvm_ramoops_init(void)
 		pkvm_sym(pkvm_ramoops_console_pa) = r_info.start;
 		pkvm_sym(pkvm_ramoops_console_size) = r_info.size;
 	}
+}
+
+/* Copied from drivers/firmware/google/gsmi.c */
+static const struct dmi_system_id gsmi_dmi_table[] __initconst = {
+	{
+		.ident = "Google Board",
+		.matches = {
+			DMI_MATCH(DMI_BOARD_VENDOR, "Google, Inc."),
+		},
+	},
+	{
+		.ident = "Coreboot Firmware",
+		.matches = {
+			DMI_MATCH(DMI_BIOS_VENDOR, "coreboot"),
+		},
+	},
+	{}
+};
+
+int __init pkvm_gsmi_init(void)
+{
+	u16 cmd, result;
+
+	/*
+	 * Probe the GSMI handler in firmware. See gsmi_system_valid() in
+	 * drivers/firmware/google/gsmi.c as a reference.
+	 */
+	if (!dmi_check_system(gsmi_dmi_table))
+		return 0;
+
+	if (!acpi_gbl_FADT.smi_command || acpi_gbl_FADT.smi_command > U16_MAX) {
+		pr_err("pkvm: invalid smi command port 0x%x\n",
+		       acpi_gbl_FADT.smi_command);
+		return -EINVAL;
+	}
+
+	/*
+	 * Combine the initial probe with querying the handshake type. We can do
+	 * that, since we require the simple GSMI_HANDSHAKE_NONE protocol anyway.
+	 *
+	 * Don't bother using the GSMI_HANDSHAKE_SPIN quirk for this initial query.
+	 * Coreboot has always been advertising GSMI_HANDSHAKE_NONE support,
+	 * since 2012 when GSMI support was first implemented in coreboot, which
+	 * suggests that SPIN was only required on some ancient pre-coreboot
+	 * Chromebooks. Also, GSMI driver's gsmi_system_valid() doesn't use SPIN
+	 * for the initial probe either, it only historically uses it when
+	 * querying the handshake type after that.
+	 */
+	cmd = GSMI_CALLBACK | (GSMI_CMD_HANDSHAKE_TYPE << 8);
+	asm volatile(
+		"outb %%al, %%dx\n"
+		: "=a" (result)
+		: "0" (cmd),
+		  "d" (acpi_gbl_FADT.smi_command)
+		: "memory", "cc"
+		);
+
+	/* If %ax is left untouched, there is no GSMI handler. */
+	if (result == cmd)
+		return 0;
+
+	if (result != GSMI_HANDSHAKE_NONE) {
+		pr_err("pkvm: unsupported gsmi handshake 0x%x\n", result);
+		return -EOPNOTSUPP;
+	}
+
+	return 0;
 }

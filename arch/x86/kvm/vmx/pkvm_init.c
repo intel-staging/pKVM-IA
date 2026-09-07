@@ -1452,6 +1452,10 @@ int __init vmx_pkvm_init(void)
 
 	pkvm_setup_syms();
 
+	ret = pkvm_gsmi_init();
+	if (ret)
+		goto out;
+
 	ret = pkvm_setup_host_vmcs_config();
 	if (ret) {
 		pr_err("setup host vmcs config failed\n");

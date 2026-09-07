@@ -9,6 +9,10 @@
  * Copied from drivers/firmware/google/gsmi.c. See also
  * src/drivers/elog/gsmi.c in coreboot.
  */
+#define GSMI_CALLBACK			0xef
+#define GSMI_CMD_HANDSHAKE_TYPE		0xc1
+#define GSMI_HANDSHAKE_NONE		0x7f
+
 struct gsmi_set_eventlog_param {
 	u32	data_ptr;
 	u32	data_len;
