@@ -2046,6 +2046,7 @@ void pkvm_init_debugfs(void);
 void pkvm_create_vm_debugfs(struct kvm *kvm);
 int pkvm_vm_ioctl_enable_cap(struct kvm *kvm, struct kvm_enable_cap *cap);
 void __init pkvm_ramoops_init(void);
+int __init pkvm_gsmi_init(void);
 int kvm_topup_pkvm_memcache(struct pkvm_memcache *mc, unsigned long min_pages);
 void kvm_free_pkvm_memcache(struct pkvm_memcache *mc);
 
