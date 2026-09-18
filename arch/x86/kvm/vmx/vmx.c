@@ -5253,6 +5253,10 @@ void vmx_vcpu_reset(struct kvm_vcpu *vcpu, bool init_event)
 
 	vmx->rmode.vm86_active = 0;
 	vmx->spec_ctrl = 0;
+#ifdef __PKVM_HYP__
+	if (pkvm_is_protected_vcpu(vcpu))
+		vmx->spec_ctrl = this_cpu_read(x86_spec_ctrl_current);
+#endif
 
 	vmx->msr_ia32_umwait_control = 0;
 
