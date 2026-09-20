@@ -39,6 +39,7 @@ PKVM_ALIAS(__dynamic_pr_debug);
 
 PKVM_ALIAS(___ratelimit);
 PKVM_ALIAS(vmalloc_base);
+PKVM_ALIAS(get_cpu_entry_area);
 #endif /* CONFIG_PKVM_X86_DEBUG */
 
 #endif /* _ASM_X86_PKVM_IMAGE_VARS_H */

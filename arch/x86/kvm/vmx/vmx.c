@@ -614,14 +614,12 @@ noinline void invept_error(unsigned long ext, u64 eptp)
 	vmx_insn_failed("invept failed: ext=0x%lx eptp=%llx\n", ext, eptp);
 }
 
-#ifndef __PKVM_HYP__
 DEFINE_PER_CPU(struct vmcs *, current_vmcs);
 /*
  * We maintain a per-CPU linked-list of VMCS loaded on that CPU. This is needed
  * when a CPU is brought down, and we need to VMCLEAR all VMCSs loaded on it.
  */
 static DEFINE_PER_CPU(struct list_head, loaded_vmcss_on_cpu);
-#endif /* !__PKVM_HYP__ */
 
 static DECLARE_BITMAP(vmx_vpid_bitmap, VMX_NR_VPIDS);
 #ifndef __PKVM_HYP__
@@ -1529,6 +1527,7 @@ static void grow_ple_window(struct kvm_vcpu *vcpu)
 					    vmx->ple_window, old);
 	}
 }
+#endif /* !__PKVM_HYP__ */
 
 static void shrink_ple_window(struct kvm_vcpu *vcpu)
 {
@@ -1553,6 +1552,25 @@ void vmx_vcpu_load_vmcs(struct kvm_vcpu *vcpu, int cpu)
 	struct vmcs *prev;
 
 	if (!already_loaded) {
+#ifdef __PKVM_HYP__
+		/*
+		 * pkvm doesn't support smp call thus doesn't support clear vmcs
+		 * on a remote CPU. Suppose this vmcs is already cleared by
+		 * vmx_vcpu_put, otherwise it cannot be loaded on this CPU.
+		 */
+		if (WARN_ON_ONCE(vmx->loaded_vmcs->cpu != -1))
+			return;
+		/*
+		 * Ensure loaded_vmcs->cpu is read before adding loaded_vmcs to
+		 * this cpu's percpu list, otherwise it may not yet be deleted
+		 * from its previous cpu's percpu list.  Pairs with the
+		 * smb_wmb() in __loaded_vmcs_clear().
+		 */
+		smp_rmb();
+
+		list_add(&vmx->loaded_vmcs->loaded_vmcss_on_cpu_link,
+			 &per_cpu(loaded_vmcss_on_cpu, cpu));
+#else
 		loaded_vmcs_clear(vmx->loaded_vmcs);
 		local_irq_disable();
 
@@ -1567,6 +1585,7 @@ void vmx_vcpu_load_vmcs(struct kvm_vcpu *vcpu, int cpu)
 		list_add(&vmx->loaded_vmcs->loaded_vmcss_on_cpu_link,
 			 &per_cpu(loaded_vmcss_on_cpu, cpu));
 		local_irq_enable();
+#endif
 	}
 
 	prev = per_cpu(current_vmcs, cpu);
@@ -1576,6 +1595,25 @@ void vmx_vcpu_load_vmcs(struct kvm_vcpu *vcpu, int cpu)
 	}
 
 	if (!already_loaded) {
+#ifdef __PKVM_HYP__
+		struct desc_ptr gdt;
+		/*
+		 * Flush all EPTP/VPID contexts, the new pCPU may have stale
+		 * TLB entries from its previous association with the vCPU.
+		 */
+		kvm_make_request(KVM_REQ_TLB_FLUSH, vcpu);
+
+		vmcs_writel(HOST_TR_BASE, pkvm_pcpu_tss(cpu));
+
+		native_store_gdt(&gdt);
+		vmcs_writel(HOST_GDTR_BASE, gdt.address);
+
+		if (IS_ENABLED(CONFIG_IA32_EMULATION) || IS_ENABLED(CONFIG_X86_32)) {
+			unsigned long msr = __rdmsr(MSR_IA32_SYSENTER_ESP);
+
+			vmcs_writel(HOST_IA32_SYSENTER_ESP, msr);
+		}
+#else
 		void *gdt = get_current_gdt_ro();
 
 		/*
@@ -1597,6 +1635,7 @@ void vmx_vcpu_load_vmcs(struct kvm_vcpu *vcpu, int cpu)
 			vmcs_writel(HOST_IA32_SYSENTER_ESP,
 				    (unsigned long)(cpu_entry_stack(cpu) + 1));
 		}
+#endif
 
 		vmx->loaded_vmcs->cpu = cpu;
 	}
@@ -1613,9 +1652,12 @@ void vmx_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
 
 	vmx_vcpu_load_vmcs(vcpu, cpu);
 
+#ifndef __PKVM_HYP__
 	vmx_vcpu_pi_load(vcpu, cpu);
+#endif
 }
 
+#ifndef __PKVM_HYP__
 void vmx_vcpu_put(struct kvm_vcpu *vcpu)
 {
 	vmx_vcpu_pi_put(vcpu);
@@ -9244,6 +9286,8 @@ err_l1d_flush:
 
 int pkvm_vmx_init(void)
 {
+	int r, cpu;
+
 	BUILD_BUG_ON(offsetof(struct kvm_vmx, kvm) != 0);
 
 	if (setup_vmcs_config(&vmcs_config, &vmx_capability) < 0)
@@ -9257,7 +9301,14 @@ int pkvm_vmx_init(void)
 
 	kvm_vcpu_sz = sizeof(struct vcpu_vmx);
 
-	return pkvm_x86_vendor_init(&vt_init_ops);
+	r = pkvm_x86_vendor_init(&vt_init_ops);
+	if (r)
+		return r;
+
+	for_each_possible_cpu(cpu)
+		INIT_LIST_HEAD(&per_cpu(loaded_vmcss_on_cpu, cpu));
+
+	return 0;
 }
 
 #endif /* !__PKVM_HYP__ */
