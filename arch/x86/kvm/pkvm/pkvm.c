@@ -21,6 +21,18 @@ DEFINE_PER_CPU(bool, host_vcpu_fixup);
  */
 __visible bool virt_rebooting;
 
+/*
+ * Needed by code sharing with the KVM. The KVM definition lives in pmu.c; pKVM
+ * needs a private copy which has the same default value.
+ */
+bool __read_mostly enable_pmu = true;
+
+/*
+ * Needed by code sharing with the KVM. As the pKVM hypervisor requires to have
+ * a second level page table to translate GPA to HPA, set tdp_enabled as true.
+ */
+bool tdp_enabled = true;
+
 void pkvm_handle_host_hypercall(struct kvm_vcpu *vcpu)
 {
 	int ret = 0;

@@ -398,8 +398,13 @@ static inline bool vmx_pt_mode_is_host_guest(void)
 
 static inline bool vmx_pebs_supported(void)
 {
+#ifndef __PKVM_HYP__
 	return boot_cpu_has(X86_FEATURE_PEBS) && kvm_pmu_cap.pebs_ept &&
 	       !enable_mediated_pmu;
+#else
+	/* The pKVM hypervisor does not support guest PMU. */
+	return false;
+#endif
 }
 
 static inline bool cpu_has_notify_vmexit(void)
