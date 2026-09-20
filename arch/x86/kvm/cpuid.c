@@ -37,10 +37,10 @@
 u32 kvm_cpu_caps[NR_KVM_CPU_CAPS] __read_mostly;
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_cpu_caps);
 
-#ifndef __PKVM_HYP__
 bool kvm_is_configuring_cpu_caps __read_mostly;
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_is_configuring_cpu_caps);
 
+#ifndef __PKVM_HYP__
 struct cpuid_xstate_sizes {
 	u32 eax;
 	u32 ebx;
@@ -673,6 +673,7 @@ int kvm_vcpu_ioctl_get_cpuid2(struct kvm_vcpu *vcpu,
 	cpuid->nent = vcpu->arch.cpuid_nent;
 	return 0;
 }
+#endif /* !__PKVM_HYP__ */
 
 static __always_inline u32 raw_cpuid_get(struct cpuid_reg cpuid)
 {
@@ -1323,6 +1324,7 @@ EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_initialize_cpu_caps);
 #undef VENDOR_F
 #undef RUNTIME_F
 
+#ifndef __PKVM_HYP__
 struct kvm_cpuid_array {
 	struct kvm_cpuid_entry2 *entries;
 	int maxnent;

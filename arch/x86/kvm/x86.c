@@ -86,6 +86,11 @@
 
 #include <clocksource/hyperv_timer.h>
 
+#ifdef __PKVM_HYP__
+#undef module_param_named
+#define module_param_named(...)
+#endif
+
 #define CREATE_TRACE_POINTS
 #include "trace.h"
 
@@ -192,6 +197,7 @@ module_param(pi_inject_timer, bint, 0644);
 /* Enable/disable SMT_RSB bug mitigation */
 static bool __read_mostly mitigate_smt_rsb;
 module_param(mitigate_smt_rsb, bool, 0444);
+#endif /* !__PKVM_HYP__ */
 
 bool __read_mostly allow_smaller_maxphyaddr = 0;
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(allow_smaller_maxphyaddr);
@@ -202,6 +208,7 @@ EXPORT_SYMBOL_FOR_KVM_INTERNAL(enable_apicv);
 bool __read_mostly enable_ipiv = true;
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(enable_ipiv);
 
+#ifndef __PKVM_HYP__
 bool __read_mostly enable_device_posted_irqs = true;
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(enable_device_posted_irqs);
 
@@ -6876,6 +6883,7 @@ static struct notifier_block pvclock_gtod_notifier = {
 	.notifier_call = pvclock_gtod_notify,
 };
 #endif
+#endif /* !__PKVM_HYP__ */
 
 void kvm_setup_xss_caps(void)
 {
@@ -6893,7 +6901,6 @@ void kvm_setup_xss_caps(void)
 	}
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_setup_xss_caps);
-#endif /* !__PKVM_HYP__ */
 
 #ifndef __PKVM_HYP__
 static void kvm_setup_efer_caps(void)

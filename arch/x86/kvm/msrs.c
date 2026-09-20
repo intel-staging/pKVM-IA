@@ -12,6 +12,7 @@
 #include "xen.h"
 #include "x86.h"
 
+#ifndef __PKVM_HYP__
 bool __read_mostly ignore_msrs = 0;
 module_param(ignore_msrs, bool, 0644);
 
@@ -33,6 +34,7 @@ struct kvm_x86_msr_filter {
 	bool default_allow:1;
 	struct msr_bitmap_range ranges[16];
 };
+#endif /* !__PKVM_HYP__ */
 
 /*
  * Restoring the host value for MSRs that are only consumed when running in
@@ -53,6 +55,7 @@ struct kvm_user_return_msrs {
 u32 __read_mostly kvm_nr_uret_msrs;
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_nr_uret_msrs);
 static u32 __read_mostly kvm_uret_msrs_list[KVM_MAX_NR_USER_RETURN_MSRS];
+#ifndef __PKVM_HYP__
 static DEFINE_PER_CPU(struct kvm_user_return_msrs, user_return_msrs);
 
 void kvm_destroy_user_return_msrs(void)
@@ -83,6 +86,7 @@ static void kvm_on_user_return(struct user_return_notifier *urn)
 		}
 	}
 }
+#endif /* !__PKVM_HYP__ */
 
 static int kvm_probe_user_return_msr(u32 msr)
 {
@@ -123,6 +127,7 @@ int kvm_find_user_return_msr(u32 msr)
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_find_user_return_msr);
 
+#ifndef __PKVM_HYP__
 void kvm_user_return_msr_cpu_online(void)
 {
 	struct kvm_user_return_msrs *msrs = this_cpu_ptr(&user_return_msrs);
@@ -2726,3 +2731,4 @@ int kvm_spec_ctrl_test_value(u64 value)
 	return ret;
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_spec_ctrl_test_value);
+#endif /* !__PKVM_HYP__ */
