@@ -945,4 +945,9 @@ int kvm_emulate_hypercall(struct kvm_vcpu *vcpu);
 void kvm_setup_efer_caps(void);
 #endif /* __PKVM_HYP__ */
 
+static inline bool kvm_vcpu_has_run(struct kvm_vcpu *vcpu)
+{
+	return vcpu->arch.last_vmentry_cpu != -1;
+}
+
 #endif
