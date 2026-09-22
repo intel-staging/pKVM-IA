@@ -111,6 +111,9 @@ union pkvm_hc_data {
 		bool full;
 	} flush_tlb_gva;
 	struct {
+		u32 data;
+	} get_interrupt_shadow;
+	struct {
 		u64 data[PKVM_HC_DATA_MAX_NUM];
 	} raw;
 };

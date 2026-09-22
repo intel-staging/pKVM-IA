@@ -48,6 +48,8 @@ PKVM_HC(flush_tlb_all)
 PKVM_HC(flush_tlb_current)
 PKVM_HC_OUT(flush_tlb_gva)
 PKVM_HC(flush_tlb_guest)
+PKVM_HC(set_interrupt_shadow)
+PKVM_HC_OUT(get_interrupt_shadow)
 
 #undef PKVM_HC
 #undef PKVM_HC_OUT
