@@ -2217,7 +2217,8 @@ EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_emulate_cpuid);
 
 #ifdef __PKVM_HYP__
 
-static DEFINE_PER_CPU(struct kvm_cpuid_entry2, cpuid_def[KVM_MAX_CPUID_ENTRIES]);
+static struct kvm_cpuid_entry2 cpuid_def[KVM_MAX_CPUID_ENTRIES] __ro_after_init;
+static int cpuid_def_nent __ro_after_init;
 
 static int pkvm_get_cpuid(struct kvm_cpuid_entry2 *entries, int *nent)
 {
@@ -2352,6 +2353,16 @@ static struct kvm_cpuid_entry2 *find_cpuid_entry(struct kvm_cpuid_entry2 *buf,
 	return NULL;
 }
 
+int pkvm_init_cpuid(void)
+{
+	/* Check if already initialized by another CPU */
+	if (cpuid_def_nent)
+		return 0;
+
+	cpuid_def_nent = KVM_MAX_CPUID_ENTRIES;
+	return pkvm_get_cpuid(cpuid_def, &cpuid_def_nent);
+}
+
 /*
  * pKVM enforces a simple CPUID policy (similar to QEMU '--cpu host') for
  * pVM, by using the pKVM supported bits as the base plus a small set
@@ -2384,27 +2395,19 @@ static struct kvm_cpuid_entry2 *find_cpuid_entry(struct kvm_cpuid_entry2 *buf,
  */
 int pkvm_enforce_cpuid(struct kvm_cpuid_entry2 *e2, int *nent, int max_nent)
 {
-	struct kvm_cpuid_entry2 *de2 = this_cpu_ptr(cpuid_def);
-	int def_nent, r, i, n, first_empty_index, func0_index;
+	int i, n, first_empty_index, func0_index;
 	int orig_nent = *nent;
 	bool has_func4 = false;
 
-	memset(de2, 0, KVM_MAX_CPUID_ENTRIES * sizeof(struct kvm_cpuid_entry2));
-	def_nent = KVM_MAX_CPUID_ENTRIES;
-
 	/*
-	 * It is possible that the pKVM hypervisor can implement different
-	 * permitted XCR0 for each guest (although currently the pKVM hypervisor
-	 * implements the same permitted XCR0 for all guests). In this case, the
-	 * default CPUID leaf 0xD will be different. Thus get the default CPUID
-	 * entries for each guest, rather than initialize cpuid_def once during
-	 * pKVM initialization.
+	 * Enforce cpuid leaves according to the default set.
+	 *
+	 * NOTE: this will enforce, in particular, the same permitted XCR0
+	 * (leaf 0xD) for each pVM. In the future pKVM hypervisor might allow
+	 * different permitted XCR0 per pVM. In such case we will need to
+	 * adjust leaf 0xD per guest instead of using the one from cpuid_def
+	 * as is.
 	 */
-	r = pkvm_get_cpuid(de2, &def_nent);
-	if (r)
-		return r;
-
-	/* Enforce cpuid leaves according to the default set */
 	for (i = 0; i < orig_nent; i++) {
 		struct kvm_cpuid_entry2 *tmp;
 
@@ -2417,7 +2420,7 @@ int pkvm_enforce_cpuid(struct kvm_cpuid_entry2 *e2, int *nent, int max_nent)
 			continue;
 		}
 
-		tmp = find_cpuid_entry(de2, def_nent, &e2[i]);
+		tmp = find_cpuid_entry(cpuid_def, cpuid_def_nent, &e2[i]);
 		if (tmp)
 			pkvm_enforce_cpuid_entry(&e2[i], tmp);
 		else
@@ -2426,8 +2429,8 @@ int pkvm_enforce_cpuid(struct kvm_cpuid_entry2 *e2, int *nent, int max_nent)
 
 	/* Insert default cpuid leaves if missing in the host buffer */
 	n = 0;
-	for (i = 0; i < def_nent; i++) {
-		if (pkvm_cpuid_entry_host_owned(&de2[i]))
+	for (i = 0; i < cpuid_def_nent; i++) {
+		if (pkvm_cpuid_entry_host_owned(&cpuid_def[i]))
 			continue;
 
 		/*
@@ -2438,10 +2441,10 @@ int pkvm_enforce_cpuid(struct kvm_cpuid_entry2 *e2, int *nent, int max_nent)
 		 * different number of levels of cache on different
 		 * physical CPUs on a hybrid system).
 		 */
-		if ((de2[i].function == 4) && has_func4)
+		if ((cpuid_def[i].function == 4) && has_func4)
 			continue;
 
-		if (find_cpuid_entry(e2, orig_nent, &de2[i]))
+		if (find_cpuid_entry(e2, orig_nent, &cpuid_def[i]))
 			continue;
 
 		/* find an empty slot */
@@ -2451,7 +2454,7 @@ int pkvm_enforce_cpuid(struct kvm_cpuid_entry2 *e2, int *nent, int max_nent)
 		if (n == max_nent)
 			return -ENOSPC;
 
-		e2[n++] = de2[i];
+		e2[n++] = cpuid_def[i];
 	}
 
 	if (n > orig_nent)
