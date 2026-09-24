@@ -305,6 +305,14 @@ int pkvm_init(struct pkvm_mem_info infos[], int nr_infos)
 	if (ret)
 		return ret;
 
+	/*
+	 * Must be called after fpu initialization, as the latter affects
+	 * the fpu related bits in the supported cpuid leaves.
+	 */
+	ret = pkvm_init_cpuid();
+	if (ret)
+		return ret;
+
 	pkvm_vcpu_perf_init(this_cpu_read(host_vcpu));
 
 	kvm_user_return_msr_cpu_online();
