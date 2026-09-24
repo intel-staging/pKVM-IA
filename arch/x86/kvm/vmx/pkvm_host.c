@@ -137,6 +137,8 @@ static int pkvm_vcpu_create(struct kvm_vcpu *vcpu)
 	vmx->loaded_vmcs->cpu = -1;
 
 	vcpu_size = PKVM_VMX_VCPU_SIZE;
+	if (pkvm_is_protected_vcpu(vcpu))
+		vcpu_size += KVM_MCE_SIZE + KVM_MCI_CTL2_SIZE;
 	if (lapic_in_kernel(vcpu))
 		vcpu_size += sizeof(struct kvm_lapic);
 
