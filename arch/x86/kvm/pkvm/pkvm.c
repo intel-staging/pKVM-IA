@@ -35,6 +35,12 @@ bool __read_mostly enable_pmu = true;
 bool __read_mostly enable_mediated_pmu;
 
 /*
+ * similarly pmu.c is not compiled. define kvm_mmu_cap here for the use
+ * in cpuid.c
+ */
+struct x86_pmu_capability __read_mostly kvm_pmu_cap = {0};
+
+/*
  * Needed by code sharing with the KVM. As the pKVM hypervisor requires to have
  * a second level page table to translate GPA to HPA, set tdp_enabled as true.
  */
