@@ -156,10 +156,10 @@ module_param(error_on_inconsistent_vmcs_config, bool, 0444);
 #ifndef __PKVM_HYP__
 static bool __read_mostly dump_invalid_vmcs = 0;
 module_param(dump_invalid_vmcs, bool, 0644);
+#endif /* !__PKVM_HYP__ */
 
 #define MSR_BITMAP_MODE_X2APIC		1
 #define MSR_BITMAP_MODE_X2APIC_APICV	2
-#endif /* !__PKVM_HYP__ */
 
 #define KVM_VMX_TSC_MULTIPLIER_MAX     0xffffffffffffffffULL
 
@@ -4452,7 +4452,6 @@ void vmx_set_intercept_for_msr(struct kvm_vcpu *vcpu, u32 msr, int type, bool se
 	}
 }
 
-#ifndef __PKVM_HYP__
 static void vmx_update_msr_bitmap_x2apic(struct kvm_vcpu *vcpu)
 {
 	/*
@@ -4512,6 +4511,7 @@ static void vmx_update_msr_bitmap_x2apic(struct kvm_vcpu *vcpu)
 	}
 }
 
+#ifndef __PKVM_HYP__
 void pt_update_intercept_for_msr(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
@@ -7290,7 +7290,6 @@ void vmx_update_cr8_intercept(struct kvm_vcpu *vcpu, int tpr, int irr)
 	vmcs_write32(TPR_THRESHOLD, tpr_threshold);
 }
 
-#ifndef __PKVM_HYP__
 void vmx_set_virtual_apic_mode(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
@@ -7336,7 +7335,12 @@ void vmx_set_virtual_apic_mode(struct kvm_vcpu *vcpu)
 			else if (!enable_ept)
 				vpid_sync_context(vmx->vpid);
 			else if (VALID_PAGE(vcpu->arch.root_mmu.root.hpa))
+#ifndef __PKVM_HYP__
 				vmx_flush_tlb_ept_root(vcpu->arch.root_mmu.root.hpa);
+#else
+				vmx_flush_tlb_ept_root(vcpu->arch.root_mmu.root.hpa,
+						       vcpu->arch.root_mmu.root_role.level);
+#endif
 		}
 		break;
 	case LAPIC_MODE_X2APIC:
@@ -7350,6 +7354,7 @@ void vmx_set_virtual_apic_mode(struct kvm_vcpu *vcpu)
 	vmx_update_msr_bitmap_x2apic(vcpu);
 }
 
+#ifndef __PKVM_HYP__
 void vmx_set_apic_access_page_addr(struct kvm_vcpu *vcpu)
 {
 	const gfn_t gfn = APIC_DEFAULT_PHYS_BASE >> PAGE_SHIFT;
