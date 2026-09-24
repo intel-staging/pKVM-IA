@@ -488,6 +488,22 @@ static int postponed_per_vm_setup(struct kvm *kvm)
 	return 0;
 }
 
+static void __vcpu_post_create(struct kvm_vcpu *vcpu)
+{
+	/* Load guest vCPU to reset it. */
+	guard(switch_vcpu)(vcpu);
+
+	kvm_vcpu_reset(vcpu, false);
+
+	/*
+	 * The guest vCPU should be put before switching back to the
+	 * host vCPU to make sure the vcpu state is not cached on this
+	 * CPU as this guest vCPU may be loaded on another CPU later by
+	 * the host via the PV interface.
+	 */
+	kvm_x86_call(vcpu_put)(vcpu);
+}
+
 static int __vcpu_create(struct kvm *kvm, struct kvm_vcpu *vcpu, struct fpstate *fps,
 			 struct kvm_lapic *shared_apic)
 {
@@ -586,6 +602,8 @@ static int __vcpu_create(struct kvm *kvm, struct kvm_vcpu *vcpu, struct fpstate 
 	ret = kvm_x86_call(vcpu_create)(vcpu);
 	if (ret)
 		goto unsetup_lapic;
+
+	__vcpu_post_create(vcpu);
 
 	return 0;
 
