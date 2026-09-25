@@ -2270,6 +2270,17 @@ int pkvm_x86_vendor_init(struct kvm_x86_init_ops *ops)
 {
 	int r;
 
+	if (boot_cpu_has(X86_FEATURE_SHSTK) || boot_cpu_has(X86_FEATURE_IBT)) {
+		rdmsrq(MSR_IA32_S_CET, kvm_host.s_cet);
+		/*
+		 * Linux doesn't yet support supervisor shadow stacks (SSS), so
+		 * (p)KVM doesn't save/restore the associated MSRs. See
+		 * corresponding comment in kvm_x86_vendor_init().
+		 */
+		if (WARN_ON_ONCE(kvm_host.s_cet & CET_SHSTK_EN))
+			return -EIO;
+	}
+
 	memset(&kvm_caps, 0, sizeof(kvm_caps));
 
 	kvm_caps.supported_vm_types = BIT(KVM_X86_DEFAULT_VM) |
