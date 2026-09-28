@@ -120,6 +120,9 @@ union pkvm_hc_data {
 		bool has_intr;
 	} protected_apic_has_interrupt;
 	struct {
+		struct pkvm_memcache memcache;
+	} vcpu_after_set_cpuid;
+	struct {
 		u64 data[PKVM_HC_DATA_MAX_NUM];
 	} raw;
 };
