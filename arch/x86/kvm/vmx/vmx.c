@@ -7542,10 +7542,16 @@ int vmx_sync_pir_to_irr(struct kvm_vcpu *vcpu)
 	 * trigger a nested VM-Exit, at which point KVM will re-evaluate L1's
 	 * pending IRQs.
 	 */
-	if (!is_guest_mode(vcpu) && kvm_vcpu_apicv_active(vcpu))
+	if (!is_guest_mode(vcpu) && kvm_vcpu_apicv_active(vcpu)) {
+#ifndef __PKVM_HYP__
+		if (enable_pkvm)
+			/* RVI will be updated by the pKVM before entering the guest. */
+			return max_irr;
+#endif
 		vmx_set_rvi(max_irr);
-	else if (max_irr_is_from_pir)
+	} else if (max_irr_is_from_pir) {
 		kvm_make_request(KVM_REQ_EVENT, vcpu);
+	}
 
 	return max_irr;
 }
