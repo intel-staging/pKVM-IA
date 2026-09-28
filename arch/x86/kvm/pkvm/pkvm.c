@@ -875,6 +875,7 @@ static bool is_guest_vcpu_accessible(struct kvm_vcpu *vcpu, enum pkvm_hc hc)
 	case __pkvm__inject_nmi:
 	case __pkvm__cancel_injection:
 	case __pkvm__update_cr8_intercept:
+	case __pkvm__refresh_apicv_exec_ctrl:
 		/*
 		 * The host is responsible for running vCPU, injecting
 		 * interrupts, emulating lapic etc. Always allow the related PV
@@ -1182,6 +1183,20 @@ static void pkvm_cancel_injection(struct kvm_vcpu *vcpu)
 	pkvm_share_injection_with_host(vcpu);
 }
 
+static int pkvm_refresh_apicv_exec_ctrl(struct kvm_vcpu *vcpu, bool apicv_active)
+{
+	if (!lapic_in_kernel(vcpu) || (!enable_apicv && apicv_active))
+		return -EINVAL;
+
+	if (vcpu->arch.apic->guest_apic_protected)
+		return -EPERM;
+
+	vcpu->arch.apic->apicv_active = apicv_active;
+	kvm_make_request(KVM_REQ_APICV_UPDATE, vcpu);
+
+	return 0;
+}
+
 static int pkvm_vcpu_handle_host_hypercall(struct kvm_vcpu *hvcpu, enum pkvm_hc hc,
 					   union pkvm_hc_data *in, union pkvm_hc_data *out)
 {
@@ -1328,6 +1343,9 @@ static int pkvm_vcpu_handle_host_hypercall(struct kvm_vcpu *hvcpu, enum pkvm_hc 
 		ret = kvm_apic_set_base(vcpu,
 					READ_ONCE(to_pkvm_vcpu(vcpu)->shared_vcpu->arch.apic_base),
 					true);
+		break;
+	case __pkvm__refresh_apicv_exec_ctrl:
+		ret = pkvm_refresh_apicv_exec_ctrl(vcpu, pkvm_hc_input1(hvcpu));
 		break;
 	default:
 		ret = -EINVAL;
