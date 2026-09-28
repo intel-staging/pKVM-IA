@@ -1002,6 +1002,17 @@ static int pkvm_sync_pir_to_irr(struct kvm_vcpu *vcpu)
 	return vmx_sync_pir_to_irr(vcpu);
 }
 
+static bool pkvm_apic_init_signal_blocked(struct kvm_vcpu *vcpu)
+{
+	/*
+	 * The init signal will be blocked if the guest VM is emulating nested
+	 * and in virtual VMX root mode. But as this is not a supported case by
+	 * the pKVM hypervisor, the init signal should never be blocked for the
+	 * guest VM.
+	 */
+	return false;
+}
+
 struct kvm_x86_ops pkvm_host_vt_x86_ops __initdata = {
 	.name = KBUILD_MODNAME,
 
@@ -1085,6 +1096,8 @@ struct kvm_x86_ops pkvm_host_vt_x86_ops __initdata = {
 
 	.pi_update_irte = vmx_pi_update_irte,
 	.pi_start_bypass = vmx_pi_start_bypass,
+
+	.apic_init_signal_blocked = pkvm_apic_init_signal_blocked,
 };
 
 static struct kvm_pmc *pkvm_intel_rdpmc_ecx_to_pmc(struct kvm_vcpu *vcpu,
