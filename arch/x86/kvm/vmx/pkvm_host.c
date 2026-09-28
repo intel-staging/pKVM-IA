@@ -1080,6 +1080,8 @@ struct kvm_x86_ops pkvm_host_vt_x86_ops __initdata = {
 	.hwapic_isr_update = pkvm_hwapic_isr_update,
 	.protected_apic_has_interrupt = pkvm_protected_apic_has_interrupt,
 	.sync_pir_to_irr = pkvm_sync_pir_to_irr,
+	.deliver_interrupt = vmx_deliver_interrupt,
+	.dy_apicv_has_pending_interrupt = pi_has_pending_interrupt,
 };
 
 static struct kvm_pmc *pkvm_intel_rdpmc_ecx_to_pmc(struct kvm_vcpu *vcpu,
