@@ -5379,6 +5379,24 @@ void vmx_vcpu_reset(struct kvm_vcpu *vcpu, bool init_event)
 	 */
 #ifndef __PKVM_HYP__
 	kvm_set_cr8(vcpu, 0);
+#else
+	if (lapic_in_kernel(vcpu) && vcpu->arch.apic->guest_apic_protected) {
+		/*
+		 * TPR is the key register for the protected APIC, as it will be
+		 * used by the APICv to evaluate pending interrupts. To prevent
+		 * the host from injecting exception vectors (0 - 31) via the
+		 * posted interrupt mechanism into the pVM, the TPR should be
+		 * set as 0x10 to prevent both class 1 and class 0 interrupts.
+		 * As the pVM OS may not set the TPR during early boot, or even
+		 * doesn't set the TPR at all if it doesn't use APIC, these will
+		 * make the TPR as 0x0 which allows the host to inject exception
+		 * vectors (16 - 31) into the pVM and may cause security issues.
+		 * So enforce the TPR as 0x10 in the pKVM to prevent the host
+		 * from injecting exception vectors from the beginning of the
+		 * pVM boot.
+		 */
+		kvm_set_cr8(vcpu, 1);
+	}
 #endif
 
 	seg_setup(VCPU_SREG_CS);
