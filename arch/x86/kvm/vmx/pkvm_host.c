@@ -994,6 +994,14 @@ static bool pkvm_protected_apic_has_interrupt(struct kvm_vcpu *vcpu)
 	return out.protected_apic_has_interrupt.has_intr;
 }
 
+static int pkvm_sync_pir_to_irr(struct kvm_vcpu *vcpu)
+{
+	if (!lapic_in_kernel(vcpu) || vcpu->arch.apic->guest_apic_protected)
+		return -1;
+
+	return vmx_sync_pir_to_irr(vcpu);
+}
+
 struct kvm_x86_ops pkvm_host_vt_x86_ops __initdata = {
 	.name = KBUILD_MODNAME,
 
@@ -1071,6 +1079,7 @@ struct kvm_x86_ops pkvm_host_vt_x86_ops __initdata = {
 	.required_apicv_inhibits = VMX_REQUIRED_APICV_INHIBITS,
 	.hwapic_isr_update = pkvm_hwapic_isr_update,
 	.protected_apic_has_interrupt = pkvm_protected_apic_has_interrupt,
+	.sync_pir_to_irr = pkvm_sync_pir_to_irr,
 };
 
 static struct kvm_pmc *pkvm_intel_rdpmc_ecx_to_pmc(struct kvm_vcpu *vcpu,
