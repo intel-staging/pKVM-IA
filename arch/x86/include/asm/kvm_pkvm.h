@@ -225,6 +225,7 @@ union pkvm_hc_data {
 #define HOST_INIT_MMU				2
 #define HOST_RESET_MMU				3
 #define HOST_APF_READY				4
+#define HOST_TRIPLE_FAULT			5
 	} vcpu_run;
 #ifdef CONFIG_PKVM_INTEL
 	struct {
