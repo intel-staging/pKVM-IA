@@ -1002,6 +1002,28 @@ static int pkvm_sync_pir_to_irr(struct kvm_vcpu *vcpu)
 	return vmx_sync_pir_to_irr(vcpu);
 }
 
+static int pkvm_vcpu_realloc_fpstate(struct kvm_vcpu *vcpu)
+{
+	union pkvm_hc_data out;
+	size_t fpsize;
+	void *fps;
+	int ret;
+
+	fpsize = PAGE_ALIGN(vcpu->arch.guest_fpu.fpstate->size +
+			    ALIGN(offsetof(struct fpstate, regs), 64));
+	fps = alloc_pages_exact(fpsize, GFP_KERNEL_ACCOUNT);
+	if (!fps)
+		return -ENOMEM;
+
+	ret = pkvm_hypercall_out(vcpu_add_fpstate, &out, __pa(fps), fpsize);
+	if (KVM_BUG_ON(ret, vcpu->kvm))
+		free_pages_exact(fps, fpsize);
+	else
+		kvm_free_pkvm_memcache(&out.vcpu_add_fpstate.memcache);
+
+	return ret;
+}
+
 static void pkvm_vcpu_after_set_cpuid(struct kvm_vcpu *vcpu)
 {
 	struct kvm_cpuid_entry2 *e2 = vcpu->arch.cpuid_entries;
@@ -1011,6 +1033,19 @@ static void pkvm_vcpu_after_set_cpuid(struct kvm_vcpu *vcpu)
 	size_t size;
 
 	if (vcpu->arch.guest_state_protected || !e2 || !nent)
+		return;
+
+	/*
+	 * With exposing the FPU dynamic feature via the cpuid, the fpstate
+	 * allocated when creating the vcpu may not be sufficient for the
+	 * guest. As the pVM's FPU state is managed by the pKVM hypervisor
+	 * while the npVM's FPU state is managed by the host, re-allocating the
+	 * fpstate is only necessary for the pVM, and should be done before
+	 * adding the new cpuid entries to the pKVM hypervisor.
+	 */
+	if ((vcpu->arch.guest_fpu.xfeatures & XFEATURE_MASK_USER_DYNAMIC) &&
+	    pkvm_is_protected_vcpu(vcpu) &&
+	    pkvm_vcpu_realloc_fpstate(vcpu))
 		return;
 
 	size = sizeof(struct kvm_cpuid_entry2) * nent;
