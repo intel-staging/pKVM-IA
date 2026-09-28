@@ -65,6 +65,20 @@ static DEFINE_PER_CPU(struct kvm_vcpu*, cur_guest_vcpu);
 static int __pkvm_vcpu_free(struct pkvm_vm *pkvm_vm, int vcpu_handle,
 			    struct pkvm_memcache *mc);
 
+static void pkvm_load_guest_vcpu(struct kvm_vcpu *vcpu)
+{
+	kvm_x86_call(vcpu_load)(vcpu, raw_smp_processor_id());
+}
+
+static void pkvm_load_host_vcpu(struct kvm_vcpu *vcpu)
+{
+	kvm_x86_call(vcpu_load)(this_cpu_read(host_vcpu),
+				raw_smp_processor_id());
+}
+
+DEFINE_GUARD(switch_vcpu, struct kvm_vcpu *,
+	     pkvm_load_guest_vcpu(_T), pkvm_load_host_vcpu(_T))
+
 static int allocate_pkvm_vm_handle(struct pkvm_vm *pkvm_vm)
 {
 	struct pkvm_vm_ref *pkvm_vm_ref;
