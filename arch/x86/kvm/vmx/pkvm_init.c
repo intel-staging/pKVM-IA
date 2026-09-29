@@ -484,6 +484,16 @@ static __init int pkvm_setup_per_cpu(int cpu)
 	return 0;
 }
 
+static bool mitigate_eibrs_pbrsb(void)
+{
+	/*
+	 * Make sure FILL_RETURN_BUFFER in vmx/vmenter.S has been patched
+	 * to fill RSB after vmexit.
+	 */
+	return boot_cpu_has(X86_FEATURE_RSB_VMEXIT_LITE) ||
+	       boot_cpu_has(X86_FEATURE_RSB_VMEXIT);
+}
+
 static bool mitigate_spectre_v2(struct cpuinfo_x86 *c)
 {
 	u64 spec_ctrl = SPEC_CTRL_IBRS;
@@ -497,8 +507,8 @@ static bool mitigate_spectre_v2(struct cpuinfo_x86 *c)
 		return false;
 
 	if (boot_cpu_has_bug(X86_BUG_EIBRS_PBRSB)) {
-		/* Fill RSB after vmexit */
-		set_cpu_cap(&pkvm_sym(boot_cpu_data), X86_FEATURE_RSB_VMEXIT_LITE);
+		if (!mitigate_eibrs_pbrsb())
+			return false;
 
 		clear_bit(X86_BUG_EIBRS_PBRSB, (unsigned long *)c->x86_capability);
 		pr_info("mitigated eibrs_pbrsb when mitigating spectre_v2\n");
@@ -577,21 +587,16 @@ static bool mitigate_bhi(void)
 	return true;
 }
 
-static bool mitigate_eibrs_pbrsb(void)
-{
-	/* Fill RSB after vmexit */
-	set_cpu_cap(&pkvm_sym(boot_cpu_data), X86_FEATURE_RSB_VMEXIT_LITE);
-
-	return true;
-}
-
 static bool mitigate_rfds(void)
 {
 	if (!(x86_read_arch_cap_msr() & ARCH_CAP_RFDS_CLEAR))
 		return false;
 
-	set_cpu_cap(&pkvm_sym(boot_cpu_data), X86_FEATURE_CLEAR_CPU_BUF);
-	return true;
+	/*
+	 * Make sure CLEAR_CPU_BUFFERS has been patched to clear CPU register file
+	 * via VERW.
+	 */
+	return boot_cpu_has(X86_FEATURE_CLEAR_CPU_BUF);
 }
 
 static bool mitigate_vmscape(struct cpuinfo_x86 *c)
@@ -645,7 +650,7 @@ static bool mitigate_vmscape(struct cpuinfo_x86 *c)
  * Set SPEC_CTRL_BHI_DIS_S in spec ctrl MSR to mitigate BHI bug.
  *
  * 7) X86_BUG_EIBRS_PBRSB.
- * Fill RSB after vmexit.
+ * Requires SW sequence to fill RSB after vmexit.
  *
  * 8) X86_BUG_RFDS.
  * Requires ARCH_CAP_RFDS_CLEAR to clears CPU register file via VERW.
