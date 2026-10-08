@@ -38,6 +38,7 @@ struct pkvm_hyp {
 extern unsigned long pkvm_sym(page_offset_base);
 extern unsigned long pkvm_sym(phys_base);
 extern struct pkvm_hyp *pkvm_sym(pkvm_hyp);
+extern u64 pkvm_sym(x86_pred_cmd);
 
 PKVM_DECLARE(void *, pkvm_early_alloc_page, (void));
 PKVM_DECLARE(void *, pkvm_early_alloc_contig, (unsigned int nr_pages));

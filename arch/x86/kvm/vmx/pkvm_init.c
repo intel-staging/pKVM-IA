@@ -18,6 +18,8 @@ static int __init early_pkvm_parse_cmdline(char *buf)
 }
 early_param("kvm-intel.pkvm", early_pkvm_parse_cmdline);
 
+extern u64 x86_pred_cmd;
+
 static DEFINE_PER_CPU(struct pkvm_pcpu *, pkvm_pcpu);
 static DEFINE_PER_CPU(struct kvm_vcpu *, host_vcpu);
 static DEFINE_PER_CPU(struct vmcs *, pkvm_vmxarea);
@@ -46,6 +48,8 @@ static __init void pkvm_setup_syms(void)
 	 */
 	pkvm_sym(page_offset_base) = page_offset_base;
 	pkvm_sym(phys_base) = phys_base;
+
+	pkvm_sym(x86_pred_cmd) = x86_pred_cmd;
 }
 
 static __init int pkvm_setup_host_vmcs_config(void)
