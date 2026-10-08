@@ -11,6 +11,21 @@
  */
 #undef CONFIG_CALL_THUNKS_DEBUG
 #undef CONFIG_PRINTK
+#undef CONFIG_PARAVIRT
+#undef CONFIG_PARAVIRT_XXL
+#undef CONFIG_PARAVIRT_SPINLOCKS
+
+#if defined(CONFIG_ARCH_HAS_LAZY_MMU_MODE) && !defined(__ASSEMBLY__)
+/*
+ * CONFIG_PARAVIRT_XXL selects CONFIG_ARCH_HAS_LAZY_MMU_MODE and provides these
+ * hooks. After CONFIG_PARAVIRT_XXL is undefined, the provided hooks are still
+ * needed due to CONFIG_ARCH_HAS_LAZY_MMU_MODE is still selected. To preserve
+ * task struct's layout, keep CONFIG_ARCH_HAS_LAZY_MMU_MODE defined but use
+ * no-op hooks because pKVM has no paravirtualized lazy MMU backend.
+ */
+static inline void arch_enter_lazy_mmu_mode(void) {}
+static inline void arch_leave_lazy_mmu_mode(void) {}
+#endif
 
 #define NOTRACE
 
@@ -40,6 +55,7 @@
 /*
 #undef CONFIG_BUG
 #undef CONFIG_GENERIC_BUG
+#undef CONFIG_TRACEPOINTS
 */
 
 #endif /* __PKVM_X86_UNDEF_H */
