@@ -55,6 +55,7 @@
 #include <asm/insn.h>
 #include <asm/debugreg.h>
 #include <asm/ibt.h>
+#include <asm/pkvm_image.h>
 
 #include "common.h"
 
@@ -1066,8 +1067,17 @@ NOKPROBE_SYMBOL(kprobe_fault_handler);
 
 int __init arch_populate_kprobe_blacklist(void)
 {
-	return kprobe_add_area_blacklist((unsigned long)__entry_text_start,
-					 (unsigned long)__entry_text_end);
+	int ret;
+
+	ret = kprobe_add_area_blacklist((unsigned long)__entry_text_start,
+					(unsigned long)__entry_text_end);
+#ifdef CONFIG_PKVM_X86
+	if (ret)
+		return ret;
+	ret = kprobe_add_area_blacklist((unsigned long)pkvm_sym(text_start),
+					(unsigned long)pkvm_sym(text_end));
+#endif
+	return ret;
 }
 
 int __init arch_init_kprobes(void)
