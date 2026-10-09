@@ -74,9 +74,16 @@ static void handle_cpuid(struct kvm_vcpu *vcpu)
 	vcpu->arch.regs[VCPU_REGS_RDX] = edx;
 }
 
-static void handle_vmcall(struct kvm_vcpu *vcpu)
+static int handle_vmcall(struct kvm_vcpu *vcpu)
 {
+	/* Host hypercalls are a kernel-only ABI. */
+	if (vmx_get_cpl_no_cache(vcpu)) {
+		kvm_inject_gp(vcpu, 0);
+		return X86EMUL_UNHANDLEABLE;
+	}
+
 	pkvm_handle_host_hypercall(vcpu);
+	return X86EMUL_CONTINUE;
 }
 
 static void handle_cr(struct kvm_vcpu *vcpu)
@@ -472,8 +479,8 @@ void pkvm_host_vmexit_main(struct vcpu_vmx *vmx)
 		skip_instruction = true;
 		break;
 	case EXIT_REASON_VMCALL:
-		handle_vmcall(vcpu);
-		skip_instruction = true;
+		if (handle_vmcall(vcpu) == X86EMUL_CONTINUE)
+			skip_instruction = true;
 		break;
 	case EXIT_REASON_CR_ACCESS:
 		handle_cr(vcpu);
