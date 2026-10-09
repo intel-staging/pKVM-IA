@@ -9,6 +9,10 @@
 void *pkvm_early_alloc_contig(unsigned int nr_pages);
 void pkvm_early_alloc_init(void *virt, unsigned long size);
 
+#ifdef CONFIG_PKVM_INTEL
+unsigned long __init pkvm_vmx_reserve_pages(void);
+#endif
+
 #endif /* CONFIG_PKVM_X86 */
 
 #endif /* _ASM_X86_KVM_PKVM_H */
