@@ -302,13 +302,21 @@ static int verify_host_mmu_pgstate_walker(struct pkvm_pgtable_visit_ctx *ctx,
 			 */
 			BUG_ON(check_host_mem_pgstate(phys, size, PKVM_PAGE_NONE,
 						      PKVM_ID_HYP, false));
-		} else {
-			BUG_ON(!is_pvmfw_range(phys, size));
+		} else if (is_pvmfw_range(phys, size)) {
 			/*
 			 * pvmfw pages ownership must already be set up by
 			 * host_mmu_unmap().
 			 */
 			BUG_ON(pkvm_pte_owner_id(ctx->pgt, ctx->ptep) != PKVM_ID_HYP);
+		} else {
+			/*
+			 * There is a theoretical possibility that none of the above
+			 * three conditions holds, when a zeroed PTE represents a huge
+			 * page overlapping both a MMIO region that is not mapped in the
+			 * host MMU yet and a hypervisor-owned memory region that was
+			 * unmapped by host_mmu_unmap(). Don't BUG_ON in this legitimate
+			 * edge case.
+			 */
 		}
 	}
 
