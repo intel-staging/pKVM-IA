@@ -8,6 +8,7 @@
 #include "vmx.h"
 
 #define PKVM_HOST_KVM_VMX_PAGES		(PAGE_ALIGN(sizeof(struct kvm_vmx)) >> PAGE_SHIFT)
+#define PKVM_HOST_VCPU_VMX_PAGES	(PAGE_ALIGN(sizeof(struct vcpu_vmx)) >> PAGE_SHIFT)
 
 static int __init early_pkvm_parse_cmdline(char *buf)
 {
@@ -16,10 +17,12 @@ static int __init early_pkvm_parse_cmdline(char *buf)
 early_param("kvm-intel.pkvm", early_pkvm_parse_cmdline);
 
 static DEFINE_PER_CPU(struct pkvm_pcpu *, pkvm_pcpu);
+static DEFINE_PER_CPU(struct kvm_vcpu *, host_vcpu);
 
 unsigned long __init pkvm_vmx_reserve_pages(void)
 {
-	return pkvm_data_pages(PKVM_HOST_KVM_VMX_PAGES);
+	return pkvm_data_pages(PKVM_HOST_KVM_VMX_PAGES,
+			       PKVM_HOST_VCPU_VMX_PAGES);
 }
 
 static __init int pkvm_setup_host_vm(struct pkvm_hyp *pkvm)
@@ -53,6 +56,28 @@ static __init int pkvm_setup_pcpu(int cpu)
 
 	pcpu->cpu = cpu;
 	per_cpu(pkvm_pcpu, cpu) = pcpu;
+
+	return 0;
+}
+
+static __init int pkvm_setup_host_vcpu(struct kvm *kvm, int cpu)
+{
+	struct vcpu_vmx *vmx;
+
+	if (cpu >= CONFIG_NR_CPUS) {
+		pr_err("setup_host_vcpu: invalid CPU number %d\n", cpu);
+		return -EINVAL;
+	}
+
+	vmx = pkvm_early_alloc_contig(PKVM_HOST_VCPU_VMX_PAGES);
+	if (!vmx) {
+		pr_err("no host vcpu memory for CPU%d\n", cpu);
+		return -ENOMEM;
+	}
+
+	vmx->vcpu.cpu = cpu;
+	vmx->vcpu.kvm = kvm;
+	per_cpu(host_vcpu, cpu) = &vmx->vcpu;
 
 	return 0;
 }
@@ -97,7 +122,12 @@ int __init vmx_pkvm_init(void)
 		if (ret)
 			goto out;
 
+		ret = pkvm_setup_host_vcpu(pkvm->host_kvm, cpu);
+		if (ret)
+			goto out;
+
 		pkvm->pcpus[pkvm->num_cpus] = per_cpu(pkvm_pcpu, cpu);
+		pkvm->host_vcpus[pkvm->num_cpus] = per_cpu(host_vcpu, cpu);
 		pkvm->num_cpus++;
 	}
 
