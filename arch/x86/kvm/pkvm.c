@@ -48,7 +48,16 @@ static int __init register_memblock_regions(void)
 
 static unsigned long __init pkvm_total_reserve_pages(void)
 {
-	return 0;
+	unsigned long (*vendor_pages)(void) = NULL;
+
+#ifdef CONFIG_PKVM_INTEL
+	if (cpu_feature_enabled(X86_FEATURE_VMX))
+		vendor_pages = pkvm_vmx_reserve_pages;
+#endif
+	if (!vendor_pages)
+		return 0;
+
+	return vendor_pages();
 }
 
 void __init pkvm_reserve(void)
