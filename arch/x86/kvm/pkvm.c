@@ -63,6 +63,7 @@ static unsigned long __init pkvm_total_reserve_pages(void)
 	total = vendor_pages();
 	total += pkvm_hyp_pgtable_pages();
 	total += pkvm_vmemmap_pages(PKVM_VMEMMAP_ENTRY_SIZE);
+	total += pkvm_host_pgtable_pages();
 
 	return total;
 }
