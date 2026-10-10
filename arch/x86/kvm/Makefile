@@ -49,10 +49,17 @@ obj-$(CONFIG_PKVM_X86)	+= pkvm.o pkvm/
 
 pkvm-intel-y		+= vmx/pkvm_init.o
 
+$(obj)/pkvm.o: $(obj)/pkvm_constants.h
+$(obj)/pkvm-constants.s: $(src)/pkvm/pkvm_constants.c FORCE
+	$(call if_changed_dep,cc_s_c)
+$(obj)/pkvm_constants.h: $(obj)/pkvm-constants.s FORCE
+	$(call filechk,offsets,__PKVM_CONSTANTS_H__)
+CFLAGS_vmx/pkvm_init.o    := -iquote $(obj)
+
 obj-$(CONFIG_PKVM_INTEL) += pkvm-intel.o
 
-targets += kvm-asm-offsets.s
-clean-files += kvm-asm-offsets.h
+targets += kvm-asm-offsets.s pkvm-constants.s
+clean-files += kvm-asm-offsets.h pkvm_constants.h
 
 
 # Fail the build if there is unexpected EXPORT_SYMBOL_GPL (or EXPORT_SYMBOL)
