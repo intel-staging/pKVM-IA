@@ -4,6 +4,7 @@
 #include <linux/memblock.h>
 #include <linux/sort.h>
 #include <asm/kvm_pkvm.h>
+#include "pkvm_constants.h"
 
 bool __read_mostly enable_pkvm;
 
@@ -61,6 +62,7 @@ static unsigned long __init pkvm_total_reserve_pages(void)
 
 	total = vendor_pages();
 	total += pkvm_hyp_pgtable_pages();
+	total += pkvm_vmemmap_pages(PKVM_VMEMMAP_ENTRY_SIZE);
 
 	return total;
 }
