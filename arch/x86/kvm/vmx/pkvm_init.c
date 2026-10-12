@@ -33,6 +33,7 @@ static struct gdt_page pkvm_gdt_page = {
 		[GDT_ENTRY_KERNEL_DS]		= GDT_ENTRY_INIT(0xc093, 0, 0xfffff),
 	},
 };
+static unsigned int intercept_w_msrs[] = {};
 
 unsigned long __init pkvm_vmx_reserve_pages(void)
 {
@@ -274,6 +275,10 @@ static __init int pkvm_setup_host_vcpu(struct kvm *kvm, int cpu)
 		pr_err("no msr_bitmap page for CPU%d\n", cpu);
 		return -ENOMEM;
 	}
+
+	/* Set msr bitmap to intercept some MSR writing */
+	for (int i = 0; i < ARRAY_SIZE(intercept_w_msrs); i++)
+		vmx_set_msr_bitmap_write(vmx->vmcs01.msr_bitmap, intercept_w_msrs[i]);
 
 	vmx->vcpu.cpu = cpu;
 	vmx->vcpu.vcpu_id = kvm->created_vcpus;
