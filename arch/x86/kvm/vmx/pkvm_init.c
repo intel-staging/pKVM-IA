@@ -7,6 +7,8 @@
 #include <asm/msr.h>
 #include "vmx.h"
 
+#define PKVM_HOST_KVM_VMX_PAGES		(PAGE_ALIGN(sizeof(struct kvm_vmx)) >> PAGE_SHIFT)
+
 static int __init early_pkvm_parse_cmdline(char *buf)
 {
 	return kstrtobool(buf, &enable_pkvm);
@@ -17,7 +19,21 @@ static DEFINE_PER_CPU(struct pkvm_pcpu *, pkvm_pcpu);
 
 unsigned long __init pkvm_vmx_reserve_pages(void)
 {
-	return pkvm_data_pages();
+	return pkvm_data_pages(PKVM_HOST_KVM_VMX_PAGES);
+}
+
+static __init int pkvm_setup_host_vm(struct pkvm_hyp *pkvm)
+{
+	struct kvm_vmx *kvmx = pkvm_early_alloc_contig(PKVM_HOST_KVM_VMX_PAGES);
+
+	if (!kvmx) {
+		pr_err("no kvm_vmx memory\n");
+		return -ENOMEM;
+	}
+
+	pkvm->host_kvm = &kvmx->kvm;
+
+	return 0;
 }
 
 static __init int pkvm_setup_pcpu(int cpu)
@@ -69,6 +85,10 @@ int __init vmx_pkvm_init(void)
 		pr_err("cannot alloc pkvm_hyp\n");
 		goto out;
 	}
+
+	ret = pkvm_setup_host_vm(pkvm);
+	if (ret)
+		goto out;
 
 	pkvm->num_cpus = 0;
 
