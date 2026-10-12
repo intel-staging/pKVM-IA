@@ -628,7 +628,7 @@ static const struct kvm_vmx_segment_field {
 static unsigned long host_idt_base;
 
 #if IS_ENABLED(CONFIG_HYPERV)
-static bool __read_mostly enlightened_vmcs = true;
+static bool __read_mostly enlightened_vmcs = !IS_ENABLED(CONFIG_PKVM_INTEL);
 module_param(enlightened_vmcs, bool, 0444);
 
 static int hv_enable_l2_tlb_flush(struct kvm_vcpu *vcpu)
@@ -8834,6 +8834,13 @@ static void __init do_vmx_pkvm_init(void)
 {
 	int r;
 
+#if IS_ENABLED(CONFIG_HYPERV)
+	if (enlightened_vmcs && enable_pkvm) {
+		pr_warn("pKVM cannot be enabled due to conflict with enlightened_vmcs!\n");
+		enable_pkvm = false;
+		return;
+	}
+#endif
 	r = vmx_pkvm_init();
 	if (r)
 		pr_warn("pKVM init failed with error %d. Continue KVM init\n", r);
