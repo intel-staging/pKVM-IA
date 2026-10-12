@@ -50,6 +50,7 @@ static int __init register_memblock_regions(void)
 static unsigned long __init pkvm_total_reserve_pages(void)
 {
 	unsigned long (*vendor_pages)(void) = NULL;
+	unsigned long total;
 
 #ifdef CONFIG_PKVM_INTEL
 	if (cpu_feature_enabled(X86_FEATURE_VMX))
@@ -58,7 +59,10 @@ static unsigned long __init pkvm_total_reserve_pages(void)
 	if (!vendor_pages)
 		return 0;
 
-	return vendor_pages();
+	total = vendor_pages();
+	total += pkvm_hyp_pgtable_pages();
+
+	return total;
 }
 
 void __init pkvm_reserve(void)

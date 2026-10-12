@@ -26,6 +26,7 @@ extern u64 x86_pred_cmd;
 static DEFINE_PER_CPU(struct pkvm_pcpu *, pkvm_pcpu);
 static DEFINE_PER_CPU(struct kvm_vcpu *, host_vcpu);
 static DEFINE_PER_CPU(struct vmcs *, pkvm_vmxarea);
+static unsigned long vmx_pages_size;
 
 /* Only need GDT entries for KERNEL_CS & KERNEL_DS as pKVM only use these two */
 static struct gdt_page pkvm_gdt_page = {
@@ -654,8 +655,10 @@ static __init int pkvm_host_deprivilege_cpus(struct pkvm_hyp *pkvm)
 
 static void do_pkvm_hyp_init(void *data)
 {
-	int ret = pkvm_hypercall(init);
+	int ret;
 
+	ret = pkvm_hypercall(init, pkvm_mem_base + vmx_pages_size,
+			     pkvm_mem_size - vmx_pages_size);
 	if (data)
 		*(int *)data = ret;
 }
@@ -679,7 +682,6 @@ static __init int pkvm_hyp_init(void)
 
 int __init vmx_pkvm_init(void)
 {
-	unsigned long vmx_pages_size;
 	int ret = -ENOMEM, cpu;
 	struct pkvm_hyp *pkvm;
 
