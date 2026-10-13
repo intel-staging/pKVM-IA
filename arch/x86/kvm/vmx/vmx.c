@@ -8808,6 +8808,17 @@ void vmx_exit(void)
 	kvm_x86_vendor_exit();
 }
 
+#ifdef CONFIG_PKVM_INTEL
+static void __init do_vmx_pkvm_init(void)
+{
+	int r;
+
+	r = vmx_pkvm_init();
+	if (r)
+		pr_warn("pKVM init failed with error %d. Continue KVM init\n", r);
+}
+#endif
+
 int __init vmx_init(void)
 {
 	int r, cpu;
@@ -8822,6 +8833,10 @@ int __init vmx_init(void)
 	 * i.e. there's nothing to unwind if a later step fails.
 	 */
 	hv_init_evmcs();
+
+#ifdef CONFIG_PKVM_INTEL
+	do_vmx_pkvm_init();
+#endif
 
 	/*
 	 * Parse the VMCS config and VMX capabilities before anything else, so
