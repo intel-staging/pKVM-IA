@@ -125,7 +125,23 @@ config PKVM_X86
 	help
 	  Vendor-independent pKVM infrastructure for x86. To actually enable
 	  pKVM on a given processor type, you need to enable corresponding
-	  vendor backend.
+	  vendor backend such as PKVM_INTEL.
+
+	  If unsure, say N.
+
+config PKVM_INTEL
+	bool "pKVM for Intel processors support"
+	depends on PKVM_X86 && KVM_INTEL=y
+	help
+	  Provides support for pKVM on Intel processors.
+
+	  If pKVM is enabled via kernel command line parameter
+	  "kvm-intel.pkvm=1", this will deprivilege the host as a VM running in
+	  non-root VMX operation mode, under the control of pKVM hypervisor
+	  running in root VMX operation mode. This will allow KVM to run guests
+	  whose memory and CPU state is protected from the host, while using
+	  only basic VMX hardware features for that, without relying on
+	  technologies like TDX.
 
 	  If unsure, say N.
 
