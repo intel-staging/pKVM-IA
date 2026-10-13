@@ -2061,7 +2061,7 @@ extern bool __read_mostly enable_ipiv;
 extern bool __read_mostly enable_device_posted_irqs;
 extern struct kvm_x86_ops kvm_x86_ops;
 #ifdef CONFIG_PKVM_X86
-extern bool __read_mostly enable_pkvm;
+extern bool __read_mostly enable_pkvm;	/* kernel command-line flag */
 #else
 #define enable_pkvm		false
 #endif
