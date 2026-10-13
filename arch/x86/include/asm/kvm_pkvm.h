@@ -6,6 +6,9 @@
 
 #define PKVM_MEMBLOCK_REGIONS		128
 
+void *pkvm_early_alloc_contig(unsigned int nr_pages);
+void pkvm_early_alloc_init(void *virt, unsigned long size);
+
 #endif /* CONFIG_PKVM_X86 */
 
 #endif /* _ASM_X86_KVM_PKVM_H */
