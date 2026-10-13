@@ -503,13 +503,11 @@ static void kvm_multiple_exception(struct kvm_vcpu *vcpu, unsigned int nr,
 	}
 }
 
-#ifndef __PKVM_HYP__
 void kvm_queue_exception(struct kvm_vcpu *vcpu, unsigned nr)
 {
 	kvm_multiple_exception(vcpu, nr, false, 0, false, 0);
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_queue_exception);
-#endif /* !__PKVM_HYP__ */
 
 
 void kvm_queue_exception_p(struct kvm_vcpu *vcpu, unsigned nr,
@@ -621,7 +619,6 @@ void kvm_queue_exception_e(struct kvm_vcpu *vcpu, unsigned nr, u32 error_code)
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_queue_exception_e);
 
-#ifndef __PKVM_HYP__
 bool kvm_require_dr(struct kvm_vcpu *vcpu, int dr)
 {
 	if ((dr != 4 && dr != 5) || !kvm_is_cr4_bit_set(vcpu, X86_CR4_DE))
@@ -631,7 +628,6 @@ bool kvm_require_dr(struct kvm_vcpu *vcpu, int dr)
 	return false;
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_require_dr);
-#endif /* !__PKVM_HYP__ */
 
 static void kvm_load_xfeatures(struct kvm_vcpu *vcpu, bool load_guest)
 {

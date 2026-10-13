@@ -800,7 +800,6 @@ void kvm_update_dr7(struct kvm_vcpu *vcpu)
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_update_dr7);
 
-#ifndef __PKVM_HYP__
 static u64 kvm_dr6_fixed(struct kvm_vcpu *vcpu)
 {
 	u64 fixed = DR6_FIXED_1;
@@ -859,6 +858,7 @@ unsigned long kvm_get_dr(struct kvm_vcpu *vcpu, int dr)
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_get_dr);
 
+#ifndef __PKVM_HYP__
 int kvm_vcpu_ioctl_x86_get_debugregs(struct kvm_vcpu *vcpu,
 				     struct kvm_debugregs *dbgregs)
 {
