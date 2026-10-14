@@ -600,8 +600,30 @@ static __init void pkvm_host_init_vmx(struct vcpu_vmx *vmx)
 
 static noinline int local_deprivilege_cpu(void)
 {
-	/* TODO */
-	return -EOPNOTSUPP;
+	int ret;
+
+	asm volatile(
+		"pushfq\n"
+		"popq %%rax\n"
+		"movq %3, %%rdx\n"
+		"vmwrite %%rax, %%rdx\n"
+		"movq %%rsp, %%rax\n"
+		"movq %4, %%rdx\n"
+		"vmwrite %%rax, %%rdx\n"
+		"movq $host_vm_entry_point, %%rax\n"
+		"movq %1, %%rdx\n"
+		"vmwrite %%rax, %%rdx\n"
+		"movl $0, %0\n"
+		"vmlaunch\n"
+		/* vmlaunch failed */
+		"movl %2, %0\n"
+		/* successfully deprivileged */
+		"host_vm_entry_point: nop\n"
+		: "=m"(ret)
+		: "i"(GUEST_RIP), "i"(-EINVAL), "i"(GUEST_RFLAGS), "i"(GUEST_RSP)
+		: "rax", "rdx", "memory");
+
+	return ret;
 }
 
 static __init void pkvm_host_deprivilege_cpu(void *data)
@@ -633,7 +655,7 @@ static __init void pkvm_host_deprivilege_cpu(void *data)
  */
 static __init int pkvm_host_deprivilege_cpus(struct pkvm_hyp *pkvm)
 {
-	int cpu, ret = 0, deprivilege_ret = 0;
+	int cpu, ret = 0, deprivilege_ret = 0, deprivileged_cpus = 0;
 
 	pkvm_sym(pkvm_vmx_register_excp_handlers)();
 
@@ -651,10 +673,15 @@ static __init int pkvm_host_deprivilege_cpus(struct pkvm_hyp *pkvm)
 		ret = smp_call_function_single(cpu, pkvm_host_deprivilege_cpu,
 					       &deprivilege_ret, 1);
 		if (ret || deprivilege_ret) {
-			pr_err("Failed to deprivilege CPU%d: smp_call %d, deprivilege: %d\n",
+			pr_err("failed to deprivilege CPU%d: smp_call %d, deprivilege_ret: %d\n",
 			       cpu, ret, deprivilege_ret);
+			if (deprivileged_cpus)
+				panic("pkvm has deprivileged %d CPUs. Unable to recover\n",
+				      deprivileged_cpus);
 			break;
 		}
+
+		deprivileged_cpus++;
 	}
 
 	return ret ? ret : deprivilege_ret;
@@ -803,7 +830,7 @@ int __init vmx_pkvm_init(void)
 
 	ret = pkvm_hyp_init();
 	if (ret)
-		goto out;
+		panic("pkvm is failed to initialize hypervisor, error %d\n", ret);
 
 	pr_info("Hypervisor is up and running!\n");
 	return 0;
