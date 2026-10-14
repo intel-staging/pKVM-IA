@@ -4,6 +4,7 @@
 #include <linux/extable.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/tboot.h>
 #include <asm/kvm_pkvm.h>
 #include <asm/msr.h>
 #include <asm/virt.h>
@@ -602,6 +603,12 @@ int __init vmx_pkvm_init(void)
 
 	if (!enable_pkvm)
 		return 0;
+
+	if (tboot_enabled()) {
+		ret = -EOPNOTSUPP;
+		pr_err("Intel TXT (tboot) is not supported\n");
+		goto out;
+	}
 
 	if (!pkvm_mem_base || !pkvm_mem_size) {
 		pr_err("required memory not reserved\n");
