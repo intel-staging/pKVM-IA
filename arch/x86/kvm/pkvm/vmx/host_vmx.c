@@ -151,24 +151,70 @@ static int handle_read_msr(struct kvm_vcpu *vcpu)
 static int handle_write_msr(struct kvm_vcpu *vcpu)
 {
 	u32 msr = vcpu->arch.regs[VCPU_REGS_RCX];
+	int ret = X86EMUL_CONTINUE;
 	u32 low, high;
-
-	/*
-	 * The MSR writing bitmap doesn't intercept any MSR. If the vmexit is
-	 * caused by such MSR in the range of the bitmap, it should be a code
-	 * bug.
-	 */
-	BUG_ON(is_msr_in_bitmap_range(msr));
+	u64 val;
 
 	low = vcpu->arch.regs[VCPU_REGS_RAX];
 	high = vcpu->arch.regs[VCPU_REGS_RDX];
+	val = low | ((u64)high << 32);
 
-	if (wrmsr_safe(msr, low, high)) {
-		kvm_inject_gp(vcpu, 0);
-		return X86EMUL_UNHANDLEABLE;
+	switch (msr) {
+	case MSR_CORE_PERF_GLOBAL_CTRL: {
+		struct kvm_pmu *pmu = vcpu_to_pmu(vcpu);
+		struct vcpu_vmx *vmx = to_vmx(vcpu);
+
+		if (!kvm_pmu_has_perf_global_ctrl(pmu)) {
+			ret = X86EMUL_UNHANDLEABLE;
+			break;
+		}
+
+		if (pmu->global_ctrl == val)
+			break;
+
+		/*
+		 * PMU is owned by the host. But the host must be prevented
+		 * from profiling pKVM or pVM so the global ctrl MSR is kept
+		 * as ZERO (disabled) outside of the host context.
+		 *
+		 * Capture the value written by host. If it's non-zero then
+		 * update the VMCS guest field and rely on VM entry/exit
+		 * control to switch the MSR value. The VMCS host field is
+		 * fixed to ZERO.
+		 */
+		pmu->global_ctrl = val;
+		if (val) {
+			vmcs_write64(GUEST_IA32_PERF_GLOBAL_CTRL, val);
+			vm_entry_controls_setbit(vmx,
+					VM_ENTRY_LOAD_IA32_PERF_GLOBAL_CTRL);
+			vm_exit_controls_setbit(vmx,
+					VM_EXIT_LOAD_IA32_PERF_GLOBAL_CTRL);
+		} else {
+			vm_entry_controls_clearbit(vmx,
+					VM_ENTRY_LOAD_IA32_PERF_GLOBAL_CTRL);
+			vm_exit_controls_clearbit(vmx,
+					VM_EXIT_LOAD_IA32_PERF_GLOBAL_CTRL);
+		}
+		break;
+	}
+	default:
+		/*
+		 * The MSRs intercepted by the writing bitmap should be
+		 * emulated by the switch cases. Otherwise it should be a code
+		 * bug.
+		 */
+		BUG_ON(is_msr_in_bitmap_range(msr));
+
+		if (wrmsr_safe(msr, low, high))
+			ret = X86EMUL_UNHANDLEABLE;
+
+		break;
 	}
 
-	return X86EMUL_CONTINUE;
+	if (ret == X86EMUL_UNHANDLEABLE)
+		kvm_inject_gp(vcpu, 0);
+
+	return ret;
 }
 
 static void handle_preemption_timer(struct kvm_vcpu *vcpu)
