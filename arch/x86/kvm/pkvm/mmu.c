@@ -252,12 +252,17 @@ static int fix_host_mmu_pgstate_walker(struct pkvm_pgtable_visit_ctx *ctx,
 
 		/* A present pte could map either memory pages or MMIO pages. */
 		if (is_mmio_range(phys, size)) {
+			enum pkvm_page_state state = pkvm_pte_pgstate(ctx->pgt, ctx->ptep);
+
 			/*
 			 * Mapped host-owned MMIO pages must already be effectively set
 			 * to the desired state PKVM_PAGE_OWNED, since corresponding pte
 			 * bits are zero.
+			 * Except for ramoops pages which are explicitly set to
+			 * PKVM_PAGE_SHARED_BORROWED.
 			 */
-			BUG_ON(pkvm_pte_pgstate(ctx->pgt, ctx->ptep) != PKVM_PAGE_OWNED);
+			BUG_ON(state != PKVM_PAGE_OWNED &&
+			       state != PKVM_PAGE_SHARED_BORROWED);
 		} else {
 			/*
 			 * Must be normal memory pages, not pvmfw pages, since
@@ -924,6 +929,22 @@ int pkvm_host_mmu_init(void *pool_base, unsigned long pool_pages,
 	/* Unmap pvmfw memory to protect it from the host */
 	if (pvmfw_present) {
 		ret = host_mmu_unmap(pvmfw_base, pvmfw_size);
+		if (ret)
+			return ret;
+	}
+
+	/*
+	 * Ramoops memory is reserved in e820 so it is treated as MMIO by default,
+	 * whereas it is used by the hypervisor as well. Mark it as shared-borrowed
+	 * to prevent donating it to the hypervisor as MMIO.
+	 */
+	if (pkvm_ramoops_console_size) {
+		u64 prot = host_mmu.pgt_ops->pte_mk_pgstate(PKVM_PAGE_SHARED_BORROWED) |
+			   host_mmu_pte_prot(true, false);
+
+		ret = pkvm_pgtable_map(&host_mmu, pkvm_ramoops_console_pa,
+				       pkvm_ramoops_console_pa, pkvm_ramoops_console_size,
+				       prot, NULL);
 		if (ret)
 			return ret;
 	}
