@@ -9,6 +9,7 @@
 #include <vdso/limits.h>
 #include <asm/kvm_pkvm.h>
 #include <asm/page.h>
+#include <asm/pkvm_image.h>
 #include "mem_protect.h"
 
 #define __pkvm_pa		__pa
@@ -149,6 +150,14 @@ static inline bool is_mmio_range(unsigned long phys, unsigned long size)
 		return false;
 
 	return range_contains(&range, &target);
+}
+
+static inline bool is_pkvm_text_range(unsigned long phys, unsigned long size)
+{
+	unsigned long start = __pa_symbol(pkvm_sym(text_start));
+	unsigned long end = __pa_symbol(pkvm_sym(text_end));
+
+	return phys >= start && phys + size <= end;
 }
 
 /*
