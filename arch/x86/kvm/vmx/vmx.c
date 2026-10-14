@@ -9872,10 +9872,12 @@ static void update_protected_vcpu_state(struct kvm_vcpu *vcpu,
 		break;
 	}
 	case EXIT_REASON_MSR_READ:
-		if (!pkvm_host_has_emulated_msr(vcpu->kvm, kvm_rcx_read(vcpu)))
+	case EXIT_REASON_MSR_WRITE:
+		if (!pkvm_host_has_emulated_msr(vcpu->kvm, kvm_ecx_read(vcpu)))
 			to_pkvm_vcpu(vcpu)->host_emulated_msr_err = 1;
 
-		if (!to_pkvm_vcpu(vcpu)->host_emulated_msr_err) {
+		if (vmx_get_exit_reason(vcpu).basic == EXIT_REASON_MSR_READ &&
+		    !to_pkvm_vcpu(vcpu)->host_emulated_msr_err) {
 			kvm_rax_write_raw(vcpu, (u32)shared_vcpu->arch.regs[VCPU_REGS_RAX]);
 			kvm_rdx_write_raw(vcpu, (u32)shared_vcpu->arch.regs[VCPU_REGS_RDX]);
 		}
@@ -9937,6 +9939,7 @@ static void share_nonprotected_vcpu_state(struct kvm_vcpu *vcpu,
 	}
 	case EXIT_REASON_IO_INSTRUCTION:
 	case EXIT_REASON_MSR_READ:
+	case EXIT_REASON_MSR_WRITE:
 		/* For the host to skip the instruction for certain exit reasons */
 		shared_vcpu->arch.event_exit_inst_len = vmcs_read32(VM_EXIT_INSTRUCTION_LEN);
 		break;
@@ -9964,6 +9967,10 @@ static void share_protected_vcpu_state(struct kvm_vcpu *vcpu,
 		}
 		break;
 	}
+	case EXIT_REASON_MSR_WRITE:
+		WRITE_ONCE(shared_vcpu->arch.regs[VCPU_REGS_RAX], kvm_eax_read(vcpu));
+		WRITE_ONCE(shared_vcpu->arch.regs[VCPU_REGS_RDX], kvm_edx_read(vcpu));
+		fallthrough;
 	case EXIT_REASON_MSR_READ:
 		WRITE_ONCE(shared_vcpu->arch.regs[VCPU_REGS_RCX], kvm_ecx_read(vcpu));
 		break;
