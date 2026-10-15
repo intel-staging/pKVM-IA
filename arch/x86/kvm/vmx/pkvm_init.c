@@ -792,12 +792,16 @@ static __init void pkvm_host_deprivilege_cpu(void *data)
 static __init int pkvm_host_deprivilege_cpus(struct pkvm_hyp *pkvm)
 {
 	int cpu, ret = 0, deprivilege_ret = 0, deprivileged_cpus = 0;
+	u64 spec_ctrl;
 
 	ret = pkvm_sym(pkvm_vmx_register_excp_handlers)();
 	if (ret) {
 		pr_err("Failed to register VMX exception handlers, ret %d\n", ret);
 		return ret;
 	}
+
+	rdmsrq_safe(MSR_IA32_SPEC_CTRL, &spec_ctrl);
+	pkvm_sym(set_x86_spec_ctrl)(spec_ctrl);
 
 	for_each_possible_cpu(cpu) {
 		ret = smp_call_function_single(cpu, pkvm_host_deprivilege_cpu,

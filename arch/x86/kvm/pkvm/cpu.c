@@ -19,6 +19,7 @@ u64 x86_pred_cmd = PRED_CMD_IBPB;
 struct cpuinfo_x86 boot_cpu_data;
 struct cpumask __cpu_possible_mask __ro_after_init;
 unsigned int nr_cpu_ids;
+DEFINE_PER_CPU(u64, x86_spec_ctrl_current);
 
 unsigned int pkvm_per_cpu_nr_pages(void)
 {
@@ -50,4 +51,12 @@ int pkvm_setup_per_cpu(int cpu, unsigned long base,
 	per_cpu(host_vcpu_fixup, cpu) = true;
 
 	return 0;
+}
+
+void set_x86_spec_ctrl(u64 spec_ctrl)
+{
+	int cpu;
+
+	for_each_possible_cpu(cpu)
+		per_cpu(x86_spec_ctrl_current, cpu) |= spec_ctrl;
 }
