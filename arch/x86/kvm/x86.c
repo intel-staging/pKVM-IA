@@ -2790,9 +2790,14 @@ static int vcpu_ioctl_tpr_access_reporting(struct kvm_vcpu *vcpu,
 	vcpu->arch.tpr_access_reporting = !!tac->enabled;
 	return 0;
 }
+#endif /* !__PKVM_HYP__ */
 
+#ifndef __PKVM_HYP__
 static int kvm_vcpu_ioctl_x86_setup_mce(struct kvm_vcpu *vcpu,
 					u64 mcg_cap)
+#else
+int kvm_vcpu_x86_setup_mce(struct kvm_vcpu *vcpu, u64 mcg_cap)
+#endif
 {
 	int r;
 	unsigned bank_num = mcg_cap & 0xff, bank;
@@ -2821,6 +2826,7 @@ out:
 	return r;
 }
 
+#ifndef __PKVM_HYP__
 /*
  * Validate this is an UCNA (uncorrectable no action) error by checking the
  * MCG_STATUS and MCi_STATUS registers:
