@@ -14,6 +14,11 @@ void __init x86_virt_init(void);
 int x86_virt_get_ref(int feat);
 void x86_virt_put_ref(int feat);
 
+#if IS_ENABLED(CONFIG_KVM_INTEL)
+int __x86_vmx_enable_virtualization_cpu(u64 vmxon_pointer);
+int x86_vmx_disable_virtualization_cpu(void);
+#endif
+
 int x86_virt_emergency_disable_virtualization_cpu(void);
 
 void x86_virt_register_emergency_callback(cpu_emergency_virt_cb *callback);

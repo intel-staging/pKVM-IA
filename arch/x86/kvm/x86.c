@@ -90,6 +90,7 @@
 #define CREATE_TRACE_POINTS
 #include "trace.h"
 
+#ifndef __PKVM_HYP__
 #define MAX_IO_MSRS 256
 
 /*
@@ -689,6 +690,7 @@ static void drop_user_return_notifiers(void)
 		kvm_on_user_return(&msrs->urn);
 }
 
+#endif /* !__PKVM_HYP__ */
 /*
  * Handle a fault on a hardware virtualization (VMX or SVM) instruction.
  *
@@ -724,6 +726,7 @@ static int exception_class(int vector)
 	return EXCPT_BENIGN;
 }
 
+#ifndef __PKVM_HYP__
 #define EXCPT_FAULT		0
 #define EXCPT_TRAP		1
 #define EXCPT_ABORT		2
@@ -755,6 +758,7 @@ static int exception_type(int vector)
 	/* Reserved exceptions will result in fault */
 	return EXCPT_FAULT;
 }
+#endif /* !__PKVM_HYP__ */
 
 void kvm_deliver_exception_payload(struct kvm_vcpu *vcpu,
 				   struct kvm_queued_exception *ex)
@@ -832,6 +836,7 @@ static void kvm_multiple_exception(struct kvm_vcpu *vcpu, unsigned int nr,
 
 	kvm_make_request(KVM_REQ_EVENT, vcpu);
 
+#ifndef __PKVM_HYP__
 	/*
 	 * If the exception is destined for L2, morph it to a VM-Exit if L1
 	 * wants to intercept the exception.
@@ -842,6 +847,7 @@ static void kvm_multiple_exception(struct kvm_vcpu *vcpu, unsigned int nr,
 					   has_payload, payload);
 		return;
 	}
+#endif
 
 	if (!vcpu->arch.exception.pending && !vcpu->arch.exception.injected) {
 	queue:
@@ -883,6 +889,7 @@ static void kvm_multiple_exception(struct kvm_vcpu *vcpu, unsigned int nr,
 	}
 }
 
+#ifndef __PKVM_HYP__
 void kvm_queue_exception(struct kvm_vcpu *vcpu, unsigned nr)
 {
 	kvm_multiple_exception(vcpu, nr, false, 0, false, 0);
@@ -897,12 +904,15 @@ void kvm_queue_exception_p(struct kvm_vcpu *vcpu, unsigned nr,
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_queue_exception_p);
 
+#endif /* !__PKVM_HYP__ */
+
 static void kvm_queue_exception_e_p(struct kvm_vcpu *vcpu, unsigned nr,
 				    u32 error_code, unsigned long payload)
 {
 	kvm_multiple_exception(vcpu, nr, true, error_code, true, payload);
 }
 
+#ifndef __PKVM_HYP__
 void kvm_requeue_exception(struct kvm_vcpu *vcpu, unsigned int nr,
 			   bool has_error_code, u32 error_code)
 {
@@ -953,6 +963,7 @@ static int complete_emulated_insn_gp(struct kvm_vcpu *vcpu, int err)
 	return kvm_emulate_instruction(vcpu, EMULTYPE_NO_DECODE | EMULTYPE_SKIP |
 				       EMULTYPE_COMPLETE_USER_EXIT);
 }
+#endif /* !__PKVM_HYP__ */
 
 void kvm_inject_page_fault(struct kvm_vcpu *vcpu, struct x86_exception *fault,
 			   bool from_hardware)
@@ -972,6 +983,7 @@ void kvm_inject_page_fault(struct kvm_vcpu *vcpu, struct x86_exception *fault,
 					fault->address);
 }
 
+#ifndef __PKVM_HYP__
 void __kvm_inject_emulated_page_fault(struct kvm_vcpu *vcpu,
 				      struct x86_exception *fault,
 				      bool from_hardware)
@@ -1000,6 +1012,7 @@ void kvm_inject_nmi(struct kvm_vcpu *vcpu)
 	atomic_inc(&vcpu->arch.nmi_queued);
 	kvm_make_request(KVM_REQ_NMI, vcpu);
 }
+#endif /* !__PKVM_HYP__ */
 
 void kvm_queue_exception_e(struct kvm_vcpu *vcpu, unsigned nr, u32 error_code)
 {
@@ -1007,6 +1020,7 @@ void kvm_queue_exception_e(struct kvm_vcpu *vcpu, unsigned nr, u32 error_code)
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_queue_exception_e);
 
+#ifndef __PKVM_HYP__
 bool kvm_require_dr(struct kvm_vcpu *vcpu, int dr)
 {
 	if ((dr != 4 && dr != 5) || !kvm_is_cr4_bit_set(vcpu, X86_CR4_DE))
@@ -14520,3 +14534,4 @@ static void __exit kvm_x86_exit(void)
 	WARN_ON_ONCE(static_branch_unlikely(&kvm_has_noapic_vcpu));
 }
 module_exit(kvm_x86_exit);
+#endif /* !__PKVM_HYP__ */
