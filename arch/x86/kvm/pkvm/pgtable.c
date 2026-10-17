@@ -855,7 +855,7 @@ void pkvm_pgtable_lookup(struct pkvm_pgtable *pgt, unsigned long vaddr,
 		.walk_flags = PKVM_PGTABLE_WALK_LEAF,
 	};
 
-	pkvm_pgtable_walk(pgt, vaddr, PAGE_SIZE, &walker);
+	pkvm_pgtable_walk(pgt, ALIGN_DOWN(vaddr, PAGE_SIZE), PAGE_SIZE, &walker);
 
 	if (phys)
 		*phys = data.phys;
