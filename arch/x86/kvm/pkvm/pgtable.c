@@ -913,9 +913,12 @@ void pkvm_pgtable_lookup_range(struct pkvm_pgtable *pgt,
 		.arg = &data,
 		.walk_flags = PKVM_PGTABLE_WALK_LEAF,
 	};
+	int ret;
 
 	BUG_ON(!VALID_PAGE(vaddr));
-	pkvm_pgtable_walk(pgt, vaddr, size, &walker);
+
+	ret = pkvm_pgtable_walk(pgt, vaddr, size, &walker);
+	BUG_ON(ret && ret != PGTABLE_WALK_DONE);
 
 	if (range_vaddr)
 		*range_vaddr = data.start;
