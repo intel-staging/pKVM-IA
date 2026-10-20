@@ -4,6 +4,7 @@
 
 #ifdef CONFIG_PKVM_X86
 #include <linux/kvm_host.h>
+#include <linux/memblock.h>
 #include <linux/mm.h>
 #include <asm/desc.h>
 #include <asm/kvm_para.h>
@@ -86,6 +87,8 @@ extern unsigned long pkvm_sym(phys_base);
 extern unsigned long pkvm_sym(__per_cpu_offset)[NR_CPUS];
 extern u64 pkvm_sym(x86_pred_cmd);
 extern struct pkvm_hyp *pkvm_sym(pkvm_hyp);
+extern struct memblock_region pkvm_sym(pkvm_memory)[];
+extern unsigned int pkvm_sym(pkvm_memblock_nr);
 
 PKVM_DECLARE(void *, pkvm_early_alloc_page, (void));
 PKVM_DECLARE(void *, pkvm_early_alloc_contig, (unsigned int nr_pages));
