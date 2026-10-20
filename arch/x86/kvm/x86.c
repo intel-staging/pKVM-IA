@@ -83,11 +83,11 @@
 #include <asm/emulate_prefix.h>
 #include <asm/sgx.h>
 #include <asm/virt.h>
+#include <asm/kvm_pkvm.h>
 
 #include <clocksource/hyperv_timer.h>
 
 #ifdef __PKVM_HYP__
-#include <asm/kvm_pkvm.h>
 #include "pkvm.h"
 
 #undef module_param_named
@@ -7389,6 +7389,50 @@ static int complete_hypercall_exit(struct kvm_vcpu *vcpu)
 	return kvm_skip_emulated_instruction(vcpu);
 }
 
+#ifdef CONFIG_PKVM_X86
+static int kvm_pkvm_hypercall(struct kvm_vcpu *vcpu)
+{
+	unsigned long nr = kvm_rax_read_raw(vcpu);
+	int ret;
+
+	switch (nr) {
+	case PKVM_GHC_IOREAD: {
+		unsigned int size = kvm_rcx_read_raw(vcpu);
+
+		if (!size || size > sizeof(*vcpu->arch.regs))
+			goto invalid;
+
+		/* Leverage sev_es MMIO read */
+		ret = kvm_sev_es_mmio(vcpu, false, kvm_rbx_read_raw(vcpu), size,
+				      &vcpu->arch.regs[VCPU_REGS_RAX]);
+		break;
+	}
+	case PKVM_GHC_IOWRITE: {
+		unsigned int size = kvm_rcx_read_raw(vcpu);
+
+		if (!size || size > sizeof(*vcpu->arch.regs))
+			goto invalid;
+
+		/* Leverage sev_es MMIO write */
+		ret = kvm_sev_es_mmio(vcpu, true, kvm_rbx_read_raw(vcpu), size,
+				      &vcpu->arch.regs[VCPU_REGS_RDX]);
+		break;
+	}
+	default:
+		ret = 1;
+		break;
+	}
+
+	return ret;
+
+invalid:
+	vcpu->run->exit_reason = KVM_EXIT_INTERNAL_ERROR;
+	vcpu->run->internal.suberror = KVM_INTERNAL_ERROR_EMULATION;
+	vcpu->run->internal.ndata = 0;
+	return 0;
+}
+#endif /* CONFIG_PKVM_X86 */
+
 int ____kvm_emulate_hypercall(struct kvm_vcpu *vcpu, int cpl,
 			      int (*complete_hypercall)(struct kvm_vcpu *))
 {
@@ -7496,6 +7540,11 @@ EXPORT_SYMBOL_FOR_KVM_INTERNAL(____kvm_emulate_hypercall);
 
 int kvm_emulate_hypercall(struct kvm_vcpu *vcpu)
 {
+#ifdef CONFIG_PKVM_X86
+	if (pkvm_is_protected_vcpu(vcpu))
+		return kvm_pkvm_hypercall(vcpu);
+#endif
+
 	if (kvm_xen_hypercall_enabled(vcpu->kvm))
 		return kvm_xen_hypercall(vcpu);
 
@@ -11292,6 +11341,7 @@ int pkvm_vcpu_enter_guest(struct kvm_vcpu *vcpu, bool force_immediate_exit,
 int pkvm_emulate_hypercall(struct kvm_vcpu *vcpu)
 {
 	int ret = -KVM_EPERM;
+	u64 nr;
 
 	if (!pkvm_is_protected_vcpu(vcpu))
 		return 0;
@@ -11299,6 +11349,18 @@ int pkvm_emulate_hypercall(struct kvm_vcpu *vcpu)
 	if (kvm_x86_call(get_cpl)(vcpu)) {
 		kvm_inject_gp(vcpu, 0);
 		return 1;
+	}
+
+	nr = kvm_rax_read_raw(vcpu);
+
+	switch (nr) {
+	case PKVM_GHC_IOREAD:
+	case PKVM_GHC_IOWRITE:
+		/* Hypercall for MMIO accessing should be forwarded to the host */
+		return 0;
+	default:
+		/* Other hypercalls are not supported */
+		break;
 	}
 
 	kvm_rax_write_raw(vcpu, ret);
