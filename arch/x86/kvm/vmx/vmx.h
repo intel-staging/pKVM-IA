@@ -756,6 +756,7 @@ void vmx_exit(void);
 
 int __init vmx_pkvm_init(void);
 extern struct vmx_capability pkvm_sym(vmx_capability);
+extern struct vmcs_config pkvm_sym(host_vmcs_config);
 
 #endif /* CONFIG_PKVM_INTEL */
 
