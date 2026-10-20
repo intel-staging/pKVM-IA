@@ -121,6 +121,61 @@ PHDRS {
 	note PT_NOTE FLAGS(0);          /* ___ */
 }
 
+#ifdef CONFIG_PKVM_X86
+#include <asm/pkvm_image.h>
+
+#define PKVM_TEXT							\
+	. = ALIGN(PAGE_SIZE);						\
+	pkvm_sym(text_start) = .;					\
+	*(PKVM_SECTION_NAME(.text))					\
+	*(PKVM_SECTION_NAME(.noinstr.text))				\
+	. = ALIGN(PAGE_SIZE);						\
+	pkvm_sym(text_end) = .;
+
+#define PKVM_BSS							\
+	. = ALIGN(PAGE_SIZE);						\
+	pkvm_sym(bss_start) = .;					\
+	*(PKVM_SECTION_NAME(.bss))					\
+	. = ALIGN(PAGE_SIZE);						\
+	pkvm_sym(bss_end) = .;
+
+#define PKVM_DATA							\
+	. = ALIGN(PAGE_SIZE);						\
+	pkvm_sym(data_start) = .;					\
+	*(PKVM_SECTION_NAME(.data))					\
+	. = ALIGN(PAGE_SIZE);						\
+	pkvm_sym(data_end) = .;
+
+#define PKVM_RODATA							\
+	PKVM_SECTION_NAME(.rodata) :					\
+		AT(ADDR(PKVM_SECTION_NAME(.rodata)) - LOAD_OFFSET) {	\
+	. = ALIGN(PAGE_SIZE);						\
+	pkvm_sym(rodata_start) = .;					\
+	*(PKVM_SECTION_NAME(.rodata))					\
+	. = ALIGN(PAGE_SIZE);						\
+	pkvm_sym(rodata_end) = .;					\
+	}
+
+#define PKVM_RO_AFTER_INIT						\
+	PKVM_SECTION_NAME(.data..ro_after_init) :			\
+		AT(ADDR(PKVM_SECTION_NAME(.data..ro_after_init)) -	\
+		   LOAD_OFFSET) {					\
+	. = ALIGN(PAGE_SIZE);						\
+	pkvm_sym(ro_after_init_start) = .;				\
+	*(PKVM_SECTION_NAME(.data..ro_after_init))			\
+	. = ALIGN(PAGE_SIZE);						\
+	pkvm_sym(ro_after_init_end) = .;				\
+	}
+#else
+
+#define PKVM_TEXT
+#define PKVM_BSS
+#define PKVM_DATA
+#define PKVM_RODATA
+#define PKVM_RO_AFTER_INIT
+
+#endif
+
 SECTIONS
 {
 	. = __START_KERNEL;
@@ -159,6 +214,7 @@ SECTIONS
 		*(.text..__x86.return_thunk)
 #endif
 		STATIC_CALL_TEXT
+		PKVM_TEXT
 		*(.gnu.warning)
 
 	} :text = 0xcccccccc
@@ -187,6 +243,8 @@ SECTIONS
 		NOSAVE_DATA
 #endif
 
+		PKVM_DATA
+
 		PAGE_ALIGNED_DATA(PAGE_SIZE)
 
 		CACHE_HOT_DATA(L1_CACHE_BYTES)
@@ -203,6 +261,23 @@ SECTIONS
 		/* End of data section */
 		_edata = .;
 	} :data
+
+	/*
+	 * The mark_rodata_ro() function expects to unmap the gaps in the
+	 * text/rodata and rodata/data sections. Placing the pKVM rodata between
+	 * text, rodata and data will lead the mark_rodata_ro() to unmap and
+	 * free the pKVM rodata memory pages, causing the memory accessing
+	 * violation as these pages are protected by the pKVM. Position the pKVM
+	 * rodata after the data section.
+	 */
+	PKVM_RODATA
+
+	/*
+	 * Keep the pKVM ro_after_init data out of the pKVM rodata, as it is
+	 * written during the pKVM initialization while the pKVM rodata is
+	 * always read-only.
+	 */
+	PKVM_RO_AFTER_INIT
 
 	BUG_TABLE
 
@@ -372,6 +447,7 @@ SECTIONS
 		. = ALIGN(PAGE_SIZE);
 		*(BSS_MAIN)
 		BSS_DECRYPTED
+		PKVM_BSS
 		. = ALIGN(PAGE_SIZE);
 		__bss_stop = .;
 	}
