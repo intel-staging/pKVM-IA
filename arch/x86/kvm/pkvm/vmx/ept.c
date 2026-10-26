@@ -6,6 +6,7 @@
 #include <vmx/vmx.h>
 #include "ept.h"
 #include "gfp.h"
+#include "pkvm/mmu.h"
 
 static struct pkvm_pgtable *host_ept;
 static struct pkvm_pool host_ept_pool;
@@ -182,4 +183,60 @@ int pkvm_host_ept_init(struct pkvm_pgtable *pgt, void *pool_base,
 
 	host_ept = pgt;
 	return 0;
+}
+
+static void handle_host_ept_violation_failure(struct kvm_vcpu *vcpu)
+{
+	unsigned long exit_qualification = vmcs_readl(EXIT_QUALIFICATION);
+	struct x86_exception fault = { 0 };
+	u64 error_code = 0;
+
+	/*
+	 * The guest linear address(GLA) should be valid for injecting #PF.
+	 * But the GLA may be invalid according to SDM vol. 3 Exit Qualification
+	 * for EPT Violations:
+	 * "The guest linear-address field is valid for all EPT violations
+	 * except those resulting from an attempt to load the guest PDPTEs as
+	 * part of the execution of the MOV CR instruction and those due to
+	 * trace-address pre-translation (TAPT; Section 27.5.4)."
+	 *
+	 * For loading guest PDPTEs via MOV CR, SDM Page-Fault Exceptions:
+	 * "Failures to load the PDPTE registers with PAE paging (see Section
+	 * 5.4.1) cause general-protection exceptions (#GP(0)) and not
+	 * page-fault exceptions.", #GP(0) can be injected.
+	 *
+	 * For TAPT, SDM IA32_RTIT_OUTPUT_BASE MSR:
+	 * "however, if any of those bits are set outside SEAM, trace output may
+	 * fail in a model-specific manner." Similar for pKVM, injecting #GP(0)
+	 * can be pKVM specific manner.
+	 */
+	if (!(exit_qualification & EPT_VIOLATION_GVA_IS_VALID)) {
+		kvm_inject_gp(vcpu, 0);
+		return;
+	}
+
+	error_code |= (exit_qualification & EPT_VIOLATION_PROT_MASK)
+		      ? PFERR_PRESENT_MASK : 0;
+	error_code |= (exit_qualification & EPT_VIOLATION_ACC_WRITE)
+		      ? PFERR_WRITE_MASK : 0;
+	error_code |= VMX_AR_DPL(vmcs_read32(GUEST_SS_AR_BYTES)) == 3
+		      ? PFERR_USER_MASK : 0;
+	error_code |= (exit_qualification & EPT_VIOLATION_ACC_INSTR)
+		      ? PFERR_FETCH_MASK : 0;
+
+	fault.vector = PF_VECTOR;
+	fault.error_code_valid = true;
+	fault.error_code = error_code;
+	fault.address = vmcs_readl(GUEST_LINEAR_ADDRESS);
+	fault.exit_qualification = exit_qualification;
+
+	kvm_inject_page_fault(vcpu, &fault, true);
+}
+
+void pkvm_handle_host_ept_violation(struct kvm_vcpu *vcpu)
+{
+	unsigned long gpa = vmcs_read64(GUEST_PHYSICAL_ADDRESS);
+
+	if (unlikely(pkvm_host_mmu_handle_fault(gpa)))
+		handle_host_ept_violation_failure(vcpu);
 }
