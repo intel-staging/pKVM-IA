@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #include <linux/linkage.h>
 #include <asm/asm.h>
+#include <asm/nospec-branch.h>
 #include <asm/trapnr.h>
 #include <asm/unwind_hints.h>
 
@@ -74,3 +75,16 @@ SYM_CODE_END(handle_exception_\name)
 #define GEN(v, e)	exception_entry #v vector=v has_error_code=e
 #include <asm/GEN-for-each-exc.h>
 #undef GEN
+
+/* Clobbers AX, CX, DX */
+SYM_FUNC_START(write_ibpb)
+	ANNOTATE_NOENDBR
+	movl	$MSR_IA32_PRED_CMD, %ecx
+	movl	_ASM_RIP(x86_pred_cmd), %eax
+	xorl	%edx, %edx
+	wrmsr
+
+	/* Make sure IBPB clears return stack preductions too. */
+	FILL_RETURN_BUFFER %rax, RSB_CLEAR_LOOPS, X86_BUG_IBPB_NO_RET
+	RET
+SYM_FUNC_END(write_ibpb)

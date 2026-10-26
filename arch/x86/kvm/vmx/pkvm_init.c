@@ -12,6 +12,8 @@
 #define PKVM_HOST_VCPU_VMX_PAGES	(PAGE_ALIGN(sizeof(struct vcpu_vmx)) >> PAGE_SHIFT)
 #define PKVM_VMX_PAGES			3 /* vmxarea+vmcs+msr_bitmap */
 
+extern u64 x86_pred_cmd;
+
 static int __init early_pkvm_parse_cmdline(char *buf)
 {
 	return kstrtobool(buf, &enable_pkvm);
@@ -46,6 +48,8 @@ static __init void pkvm_setup_syms(void)
 	 */
 	pkvm_sym(page_offset_base) = page_offset_base;
 	pkvm_sym(phys_base) = phys_base;
+
+	pkvm_sym(x86_pred_cmd) = x86_pred_cmd;
 }
 
 static __init int pkvm_setup_host_vmcs_config(void)
