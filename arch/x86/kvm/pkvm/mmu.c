@@ -202,6 +202,16 @@ static void pkvm_host_mmu_unlock(void)
 	pkvm_spin_unlock(&host_mmu_lock);
 }
 
+static void set_host_mem_pgstate(unsigned long phys, unsigned long size,
+				 enum pkvm_page_state state,
+				 enum pkvm_owner_id owner)
+{
+	for_each_pkvm_page(page, phys, size) {
+		page->host_state = state;
+		page->owner = owner;
+	}
+}
+
 static int host_mmu_map(unsigned long phys, unsigned long size, bool mmio)
 {
 	u64 prot = host_mmu.pgt_ops->calc_pte_perm(true, true, true) |
@@ -219,6 +229,8 @@ static int host_mmu_map_ro(unsigned long phys, unsigned long size)
 
 	BUG_ON(!is_memory_range(phys, size));
 
+	set_host_mem_pgstate(phys, size, PKVM_PAGE_SHARED_BORROWED, PKVM_ID_HYP);
+
 	/* The vaddr == phys for the host MMU */
 	return pkvm_pgtable_map(&host_mmu, phys, phys, size, prot);
 }
@@ -227,6 +239,8 @@ static int host_mmu_map_ro(unsigned long phys, unsigned long size)
 static int host_mmu_unmap(unsigned long phys, unsigned long size)
 {
 	BUG_ON(!is_memory_range(phys, size));
+
+	set_host_mem_pgstate(phys, size, PKVM_PAGE_NONE, PKVM_ID_HYP);
 
 	/* The vaddr == phys for the host MMU */
 	return pkvm_pgtable_unmap(&host_mmu, phys, phys, size);
