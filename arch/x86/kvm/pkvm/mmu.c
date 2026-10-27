@@ -395,3 +395,8 @@ int pkvm_host_mmu_handle_fault(unsigned long gpa)
 	pkvm_host_mmu_unlock();
 	return ret;
 }
+
+int pkvm_host_mmu_finalize(host_mmu_finalize_fn_t fn)
+{
+	return fn ? fn(&host_mmu) : 0;
+}
