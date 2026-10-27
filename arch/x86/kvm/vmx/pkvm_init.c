@@ -623,6 +623,31 @@ static __init int pkvm_host_deprivilege_cpus(struct pkvm_hyp *pkvm)
 	return ret ? ret : deprivilege_ret;
 }
 
+static void do_pkvm_hyp_init(void *data)
+{
+	int ret = pkvm_hypercall(init);
+
+	if (data)
+		*(int *)data = ret;
+}
+
+static __init int pkvm_hyp_init(void)
+{
+	int ret, cpu, init_ret;
+
+	for_each_possible_cpu(cpu) {
+		ret = smp_call_function_single(cpu, do_pkvm_hyp_init,
+					       &init_ret, 1);
+		if (ret || init_ret) {
+			pr_err("Failed to initialize pKVM hyp on CPU%d: smp_call %d, init: %d\n",
+			       cpu, ret, init_ret);
+			break;
+		}
+	}
+
+	return ret ? ret : init_ret;
+}
+
 int __init vmx_pkvm_init(void)
 {
 	unsigned long vmx_pages_size;
@@ -694,7 +719,11 @@ int __init vmx_pkvm_init(void)
 	if (ret)
 		goto out;
 
-	pr_info("All cpus are in guest mode!\n");
+	ret = pkvm_hyp_init();
+	if (ret)
+		panic("pkvm failed to initialize hypervisor, error %d\n", ret);
+
+	pr_info("Hypervisor is up and running!\n");
 	return 0;
 out:
 	/*
