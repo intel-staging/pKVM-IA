@@ -753,6 +753,7 @@ void vmx_exit(void);
 #ifdef CONFIG_PKVM_INTEL
 
 #include <asm/pkvm_image.h>
+#include <asm/pkvm_redef.h>
 
 int __init vmx_pkvm_init(void);
 PKVM_DECLARE(void, pkvm_host_vmexit_entry, (void));

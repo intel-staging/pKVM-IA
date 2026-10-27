@@ -25,6 +25,8 @@ quiet_cmd_patch_retpoline = PATCH_RETPOLINE $@
       cmd_patch_retpoline = $(BASH) $(src)/compiling_cmds.sh patch_retpoline $< $@
 
 kvm				:= ..
+pkvm-hyp-y			+= $(kvm)/x86.o
+
 pkvm-hyp-$(CONFIG_PKVM_INTEL)	+= $(kvm)/vmx/vmx.o vmx/host_vmx.o \
 				   vmx/host_vmentry.o
 
