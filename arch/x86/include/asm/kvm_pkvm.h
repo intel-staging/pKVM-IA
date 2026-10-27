@@ -5,14 +5,22 @@
 #ifdef CONFIG_PKVM_X86
 #include <linux/kvm_host.h>
 #include <linux/mm.h>
+#include <asm/desc.h>
 #include <asm/pkvm_image.h>
 
 #define PKVM_MEMBLOCK_REGIONS		128
 #define PKVM_STACK_SIZE			SZ_16K
 
+struct idt_page {
+	gate_desc idt[IDT_ENTRIES];
+} __aligned(PAGE_SIZE);
+
 struct pkvm_pcpu {
 	u8 stack[PKVM_STACK_SIZE] __aligned(16);
 	int cpu;
+	struct gdt_page gdt_page;
+	struct idt_page idt_page;
+	struct tss_struct tss;
 };
 
 struct pkvm_hyp {
@@ -35,6 +43,10 @@ PKVM_DECLARE(void, pkvm_early_alloc_init, (void *virt, unsigned long size));
 PKVM_DECLARE(int, pkvm_setup_per_cpu, (int cpu, unsigned long base,
 				       unsigned long pcpu_pa, unsigned long vcpu_pa));
 PKVM_DECLARE(unsigned int, pkvm_per_cpu_nr_pages, (void));
+
+#define GEN(x, ...) PKVM_DECLARE(void, handle_exception_##x, (void));
+#include <asm/GEN-for-each-exc.h>
+#undef GEN
 
 #ifdef CONFIG_PKVM_INTEL
 unsigned long __init pkvm_vmx_reserve_pages(void);
