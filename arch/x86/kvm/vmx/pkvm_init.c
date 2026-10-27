@@ -379,10 +379,11 @@ static __init void init_guest_state_area(void)
 	vmcs_write64(VMCS_LINK_POINTER, -1ull);
 }
 
-static __init void init_host_state_area(void)
+static __init void init_host_state_area(struct vcpu_vmx *vmx)
 {
 	struct pkvm_pcpu *pcpu = this_cpu_read(pkvm_pcpu);
 	int cpu = smp_processor_id();
+	unsigned long host_rsp;
 	u64 msrq;
 
 	vmcs_writel(HOST_CR0, read_cr0() & ~X86_CR0_TS);
@@ -420,6 +421,30 @@ static __init void init_host_state_area(void)
 
 	rdmsrq(MSR_IA32_CR_PAT, msrq);
 	vmcs_write64(HOST_IA32_PAT, msrq);
+
+	/*
+	 * [pcpu->stack, pcpu->stack + PKVM_STACK_SIZE) is per cpu stack.
+	 * It is used as stack when the pcpu enters VMX root mode, i.e. HOST
+	 * stack from VMX point of view.
+	 *
+	 * Within the top of stack, a small region starting from stack_resv with
+	 * the size of PKVM_STACK_TOP_RESV is reserved to store pKVM hypervisor
+	 * private paremeters. Currently only one parameter needs to be stored.
+	 *
+	 * ------------ Stack layout ----------
+	 * stack_top:
+	 * stack_resv[0]:	virtual address pointing to struct vcpu_vmx
+	 * stack_resv:		(stack_top - PKVM_STACK_TOP_RESV) =
+	 * 			VMCS.HOST_RSP for PCPU
+	 *			.........
+	 *			.........
+	 * stack_bottom:
+	 */
+	host_rsp = get_host_stack_top(pcpu) - PKVM_STACK_TOP_RESV;
+	*((struct vcpu_vmx **)host_rsp) = vmx;
+	vmcs_writel(HOST_RSP, host_rsp);
+
+	vmcs_writel(HOST_RIP, (unsigned long)pkvm_sym(pkvm_host_vmexit_entry));
 }
 
 static __init void init_execution_control(struct vcpu_vmx *vmx)
@@ -487,7 +512,7 @@ static __init void pkvm_host_init_vmx(struct vcpu_vmx *vmx)
 	vmx->loaded_vmcs->cpu = smp_processor_id();
 
 	init_guest_state_area();
-	init_host_state_area();
+	init_host_state_area(vmx);
 	init_execution_control(vmx);
 	init_vmexit_control(vmx);
 	init_vmentry_control(vmx);
