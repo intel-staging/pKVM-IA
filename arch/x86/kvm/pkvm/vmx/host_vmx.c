@@ -5,6 +5,7 @@
 #include <kvm_emulate.h>
 #include <vmx/x86_ops.h>
 #include "host_vmx.h"
+#include "pkvm.h"
 
 #define CR4			4
 #define MOV_TO_CR		0
@@ -43,6 +44,23 @@ static void handle_cpuid(struct kvm_vcpu *vcpu)
 	vcpu->arch.regs[VCPU_REGS_RBX] = ebx;
 	vcpu->arch.regs[VCPU_REGS_RCX] = ecx;
 	vcpu->arch.regs[VCPU_REGS_RDX] = edx;
+}
+
+static u32 get_cpl(void)
+{
+	return VMX_AR_DPL(vmcs_read32(GUEST_SS_AR_BYTES));
+}
+
+static int handle_vmcall(struct kvm_vcpu *vcpu)
+{
+	/* Host hypercalls are a kernel-only ABI. */
+	if (get_cpl() > 0) {
+		kvm_inject_gp(vcpu, 0);
+		return X86EMUL_UNHANDLEABLE;
+	}
+
+	pkvm_handle_host_hypercall(vcpu);
+	return X86EMUL_CONTINUE;
 }
 
 static void handle_cr(struct kvm_vcpu *vcpu)
@@ -264,6 +282,10 @@ void pkvm_host_vmexit_main(struct vcpu_vmx *vmx)
 	case EXIT_REASON_CPUID:
 		handle_cpuid(vcpu);
 		skip_instruction = true;
+		break;
+	case EXIT_REASON_VMCALL:
+		if (handle_vmcall(vcpu) == X86EMUL_CONTINUE)
+			skip_instruction = true;
 		break;
 	case EXIT_REASON_CR_ACCESS:
 		/* Re-execute the MOV to CR4, see handle_cr() */

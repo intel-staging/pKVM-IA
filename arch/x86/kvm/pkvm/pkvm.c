@@ -13,3 +13,16 @@ DEFINE_PER_CPU(struct kvm_vcpu *, host_vcpu);
  * is always false in the pKVM hypervisor.
  */
 __visible bool virt_rebooting;
+
+void pkvm_handle_host_hypercall(struct kvm_vcpu *vcpu)
+{
+	int ret = 0;
+
+	switch (pkvm_hc(vcpu)) {
+	default:
+		ret = -EINVAL;
+		break;
+	}
+
+	pkvm_hc_set_ret(vcpu, ret);
+}
