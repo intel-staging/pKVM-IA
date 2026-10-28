@@ -24,6 +24,16 @@ SYM_FUNC_START(pkvm_host_vmexit_entry)
 	push %_ASM_BX
 	mov WORD_SIZE*1(%_ASM_SP), %_ASM_BX
 
+	/*
+	 * Unlike in vmx/vmenter.S, no need for FILL_RETURN_BUFFER here.
+	 *
+	 * pKVM requires eIBRS which has its own protection against poisoned RSB
+	 * so no need for RSB filling.
+	 *
+	 * If eIBRS is affected by PBRSB, still no need for RSB filling here
+	 * since there is no unbalanced RET after host vmexit.
+	 */
+
 	STORE_REGS %_ASM_BX, VMX_vcpu_arch_regs, \
 		   %_ASM_AX, %_ASM_CX, %_ASM_DX, %_ASM_SI, %_ASM_DI, %_ASM_BP
 	STORE_REGS %_ASM_BX, VMX_vcpu_arch_regs, \
