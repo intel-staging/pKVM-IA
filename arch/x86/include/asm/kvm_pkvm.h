@@ -3,6 +3,7 @@
 #define _ASM_X86_KVM_PKVM_H
 
 #ifdef CONFIG_PKVM_X86
+#include <linux/kvm_host.h>
 #include <linux/mm.h>
 #include <asm/pkvm_image.h>
 
@@ -30,6 +31,9 @@ extern unsigned long pkvm_sym(phys_base);
 PKVM_DECLARE(void *, pkvm_early_alloc_page, (void));
 PKVM_DECLARE(void *, pkvm_early_alloc_contig, (unsigned int nr_pages));
 PKVM_DECLARE(void, pkvm_early_alloc_init, (void *virt, unsigned long size));
+PKVM_DECLARE(int, pkvm_setup_per_cpu, (int cpu, unsigned long base,
+				       unsigned long pcpu_pa, unsigned long vcpu_pa));
+PKVM_DECLARE(unsigned int, pkvm_per_cpu_nr_pages, (void));
 
 #ifdef CONFIG_PKVM_INTEL
 unsigned long __init pkvm_vmx_reserve_pages(void);
@@ -39,7 +43,8 @@ static inline unsigned long pkvm_data_pages(unsigned long extra_global,
 					    unsigned long extra_percpu)
 {
 	unsigned long global_pages = PKVM_HYP_PAGES + extra_global;
-	unsigned long percpu_pages = PKVM_PCPU_PAGES + extra_percpu;
+	unsigned long percpu_pages = PKVM_PCPU_PAGES + extra_percpu +
+				     pkvm_sym(pkvm_per_cpu_nr_pages)();
 
 	return global_pages + percpu_pages * num_possible_cpus();
 }
