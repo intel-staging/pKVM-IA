@@ -503,6 +503,10 @@ static int postponed_per_vm_setup(struct kvm *kvm)
 		kvm->arch.disabled_exits = disabled_exits;
 	}
 
+	if (kvm_caps.has_bus_lock_exit)
+		kvm->arch.bus_lock_detection_enabled =
+			!!READ_ONCE(*(u8 *)&shared_kvm->arch.bus_lock_detection_enabled);
+
 	pkvm_vm->postponed_setup_done = true;
 	return 0;
 }
