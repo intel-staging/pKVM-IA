@@ -70,9 +70,8 @@ static void x86_virt_invoke_kvm_emergency_callback(void)
 #if IS_ENABLED(CONFIG_KVM_INTEL)
 static DEFINE_PER_CPU(struct vmcs *, root_vmcs);
 
-static int x86_virt_cpu_vmxon(void)
+static int x86_virt_cpu_vmxon(u64 vmxon_pointer)
 {
-	u64 vmxon_pointer = __pa(per_cpu(root_vmcs, raw_smp_processor_id()));
 	u64 msr;
 
 	cr4_set_bits(X86_CR4_VMXE);
@@ -91,7 +90,7 @@ fault:
 	return -EFAULT;
 }
 
-static int x86_vmx_enable_virtualization_cpu(void)
+int __x86_vmx_enable_virtualization_cpu(u64 vmxon_pointer)
 {
 	int r;
 
@@ -100,13 +99,20 @@ static int x86_vmx_enable_virtualization_cpu(void)
 
 	intel_pt_handle_vmx(1);
 
-	r = x86_virt_cpu_vmxon();
+	r = x86_virt_cpu_vmxon(vmxon_pointer);
 	if (r) {
 		intel_pt_handle_vmx(0);
 		return r;
 	}
 
 	return 0;
+}
+
+static int x86_vmx_enable_virtualization_cpu(void)
+{
+	u64 vmxon_pointer = __pa(per_cpu(root_vmcs, raw_smp_processor_id()));
+
+	return __x86_vmx_enable_virtualization_cpu(vmxon_pointer);
 }
 
 /*
@@ -118,7 +124,7 @@ static int x86_vmx_enable_virtualization_cpu(void)
  * faults are guaranteed to be due to the !post-VMXON check unless the CPU is
  * magically in RM, VM86, compat mode, or at CPL>0.
  */
-static int x86_vmx_disable_virtualization_cpu(void)
+int x86_vmx_disable_virtualization_cpu(void)
 {
 	int r = -EIO;
 
