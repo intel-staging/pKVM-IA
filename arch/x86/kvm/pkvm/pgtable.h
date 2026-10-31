@@ -84,6 +84,15 @@ struct pkvm_pgtable_cap {
 	int allowed_pgsz;
 	u64 table_prot;
 	bool flush_tlb_lazy;
+	/*
+	 * Huge page coalescing requires TLB flushing, which is not yet
+	 * implemented for hyp_mmu (hyp_mmu_flush_tlb() currently BUG()s).
+	 *
+	 * TODO(b/541580341): Remove coalesce_on_map and enable huge page
+	 * coalescing unconditionally once TLB flushing is implemented for
+	 * hyp_mmu.
+	 */
+	bool coalesce_on_map;
 };
 
 struct pkvm_pgtable {
