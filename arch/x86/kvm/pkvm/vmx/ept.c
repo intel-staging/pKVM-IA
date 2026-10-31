@@ -328,6 +328,7 @@ int pkvm_host_ept_init(struct pkvm_pgtable *pgt, void *pool_base,
 		.allowed_pgsz = 1 << PG_LEVEL_4K,
 		.table_prot = VMX_EPT_RWX_MASK,
 		.flush_tlb_lazy = true,
+		.coalesce_on_map = true,
 	};
 	int ret;
 
@@ -479,6 +480,7 @@ void pkvm_guest_ept_setup(void)
 		.allowed_pgsz = 1 << PG_LEVEL_4K,
 		.table_prot = VMX_EPT_RWX_MASK,
 		.flush_tlb_lazy = true,
+		.coalesce_on_map = true,
 	};
 
 	if (cpu_has_vmx_ept_2m_page())

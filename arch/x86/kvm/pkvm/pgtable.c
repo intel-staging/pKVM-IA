@@ -246,7 +246,76 @@ static int __map_walker(struct pkvm_pgtable_visit_ctx *ctx,
 	return 0;
 }
 
-/* TODO: Support merging small entries into a huge entry. */
+static void pgtable_try_coalesce_leaf(struct pkvm_pgtable_visit_ctx *ctx,
+				      struct pgt_map_data *data)
+{
+	const struct pkvm_pgtable_mm_ops *mm_ops = ctx->pgt->mm_ops;
+	const struct pkvm_pgtable_ops *pgt_ops = ctx->pgt->pgt_ops;
+	unsigned long level_size, step_size, base_phys, base_addr;
+	int child_level = ctx->level - 1;
+	int i, entries, entry_size;
+	void *ptep = ctx->ptep;
+	void *child;
+	u64 new;
+
+	if (!((1 << ctx->level) & ctx->pgt->cap.allowed_pgsz))
+		return;
+
+	child = __pkvm_va(pgt_ops->pte_to_phys(ptep));
+	entries = pgt_ops->pte_count(child_level);
+
+	/*
+	 * Fast path: each present/annotated entry holds a refcount on @child
+	 * in addition to its initial allocation refcount (1). If any entry in
+	 * @child is unmapped, page_count(@child) < entries + 1.
+	 */
+	if (mm_ops->page_count(child) != entries + 1)
+		return;
+
+	level_size = pgt_ops->level_to_size(ctx->level);
+	base_phys = pgt_ops->pte_to_phys(child);
+	if (!IS_ALIGNED(base_phys, level_size))
+		return;
+
+	step_size = pgt_ops->level_to_size(child_level);
+	entry_size = pgt_ops->pte_size(child_level);
+
+	for (i = 0; i < entries; i++) {
+		void *e = child + i * entry_size;
+
+		if (!pgt_ops->pte_present(e) ||
+		    !pgt_ops->pte_is_leaf(e, child_level))
+			return;
+
+		if (pgt_ops->pte_to_prot(e) != data->prot)
+			return;
+
+		if (pgt_ops->pte_to_phys(e) != base_phys + i * step_size)
+			return;
+	}
+
+	new = base_phys | data->prot;
+	pgt_ops->pte_mkhuge(&new);
+	pgt_ops->pte_set(ptep, new);
+
+	/*
+	 * Flush TLB and paging-structure caches across the full coalesced
+	 * hugepage range while @child still contains valid PTEs, before
+	 * releasing @child back to the page-table pool.
+	 *
+	 * Flush and free immediately even when flush_tlb_lazy is enabled.
+	 * Coalescing rarely occurs more than once per walk, so deferring
+	 * the flush until after the walk wouldn't reduce the number of
+	 * flushes.
+	 */
+	base_addr = ALIGN_DOWN(ctx->addr, level_size);
+	pgt_ops->flush_tlb(ctx->pgt, base_addr, level_size);
+
+	for (i = 0; i < entries; i++)
+		mm_ops->put_page(child);
+	mm_ops->put_page(child);
+}
+
 static int map_walker(struct pkvm_pgtable_visit_ctx *ctx, unsigned long walk_flags,
 		      void *const arg)
 {
@@ -255,8 +324,11 @@ static int map_walker(struct pkvm_pgtable_visit_ctx *ctx, unsigned long walk_fla
 	switch (walk_flags) {
 	case PKVM_PGTABLE_WALK_LEAF:
 		return __map_walker(ctx, data);
-	case PKVM_PGTABLE_WALK_TABLE_PRE:
 	case PKVM_PGTABLE_WALK_TABLE_POST:
+		if (ctx->pgt->cap.coalesce_on_map && VALID_PAGE(data->phys))
+			pgtable_try_coalesce_leaf(ctx, data);
+		return 0;
+	case PKVM_PGTABLE_WALK_TABLE_PRE:
 		break;
 	}
 
@@ -722,7 +794,7 @@ int pkvm_pgtable_map(struct pkvm_pgtable *pgt, unsigned long vaddr,
 	struct pkvm_pgtable_walker walker = {
 		.cb = map_walker,
 		.arg = &data,
-		.walk_flags = PKVM_PGTABLE_WALK_LEAF,
+		.walk_flags = PKVM_PGTABLE_WALK_LEAF | PKVM_PGTABLE_WALK_TABLE_POST,
 	};
 
 	if (!VALID_PAGE(phys))
