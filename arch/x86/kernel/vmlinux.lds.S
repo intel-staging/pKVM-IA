@@ -160,8 +160,7 @@ PHDRS {
 	}
 
 /*
- * The PKVM_PERCPU requires to be put right after the PERCPU_SECTION. It will
- * define pkvm_sym(__per_cpu_start) as __per_cpu_start, and enlarge
+ * The PKVM_PERCPU requires to be put right after the PERCPU_SECTION to enlarge
  * __per_cpu_end by pkvm_sym(__per_cpu_end).
  */
 #define PKVM_PERCPU							\
@@ -169,7 +168,7 @@ PHDRS {
 	AT(ADDR(PKVM_SECTION_NAME(.data..percpu)) -			\
 	   LOAD_OFFSET) {						\
 		. = ALIGN(PAGE_SIZE);					\
-		pkvm_sym(__per_cpu_start) = __per_cpu_start;		\
+		pkvm_sym(__per_cpu_start) = .;				\
 		*(PKVM_SECTION_NAME(.data..percpu))			\
 		. = ALIGN(PAGE_SIZE);					\
 		pkvm_sym(__per_cpu_end) = .;				\
