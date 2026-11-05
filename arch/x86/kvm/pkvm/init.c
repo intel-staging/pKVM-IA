@@ -58,6 +58,23 @@ static int create_hyp_mmu(const struct pkvm_mem_info infos[], int nr_infos)
 					       infos[i].size, infos[i].prot);
 			if (ret)
 				return ret;
+
+			/*
+			 * The memory in memblocks includes the pKVM image, so
+			 * this range is also mapped in the direct mapping above
+			 * with PAGE_KERNEL. If it is mapped differently, e.g.
+			 * the text and rodata, map the direct mapping alias
+			 * with the same permission, except that the direct
+			 * mapping is never executable.
+			 */
+			if (infos[i].prot != pgprot_val(PAGE_KERNEL)) {
+				ret = pkvm_hyp_mmu_map((unsigned long)__pkvm_va(infos[i].pa),
+						       infos[i].pa, infos[i].size,
+						       infos[i].prot |
+						       (pgprot_val(PAGE_KERNEL) & _PAGE_NX));
+				if (ret)
+					return ret;
+			}
 		}
 	}
 
