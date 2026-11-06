@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <linux/kvm_host.h>
 #include <linux/pgtable.h>
+#include <asm/invpcid.h>
 #include <asm/kvm_pkvm.h>
+#include <asm/tlbflush.h>
 #include "early_alloc.h"
 #include "mmu.h"
 #include "pgtable.h"
@@ -118,6 +120,22 @@ int pkvm_hyp_mmu_init(void *pool_base, unsigned long pool_pages)
 	pkvm_early_alloc_init(pool_base, pool_pages << PAGE_SHIFT);
 
 	return pkvm_pgtable_init(&hyp_mmu, cap, &pkvm_early_alloc_mm_ops, &hyp_mmu_pgt_ops);
+}
+
+void pkvm_hyp_mmu_load(void)
+{
+	native_write_cr3(hyp_mmu.root_pa);
+
+	/*
+	 * Writing CR3 doesn't invalidate the TLB entries for global pages.
+	 * In case there are such TLB entries, flush all the TLB entries,
+	 * like native_flush_tlb_global() does, so that this CPU only uses
+	 * translations from the hypervisor's MMU.
+	 */
+	if (static_cpu_has(X86_FEATURE_INVPCID))
+		invpcid_flush_all();
+	else
+		__native_tlb_flush_global(native_read_cr4());
 }
 
 int pkvm_hyp_mmu_map(unsigned long vaddr, unsigned long phys,
