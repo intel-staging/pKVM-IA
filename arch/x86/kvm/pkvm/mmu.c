@@ -9,6 +9,7 @@
 #include "pgtable.h"
 
 static struct pkvm_pgtable hyp_mmu;
+static bool hyp_mmu_in_use;
 
 static bool hyp_mmu_pte_present(void *ptep)
 {
@@ -81,10 +82,17 @@ static void hyp_mmu_flush_tlb(struct pkvm_pgtable *pgt,
 			      unsigned long vaddr, unsigned long size)
 {
 	/*
+	 * Before the hypervisor's MMU is loaded on any CPU, no CPU can have
+	 * TLB entries for it, so there is nothing to flush.
+	 */
+	if (!READ_ONCE(hyp_mmu_in_use))
+		return;
+
+	/*
 	 * The pKVM hypervisor will map all valid memory in its MMU during the
 	 * init phase and won't change or unmap at runtime. So there is no
-	 * usages to change a present leaf in the hyp_mmu. Put a BUG here in
-	 * case anything is missed.
+	 * usages to change a present leaf in the hyp_mmu at runtime. Put a BUG
+	 * here in case anything is missed.
 	 */
 	BUG();
 }
@@ -136,6 +144,9 @@ void pkvm_hyp_mmu_load(void)
 		invpcid_flush_all();
 	else
 		__native_tlb_flush_global(native_read_cr4());
+
+	if (!READ_ONCE(hyp_mmu_in_use))
+		WRITE_ONCE(hyp_mmu_in_use, true);
 }
 
 int pkvm_hyp_mmu_map(unsigned long vaddr, unsigned long phys,
