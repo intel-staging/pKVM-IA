@@ -119,6 +119,8 @@ static int initialize_global(struct pkvm_mem_info infos[], int nr_infos)
 
 int pkvm_init(struct pkvm_mem_info infos[], int nr_infos)
 {
+	hyp_mmu_finalize_fn_t hyp_mmu_finalize_fn = init_ops ? init_ops->hyp_mmu_finalize :
+							       NULL;
 	static bool global_initialized;
 
 	if (!global_initialized) {
@@ -137,5 +139,5 @@ int pkvm_init(struct pkvm_mem_info infos[], int nr_infos)
 		pkvm_hyp_mmu_load();
 	}
 
-	return 0;
+	return pkvm_hyp_mmu_finalize(hyp_mmu_finalize_fn);
 }

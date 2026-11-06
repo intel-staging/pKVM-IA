@@ -148,6 +148,11 @@ void pkvm_hyp_mmu_load(void)
 	WRITE_ONCE(hyp_mmu_loaded, true);
 }
 
+int pkvm_hyp_mmu_finalize(hyp_mmu_finalize_fn_t fn)
+{
+	return fn ? fn(&hyp_mmu) : 0;
+}
+
 int pkvm_hyp_mmu_map(unsigned long vaddr, unsigned long phys,
 		     unsigned long size, u64 prot)
 {
