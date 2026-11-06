@@ -61,6 +61,8 @@ static int create_hyp_mmu(const struct pkvm_mem_info infos[], int nr_infos)
 		}
 	}
 
+	pkvm_hyp_mmu_load();
+
 	return 0;
 }
 
@@ -102,6 +104,13 @@ int pkvm_init(struct pkvm_mem_info infos[], int nr_infos)
 			return ret;
 
 		global_initialized = true;
+	} else {
+		/*
+		 * The pKVM hypervisor's MMU was already loaded on the first
+		 * initialized CPU during the global initialize. Need to load it
+		 * on all the other CPUs as well.
+		 */
+		pkvm_hyp_mmu_load();
 	}
 
 	return 0;

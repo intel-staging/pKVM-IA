@@ -48,3 +48,8 @@ int pkvm_setup_per_cpu(int cpu, unsigned long base,
 
 	return 0;
 }
+
+void native_write_cr4(unsigned long val)
+{
+	asm volatile("mov %0,%%cr4" : "+r" (val) : : "memory");
+}
