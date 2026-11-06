@@ -4,6 +4,7 @@
 #include <asm/processor.h> /* needed by below asm/extable.h for cpu_relax() */
 #include <asm/extable.h>
 #include <asm/trapnr.h>
+#include "debug.h"
 #include "idt.h"
 
 extern const struct exception_table_entry __start___ex_table[];
@@ -125,6 +126,13 @@ static bool pkvm_fixup_exception(struct pt_regs *regs)
 static void default_exception_handler(struct pt_regs *regs,
 				      int vector, bool has_error_code)
 {
+	if (has_error_code)
+		pkvm_err("Exception %d @ip %pS (0x%px), err code 0x%lx\n",
+			 vector, (void *)regs->ip, (void *)regs->ip, regs->orig_ax);
+	else
+		pkvm_err("Exception %d @ip %pS (0x%px), no err code\n",
+			 vector, (void *)regs->ip, (void *)regs->ip);
+
 	asm volatile("hlt" : : : "memory");
 }
 

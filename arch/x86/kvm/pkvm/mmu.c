@@ -5,6 +5,7 @@
 #include <asm/kvm_pkvm.h>
 #include <asm/pkvm_spinlock.h>
 #include <asm/tlbflush.h>
+#include "debug.h"
 #include "early_alloc.h"
 #include "gfp.h"
 #include "mmu.h"
@@ -403,14 +404,17 @@ int pkvm_host_mmu_handle_fault(unsigned long gpa)
 	 * during initialization, except for the MMIO in the high-end addresses.
 	 * Handle MMIO only.
 	 */
-	if (pkvm_find_addr_range(gpa, &range))
+	if (pkvm_find_addr_range(gpa, &range)) {
+		pkvm_err_ratelimited("Host access to protected memory at 0x%lx\n", gpa);
 		return -EPERM;
+	}
 
 	pkvm_host_mmu_lock();
 
 	ret = pkvm_pgtable_lookup(&host_mmu, gpa, &pte, &level);
 	if (ret) {
 		pkvm_host_mmu_unlock();
+		pkvm_err("Lookup host GPA 0x%lx in host_mmu failed, err %d\n", gpa, ret);
 		return ret;
 	}
 
@@ -453,6 +457,10 @@ int pkvm_host_mmu_handle_fault(unsigned long gpa)
 	}
 
 	pkvm_host_mmu_unlock();
+
+	if (ret)
+		pkvm_err("No valid range found to map host GPA 0x%lx, err %d\n", gpa, ret);
+
 	return ret;
 }
 
