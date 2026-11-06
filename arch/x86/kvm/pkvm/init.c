@@ -14,6 +14,8 @@ struct pkvm_init_ops *init_ops;
 
 static void *hyp_pgt_base;
 
+static DEFINE_PER_CPU(bool, cpu_initialized);
+
 static int divide_memory_pool(phys_addr_t phys, unsigned long size)
 {
 	unsigned long nr_pages;
@@ -122,10 +124,13 @@ int pkvm_init(struct pkvm_mem_info infos[], int nr_infos)
 	hyp_mmu_finalize_fn_t hyp_mmu_finalize_fn = init_ops ? init_ops->hyp_mmu_finalize :
 							       NULL;
 	static bool global_initialized;
+	int ret;
+
+	if (this_cpu_read(cpu_initialized))
+		return -EBUSY;
 
 	if (!global_initialized) {
-		int ret = initialize_global(infos, nr_infos);
-
+		ret = initialize_global(infos, nr_infos);
 		if (ret)
 			return ret;
 
@@ -139,5 +144,10 @@ int pkvm_init(struct pkvm_mem_info infos[], int nr_infos)
 		pkvm_hyp_mmu_load();
 	}
 
-	return pkvm_hyp_mmu_finalize(hyp_mmu_finalize_fn);
+	ret = pkvm_hyp_mmu_finalize(hyp_mmu_finalize_fn);
+	if (ret)
+		return ret;
+
+	this_cpu_write(cpu_initialized, true);
+	return 0;
 }
