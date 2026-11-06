@@ -14,6 +14,17 @@ SECTIONS {
 	 * which will include .data..ro_after_init as well.
 	 */
 	PKVM_SECTION(.data..ro_after_init)
+	/*
+	 * .pkvm.data..percpu needs to be defined before .data section
+	 * for the same reason as .data..ro_after_init
+	 *
+	 * .pkvm.data..percpu also needs to be page aligned to maintain
+	 * the same alignment for when linking into vmlinux.
+	 */
+	. = ALIGN(PAGE_SIZE);
+	BEGIN_PKVM_SECTION(.data..percpu)
+		PERCPU_INPUT(L1_CACHE_BYTES)
+	END_PKVM_SECTION
 	PKVM_SECTION(.data)
 	PKVM_SECTION(.bss)
 }
