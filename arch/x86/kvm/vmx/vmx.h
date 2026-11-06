@@ -579,6 +579,24 @@ static inline u8 vmx_get_rvi(void)
 #define KVM_OPTIONAL_VMX_TERTIARY_VM_EXEC_CONTROL			\
 	(TERTIARY_EXEC_IPI_VIRT)
 
+struct vmcs_config_setting {
+	u32 cpu_based_vm_exec_ctrl_req;
+	u32 cpu_based_vm_exec_ctrl_opt;
+	u32 secondary_vm_exec_ctrl_req;
+	u32 secondary_vm_exec_ctrl_opt;
+	u64 tertiary_vm_exec_ctrl_opt;
+	u32 pin_based_vm_exec_ctrl_req;
+	u32 pin_based_vm_exec_ctrl_opt;
+	u32 vmexit_ctrl_req;
+	u32 vmexit_ctrl_opt;
+	u32 vmentry_ctrl_req;
+	u32 vmentry_ctrl_opt;
+};
+
+int setup_vmcs_config_common(struct vmcs_config *vmcs_conf,
+			     struct vmx_capability *vmx_cap,
+			     struct vmcs_config_setting *setting);
+
 #define BUILD_CONTROLS_SHADOW(lname, uname, bits)						\
 static inline void lname##_controls_set(struct vcpu_vmx *vmx, u##bits val)			\
 {												\
@@ -731,5 +749,21 @@ static inline void vmx_segment_cache_clear(struct vcpu_vmx *vmx)
 
 int vmx_init(void);
 void vmx_exit(void);
+void vmx_clear_hlt(struct kvm_vcpu *vcpu);
+
+#ifdef CONFIG_PKVM_INTEL
+
+#include <asm/pkvm_image.h>
+#include <asm/pkvm_redef.h>
+
+int __init vmx_pkvm_init(void);
+PKVM_DECLARE(void, pkvm_host_vmexit_entry, (void));
+PKVM_DECLARE(int, pkvm_vmx_register_excp_handlers, (void));
+
+extern struct vmx_capability pkvm_sym(vmx_capability);
+extern struct vmcs_config pkvm_sym(host_vmcs_config);
+extern struct pkvm_init_ops *pkvm_sym(pkvm_vmx_init_ops);
+
+#endif /* CONFIG_PKVM_INTEL */
 
 #endif /* __KVM_X86_VMX_H */
