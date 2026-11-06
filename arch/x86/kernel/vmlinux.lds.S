@@ -166,6 +166,18 @@ PHDRS {
 	. = ALIGN(PAGE_SIZE);						\
 	pkvm_sym(ro_after_init_end) = .;				\
 	}
+
+#define PKVM_PERCPU							\
+	PKVM_SECTION_NAME(.data..percpu) :				\
+		AT(ADDR(PKVM_SECTION_NAME(.data..percpu)) -		\
+		   LOAD_OFFSET) {					\
+	. = ALIGN(PAGE_SIZE);						\
+	pkvm_sym(__per_cpu_start) = .;					\
+	*(PKVM_SECTION_NAME(.data..percpu))				\
+	. = ALIGN(PAGE_SIZE);						\
+	pkvm_sym(__per_cpu_end) = .;					\
+	}
+
 #else
 
 #define PKVM_TEXT
@@ -173,6 +185,7 @@ PHDRS {
 #define PKVM_DATA
 #define PKVM_RODATA
 #define PKVM_RO_AFTER_INIT
+#define PKVM_PERCPU
 
 #endif
 
@@ -409,6 +422,7 @@ SECTIONS
 	}
 
 	PERCPU_SECTION(L1_CACHE_BYTES)
+	PKVM_PERCPU
 	ASSERT(__per_cpu_hot_end - __per_cpu_hot_start <= 64, "percpu cache hot data too large")
 
 	RUNTIME_CONST_VARIABLES
