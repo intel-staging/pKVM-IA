@@ -4,6 +4,8 @@
 
 #ifdef __PKVM_HYP__
 
+#ifndef CONFIG_PKVM_X86_DEBUG
+
 #undef WARN_ON
 #undef WARN
 #undef WARN_ON_ONCE
@@ -25,6 +27,8 @@
 #define WARN_ONCE(condition, format...) WARN(condition, format)
 
 #define _BUG_FLAGS(cond_str, ins, flags, extra)  asm volatile(ins)
+
+#endif /* CONFIG_PKVM_X86_DEBUG */
 
 #endif /* __PKVM_HYP__ */
 

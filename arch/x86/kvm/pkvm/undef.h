@@ -10,7 +10,9 @@
  * disabled. (This list needs to be extended when new variants are added.)
  */
 #undef CONFIG_CALL_THUNKS_DEBUG
+#ifndef CONFIG_PKVM_X86_DEBUG
 #undef CONFIG_PRINTK
+#endif
 #undef CONFIG_PARAVIRT
 #undef CONFIG_PARAVIRT_XXL
 #undef CONFIG_PARAVIRT_SPINLOCKS

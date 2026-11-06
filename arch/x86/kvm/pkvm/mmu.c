@@ -173,11 +173,20 @@ static int fix_hyp_mmu_page_refcnt(void)
 	};
 	unsigned long size;
 
+#ifdef CONFIG_PKVM_X86_DEBUG
+	/*
+	 * Only the memory addresses under VMALLOC_START are mapped by the
+	 * pKVM hypervisor itself, thus only need to fix vmemmap for this
+	 * range.
+	 */
+	size = VMALLOC_START & ~hyp_mmu.pgt_ops->level_to_mask(hyp_mmu.cap.level + 1);
+#else
 	/*
 	 * Calculate the max address space, then walk the [0, size) address
 	 * range to fixup refcount of every page-table page.
 	 */
 	size = pkvm_pgtable_max_size(&hyp_mmu);
+#endif
 
 	return pkvm_pgtable_walk(&hyp_mmu, 0, size, &walker);
 }
@@ -201,6 +210,7 @@ static int host_mmu_map(unsigned long phys, unsigned long size, bool mmio)
 	return pkvm_pgtable_map(&host_mmu, phys, phys, size, prot);
 }
 
+#ifndef CONFIG_PKVM_X86_DEBUG
 static int host_mmu_map_ro(unsigned long phys, unsigned long size)
 {
 	u64 prot = host_mmu.pgt_ops->calc_pte_perm(true, false, false) |
@@ -211,6 +221,7 @@ static int host_mmu_map_ro(unsigned long phys, unsigned long size)
 	/* The vaddr == phys for the host MMU */
 	return pkvm_pgtable_map(&host_mmu, phys, phys, size, prot);
 }
+#endif
 
 static int host_mmu_unmap(unsigned long phys, unsigned long size)
 {
@@ -301,6 +312,18 @@ int pkvm_hyp_mmu_map(unsigned long vaddr, unsigned long phys,
 	return pkvm_pgtable_map(&hyp_mmu, vaddr, phys, size, prot);
 }
 
+#ifdef CONFIG_PKVM_X86_DEBUG
+void pkvm_hyp_mmu_clone_host(unsigned long start_vaddr)
+{
+	int i = hyp_mmu_vaddr_to_index(start_vaddr, hyp_mmu.cap.level);
+	u64 *host_cr3 = __pkvm_va(__native_read_cr3() & PAGE_MASK);
+	u64 *ptep = __pkvm_va(hyp_mmu.root_pa);
+
+	for (; i < PTRS_PER_PTE; i++)
+		ptep[i] = host_cr3[i];
+}
+#endif
+
 int pkvm_host_mmu_init(void *pool_base, unsigned long pool_pages,
 		       const struct pkvm_mem_info infos[], int nr_infos,
 		       host_mmu_init_fn_t fn)
@@ -343,6 +366,19 @@ int pkvm_host_mmu_init(void *pool_base, unsigned long pool_pages,
 	 * getting size of a pKVM's static branch.
 	 */
 	for (i = 0; i < nr_infos; i++) {
+#ifdef CONFIG_PKVM_X86_DEBUG
+		/*
+		 * Only keep the pKVM TEXT/DATA mapped in the host mmu to allow
+		 * the host to access pKVM's text and data for debugging, and
+		 * unmap all the other regions i.e., pKVM reserved memory region
+		 * which the host doesn't need to access.
+		 */
+		if (infos[i].type != PKVM_TEXT_DATA) {
+			ret = host_mmu_unmap(infos[i].pa, infos[i].size);
+			if (ret)
+				return ret;
+		}
+#else
 		if (is_pkvm_text_range(infos[i].pa, infos[i].size))
 			ret = host_mmu_map_ro(infos[i].pa, infos[i].size);
 		else
@@ -350,6 +386,7 @@ int pkvm_host_mmu_init(void *pool_base, unsigned long pool_pages,
 
 		if (ret)
 			return ret;
+#endif
 	}
 
 	return 0;
