@@ -12,6 +12,7 @@ int pkvm_hyp_mmu_map(unsigned long vaddr, unsigned long phys,
 		     unsigned long size, u64 prot);
 
 int pkvm_host_mmu_init(void *pool_base, unsigned long pool_pages,
+		       const struct pkvm_mem_info infos[], int nr_infos,
 		       host_mmu_init_fn_t fn);
 
 #endif /* __PKVM_X86_MMU_H */
