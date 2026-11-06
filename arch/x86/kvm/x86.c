@@ -446,7 +446,6 @@ void kvm_deliver_exception_payload(struct kvm_vcpu *vcpu,
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_deliver_exception_payload);
 
-#ifndef __PKVM_HYP__
 static void kvm_queue_exception_vmexit(struct kvm_vcpu *vcpu, unsigned int vector,
 				       bool has_error_code, u32 error_code,
 				       bool has_payload, unsigned long payload)
@@ -461,7 +460,6 @@ static void kvm_queue_exception_vmexit(struct kvm_vcpu *vcpu, unsigned int vecto
 	ex->has_payload = has_payload;
 	ex->payload = payload;
 }
-#endif /* !__PKVM_HYP__ */
 
 static void kvm_multiple_exception(struct kvm_vcpu *vcpu, unsigned int nr,
 				   bool has_error, u32 error_code,
@@ -539,6 +537,7 @@ void kvm_queue_exception_p(struct kvm_vcpu *vcpu, unsigned nr,
 	kvm_multiple_exception(vcpu, nr, false, 0, true, payload);
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_queue_exception_p);
+#endif /* !__PKVM_HYP__ */
 
 static void kvm_queue_exception_e_p(struct kvm_vcpu *vcpu, unsigned nr,
 				    u32 error_code, unsigned long payload)
@@ -546,6 +545,7 @@ static void kvm_queue_exception_e_p(struct kvm_vcpu *vcpu, unsigned nr,
 	kvm_multiple_exception(vcpu, nr, true, error_code, true, payload);
 }
 
+#ifndef __PKVM_HYP__
 void kvm_requeue_exception(struct kvm_vcpu *vcpu, unsigned int nr,
 			   bool has_error_code, u32 error_code)
 {
@@ -585,6 +585,7 @@ int kvm_complete_insn_gp(struct kvm_vcpu *vcpu, int err)
 	return 1;
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_complete_insn_gp);
+#endif /* !__PKVM_HYP__ */
 
 void kvm_inject_page_fault(struct kvm_vcpu *vcpu, struct x86_exception *fault,
 			   bool from_hardware)
@@ -604,6 +605,7 @@ void kvm_inject_page_fault(struct kvm_vcpu *vcpu, struct x86_exception *fault,
 					fault->address);
 }
 
+#ifndef __PKVM_HYP__
 void __kvm_inject_emulated_page_fault(struct kvm_vcpu *vcpu,
 				      struct x86_exception *fault,
 				      bool from_hardware)
