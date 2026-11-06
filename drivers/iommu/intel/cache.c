@@ -82,11 +82,17 @@ int cache_tag_assign(struct dmar_domain *domain, u16 did, struct pkvm_device *de
 	unsigned long flags;
 
 	tag = kzalloc(sizeof(*tag), GFP_KERNEL);
-#else
-	tag = pkvm_alloc_cache_tag();
-#endif
 	if (!tag)
 		return -ENOMEM;
+#else
+	/*
+	 * Return -ENOSPC instead of -ENOMEM: host hypercall callers treat
+	 * -ENOMEM strictly as a request to donate a context/PASID table page.
+	 */
+	tag = pkvm_alloc_cache_tag();
+	if (!tag)
+		return -ENOSPC;
+#endif
 
 	tag->type = type;
 	tag->iommu = iommu;
