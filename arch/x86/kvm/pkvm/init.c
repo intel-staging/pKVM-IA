@@ -13,6 +13,7 @@
 struct pkvm_init_ops *init_ops;
 
 static void *hyp_pgt_base;
+static void *pkvm_vmemmap_base;
 
 static DEFINE_PER_CPU(bool, cpu_initialized);
 
@@ -26,6 +27,70 @@ static int divide_memory_pool(phys_addr_t phys, unsigned long size)
 	hyp_pgt_base = pkvm_early_alloc_contig(nr_pages);
 	if (!hyp_pgt_base)
 		return -ENOMEM;
+
+	nr_pages = pkvm_vmemmap_pages(sizeof(struct pkvm_page));
+	pkvm_vmemmap_base = pkvm_early_alloc_contig(nr_pages);
+	if (!pkvm_vmemmap_base)
+		return -ENOMEM;
+
+	return 0;
+}
+
+static int back_vmemmap(phys_addr_t back_pa)
+{
+	unsigned long start_va, size, end_va = 0;
+	struct memblock_region *reg;
+	unsigned int i;
+	int ret;
+
+	/*
+	 * Map the vmemmap region at virtual address 64KB.
+	 * Keep the lower pages unmapped, to catch NULL dereference bugs in the
+	 * hypervisor code.
+	 *
+	 * 64KB guard hole is chosen as it mimics kernel's mmap_min_addr (which
+	 * is typically set to 32KB or 64KB) and should catch most of struct
+	 * member offsets.
+	 */
+	__pkvm_vmemmap = SZ_64K;
+
+	for (i = 0; i < pkvm_memblock_nr; i++) {
+		reg = &pkvm_memory[i];
+		/* Translate a range of memory to vmemmap range */
+		start_va = ALIGN_DOWN((unsigned long)pkvm_phys_to_page(reg->base),
+				      PAGE_SIZE);
+		/*
+		 * The beginning of the pkvm_vmemmap region for the current
+		 * memblock may already be backed by the page backing the end
+		 * of the previous region, so avoid mapping it twice.
+		 */
+		start_va = max(start_va, end_va);
+
+		end_va = ALIGN((unsigned long)pkvm_phys_to_page(reg->base + reg->size),
+				PAGE_SIZE);
+		/*
+		 * The vmemmap va shall below PAGE_OFFSET to avoid overlapping
+		 * with the pKVM direct mapping
+		 */
+		if (end_va >= PAGE_OFFSET)
+			return -ENOMEM;
+		if (start_va >= end_va)
+			continue;
+
+		size = end_va - start_va;
+		/*
+		 * Create mapping for vmemmap virtual address
+		 * [start_va, start_va+size) to physical address
+		 * [back_pa, back_pa+size).
+		 */
+		ret = pkvm_hyp_mmu_map(start_va, back_pa, size,
+				       (u64)pgprot_val(PAGE_KERNEL));
+		if (ret)
+			return ret;
+
+		memset(__pkvm_va(back_pa), 0, size);
+		back_pa += size;
+	}
 
 	return 0;
 }
@@ -85,6 +150,10 @@ static int create_hyp_mmu(const struct pkvm_mem_info infos[], int nr_infos)
 			}
 		}
 	}
+
+	ret = back_vmemmap(__pkvm_pa(pkvm_vmemmap_base));
+	if (ret)
+		return ret;
 
 	/* Load the pKVM hypervisor's MMU on this CPU */
 	pkvm_hyp_mmu_load();
