@@ -752,7 +752,10 @@ void vmx_exit(void);
 
 #ifdef CONFIG_PKVM_INTEL
 
+#include <asm/pkvm_image.h>
+
 int __init vmx_pkvm_init(void);
+extern struct vmx_capability pkvm_sym(vmx_capability);
 
 #endif /* CONFIG_PKVM_INTEL */
 
