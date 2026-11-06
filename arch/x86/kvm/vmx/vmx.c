@@ -82,6 +82,7 @@ MODULE_AUTHOR("Qumranet");
 MODULE_DESCRIPTION("KVM support for VMX (Intel VT-x) extensions");
 MODULE_LICENSE("GPL");
 
+#ifndef __PKVM_HYP__
 #ifdef MODULE
 static const struct x86_cpu_id vmx_cpu_id[] = {
 	X86_MATCH_FEATURE(X86_FEATURE_VMX, NULL),
@@ -598,8 +599,10 @@ static DECLARE_BITMAP(vmx_vpid_bitmap, VMX_NR_VPIDS);
 static DEFINE_SPINLOCK(vmx_vpid_lock);
 
 struct vmcs_config vmcs_config __ro_after_init;
+#endif /* !__PKVM_HYP__ */
 struct vmx_capability vmx_capability __ro_after_init;
 
+#ifndef __PKVM_HYP__
 #define VMX_SEGMENT_FIELD(seg)					\
 	[VCPU_SREG_##seg] = {                                   \
 		.selector = GUEST_##seg##_SELECTOR,		\
@@ -8896,3 +8899,4 @@ err_l1d_flush:
 	kvm_x86_vendor_exit();
 	return r;
 }
+#endif /* !__PKVM_HYP__ */
