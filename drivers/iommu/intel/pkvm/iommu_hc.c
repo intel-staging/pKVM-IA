@@ -430,6 +430,15 @@ static int __validate_domain_params(struct intel_iommu *iommu, struct alloc_doma
 	} else if (data->max_addr != __DOMAIN_MAX_ADDR(data->gaw)) {
 		pkvm_err("%s: invalid max_addr(%llx) from host!\n",
 			 __func__, data->max_addr);
+	} else if (pkvm_host_gpa_to_phys(data->pgd_gpa) >= MAXMEM) {
+		/*
+		 * Keep pgd_gpa within MAXMEM so pgd = __pkvm_va(pgd_gpa)
+		 * cannot overflow or reach __START_KERNEL_map, where
+		 * __pkvm_pa(pgd) stops subtracting PAGE_OFFSET and uses
+		 * phys_base instead (making __pkvm_pa(pgd) != pgd_gpa).
+		 */
+		pkvm_err("%s: invalid pgd_gpa(%llx) from host!\n",
+			 __func__, data->pgd_gpa);
 	} else {
 		ret = 0;
 	}
