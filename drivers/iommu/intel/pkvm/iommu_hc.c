@@ -50,7 +50,7 @@ int pkvm_iommu_clear_ce(struct clear_ce_data *data)
 		 __func__, data->bus, data->devfn, data->ats_qdep);
 	domain_context_clear_one(&info, data->bus, data->devfn, &domain);
 	if (domain)
-		pkvm_put_iommu_domain(domain);
+		pkvm_put_iommu_domain(domain, iommu);
 
 	return 0;
 }
@@ -84,7 +84,7 @@ static int iommu_set_lm_ce(struct set_lm_ce_data *data)
 	u16 bdf = PCI_DEVID(data->bus, data->devfn);
 	struct device_domain_info info = { 0 };
 	struct dmar_domain *domain;
-	void *pgd;
+	u16 did = 0;
 	int ret;
 
 	if (!iommu)
@@ -111,26 +111,24 @@ static int iommu_set_lm_ce(struct set_lm_ce_data *data)
 	if (ret)
 		return ret;
 
-	pgd = pkvm_host_gpa_to_virt(data->pgd_gpa);
-	domain = pkvm_get_iommu_domain(pgd, data->did, iommu);
+	domain = pkvm_get_iommu_domain(data->pgd_gpa, iommu, &did);
 	if (!domain) {
-		pkvm_err("%s: Failed to locate domain with pgd: %p\n",
-			 __func__, pgd);
+		pkvm_err("%s: Failed to locate domain with pgd_gpa: %llx\n",
+			 __func__, data->pgd_gpa);
 		return -EINVAL;
 	}
 	if (domain->use_first_level) {
 		pkvm_err("%s: Domain has use_first_level set, expected SL\n", __func__);
-		pkvm_put_iommu_domain(domain);
+		pkvm_put_iommu_domain(domain, iommu);
 		return -EINVAL;
 	}
 
 	pkvm_dbg("%s: dev[%x:%x], did: %d, pgd: %p, agaw: %d\n", __func__,
-		 data->bus, data->devfn, data->did, domain->pgd,
-		 domain->agaw);
-	ret = domain_context_mapping_one(domain, iommu, &info, data->did,
+		 data->bus, data->devfn, did, domain->pgd, domain->agaw);
+	ret = domain_context_mapping_one(domain, iommu, &info, did,
 					 data->bus, data->devfn);
 	if (ret) {
-		pkvm_put_iommu_domain(domain);
+		pkvm_put_iommu_domain(domain, iommu);
 		/*
 		 * If entry already exists, the host expects
 		 * the hypercall to succeed.
@@ -240,7 +238,7 @@ static int iommu_pasid_setup_fl(struct pasid_setup_fl_data *data)
 	struct pkvm_device dev = { .info = &info };
 	struct dmar_domain *domain;
 	int level, ret;
-	void *pgd;
+	u16 did = 0;
 
 	if (!iommu)
 		return -EINVAL;
@@ -251,8 +249,8 @@ static int iommu_pasid_setup_fl(struct pasid_setup_fl_data *data)
 	if (data->ats_qdep > PCI_ATS_MAX_QDEP)
 		return -EINVAL;
 
-	if (data->did == FLPT_DEFAULT_DID) {
-		pkvm_err("%s: First-level setup not allowed for default domain\n", __func__);
+	if (!data->fsptptr_gpa) {
+		pkvm_err("%s: First-level setup not allowed for passthrough\n", __func__);
 		return -EPERM;
 	}
 
@@ -271,18 +269,17 @@ static int iommu_pasid_setup_fl(struct pasid_setup_fl_data *data)
 	if (ret)
 		return ret;
 
-	pgd = pkvm_host_gpa_to_virt(data->fsptptr_gpa);
-	domain = pkvm_get_iommu_domain(pgd, data->did, iommu);
+	domain = pkvm_get_iommu_domain(data->fsptptr_gpa, iommu, &did);
 	if (!domain) {
-		pkvm_err("%s: Failed to locate domain with pgd: %p\n",
-			 __func__, pgd);
+		pkvm_err("%s: Failed to locate domain with pgd_gpa: %llx\n",
+			 __func__, data->fsptptr_gpa);
 		return -EINVAL;
 	}
 
 	ret = -EINVAL;
 	if (!domain->use_first_level) {
-		pkvm_err("%s: Domain did %d does not use first-level translation\n",
-			 __func__, data->did);
+		pkvm_err("%s: Domain[pgd:%p] does not use first-level translation\n",
+			 __func__, domain->pgd);
 		goto put_domain;
 	}
 
@@ -294,12 +291,11 @@ static int iommu_pasid_setup_fl(struct pasid_setup_fl_data *data)
 	}
 
 	pkvm_dbg("%s: dev[%x:%x], pasid: %x, fsptptr_gpa: %llx, did: %d\n", __func__,
-		 data->bus, data->devfn, data->pasid, data->fsptptr_gpa, data->did);
+		 data->bus, data->devfn, data->pasid, data->fsptptr_gpa, did);
 
 	if (domain->domain.type == IOMMU_DOMAIN_NESTED) {
-		ret = intel_pasid_setup_nested(iommu, &dev, data->pasid,
-					       data->did, domain,
-					       data->force_snoop);
+		ret = intel_pasid_setup_nested(iommu, &dev, data->pasid, did,
+					       domain, data->force_snoop);
 	} else {
 		int flags = 0;
 
@@ -308,14 +304,13 @@ static int iommu_pasid_setup_fl(struct pasid_setup_fl_data *data)
 		if (level == 5)
 			flags |= PASID_FLAG_FL5LP;
 		ret = intel_pasid_setup_first_level(iommu, domain, &dev,
-						    __pkvm_pa(pgd),
-						    data->pasid, data->did,
-						    flags);
+						    __pkvm_pa(domain->pgd),
+						    data->pasid, did, flags);
 	}
 
 put_domain:
 	if (ret)
-		pkvm_put_iommu_domain(domain);
+		pkvm_put_iommu_domain(domain, iommu);
 
 	return ret;
 }
@@ -334,7 +329,7 @@ static int iommu_pasid_setup_sl(struct pasid_setup_sl_data *data)
 	struct device_domain_info info = { 0 };
 	struct pkvm_device dev = { .info = &info };
 	struct dmar_domain *domain;
-	void *pgd;
+	u16 did = 0;
 	int ret;
 
 	if (!iommu)
@@ -355,26 +350,25 @@ static int iommu_pasid_setup_sl(struct pasid_setup_sl_data *data)
 	if (ret)
 		return ret;
 
-	pgd = pkvm_host_gpa_to_virt(data->ssptptr_gpa);
-	domain = pkvm_get_iommu_domain(pgd, data->did, iommu);
+	domain = pkvm_get_iommu_domain(data->ssptptr_gpa, iommu, &did);
 	if (!domain) {
-		pkvm_err("%s: Failed to locate domain with pgd: %p\n",
-			 __func__, pgd);
+		pkvm_err("%s: Failed to locate domain with pgd_gpa: %llx\n",
+			 __func__, data->ssptptr_gpa);
 		return -EINVAL;
 	}
 	if (domain->use_first_level) {
 		pkvm_err("%s: Domain has use_first_level set, expected SL\n", __func__);
-		pkvm_put_iommu_domain(domain);
+		pkvm_put_iommu_domain(domain, iommu);
 		return -EINVAL;
 	}
 
 	pkvm_dbg("%s: dev[%x:%x], pasid: %x ssptptr_gpa: %llx, did: %d\n", __func__,
-		 data->bus, data->devfn, data->pasid, data->ssptptr_gpa, data->did);
+		 data->bus, data->devfn, data->pasid, data->ssptptr_gpa, did);
 
-	ret = intel_pasid_setup_second_level(iommu, domain, &dev,
-					     data->did, data->pasid);
+	ret = intel_pasid_setup_second_level(iommu, domain, &dev, did,
+					     data->pasid);
 	if (ret)
-		pkvm_put_iommu_domain(domain);
+		pkvm_put_iommu_domain(domain, iommu);
 
 	return ret;
 }
@@ -412,7 +406,7 @@ int pkvm_iommu_pasid_teardown(struct pasid_teardown_data *data)
 		 data->bus, data->devfn, data->pasid, data->ats_qdep);
 	intel_pasid_tear_down_entry(iommu, &dev, data->pasid, false, &domain);
 	if (domain)
-		pkvm_put_iommu_domain(domain);
+		pkvm_put_iommu_domain(domain, iommu);
 
 	return 0;
 }

@@ -71,7 +71,6 @@ struct set_lm_ce_data {
 	u64 phys;
 	u64 pgd_gpa;
 	u64 donation_page_gpa;
-	u16 did;
 	u8 bus;
 	u8 devfn;
 	u8 ats_qdep;
@@ -96,7 +95,6 @@ struct pasid_setup_fl_data {
 	u64 fsptptr_gpa;
 	u64 donation_page_gpa;
 	u32 pasid;
-	u16 did;
 	u8 bus;
 	u8 devfn;
 	u8 ats_qdep;
@@ -108,7 +106,6 @@ struct pasid_setup_sl_data {
 	u64 ssptptr_gpa;
 	u64 donation_page_gpa;
 	u32 pasid;
-	u16 did;
 	u8 bus;
 	u8 devfn;
 	u8 ats_qdep;

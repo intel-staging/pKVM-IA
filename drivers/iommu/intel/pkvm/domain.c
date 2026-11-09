@@ -10,13 +10,9 @@
 #include "pkvm/vmx/ept.h"
 #include "../iommu.h"
 
-/*
- * TODO: Make this a dynamic value.
- */
-#define MAX_IOMMU_DOMAIN_NUM	128
 static DEFINE_HASHTABLE(iommu_domain_hasht, 8);
-static DECLARE_BITMAP(iommu_domains_bitmap, MAX_IOMMU_DOMAIN_NUM);
-static struct dmar_domain iommu_domains[MAX_IOMMU_DOMAIN_NUM];
+static DECLARE_BITMAP(iommu_domains_bitmap, PKVM_MAX_DOMAIN_NUM);
+static struct dmar_domain iommu_domains[PKVM_MAX_DOMAIN_NUM];
 static DEFINE_PKVM_SPINLOCK(iommu_domain_lock);
 
 /*
@@ -85,6 +81,11 @@ static struct dmar_domain *__pkvm_get_iommu_domain_noref(void *pgd)
 	return domain;
 }
 
+static void __pkvm_put_iommu_domain(struct dmar_domain *domain)
+{
+	WARN_ON_ONCE(atomic_dec_if_positive(&domain->refcount) <= 0);
+}
+
 /*
  * Check the domain properties that affect how an IOMMU walks and caches the
  * domain page tables. A domain may be shared by multiple IOMMUs, but only if
@@ -127,22 +128,84 @@ static bool iommu_domain_compatible(struct intel_iommu *iommu,
 	return true;
 }
 
-struct dmar_domain *pkvm_get_iommu_domain(void *pgd, u16 did,
-					  struct intel_iommu *iommu)
+static int iommu_domain_get_did(struct intel_iommu *iommu,
+				struct dmar_domain *domain)
+{
+	struct iommu_domain_info *info = &domain->iommu_info[iommu->idx];
+	unsigned long ndids, bit;
+	u16 did;
+
+	ndids = min_t(unsigned long, cap_ndoms(iommu->cap) - IDA_START_DID,
+		      PKVM_MAX_DOMAIN_NUM);
+
+	pkvm_spin_lock(&iommu->did_lock);
+	if (!info->refcnt) {
+		bit = find_first_zero_bit(iommu->did_map, ndids);
+		if (bit >= ndids) {
+			pkvm_spin_unlock(&iommu->did_lock);
+			pkvm_err("%s: iommu%d: out of domain IDs\n", __func__,
+				 iommu->seq_id);
+			return -ENOSPC;
+		}
+		__set_bit(bit, iommu->did_map);
+		info->iommu = iommu;
+		info->did = IDA_START_DID + bit;
+	}
+	info->refcnt++;
+	did = info->did;
+	pkvm_spin_unlock(&iommu->did_lock);
+
+	return did;
+}
+
+static void iommu_domain_put_did(struct intel_iommu *iommu,
+				 struct dmar_domain *domain)
+{
+	struct iommu_domain_info *info = &domain->iommu_info[iommu->idx];
+
+	pkvm_spin_lock(&iommu->did_lock);
+	if (WARN_ON_ONCE(!info->refcnt || info->iommu != iommu)) {
+		pkvm_spin_unlock(&iommu->did_lock);
+		return;
+	}
+	if (!--info->refcnt) {
+		__clear_bit(info->did - IDA_START_DID, iommu->did_map);
+		info->iommu = NULL;
+		info->did = 0;
+	}
+	pkvm_spin_unlock(&iommu->did_lock);
+}
+
+struct dmar_domain *pkvm_get_iommu_domain(u64 pgd_gpa,
+					  struct intel_iommu *iommu, u16 *did)
 {
 	struct dmar_domain *domain;
+	void *pgd;
+	int ret;
 
-	if (did == FLPT_DEFAULT_DID)
+	if (!pgd_gpa) {
+		*did = FLPT_DEFAULT_DID;
 		return &pt_domain;
+	}
 
+	pgd = pkvm_host_gpa_to_virt(pgd_gpa);
 	domain = __pkvm_get_iommu_domain(pgd);
+	if (!domain)
+		return NULL;
 
-	if (domain && !iommu_domain_compatible(iommu, domain)) {
+	if (!iommu_domain_compatible(iommu, domain)) {
 		pkvm_err("%s: domain[pgd:%p] is incompatible with iommu%d\n",
 			 __func__, pgd, iommu->seq_id);
-		pkvm_put_iommu_domain(domain);
-		domain = NULL;
+		__pkvm_put_iommu_domain(domain);
+		return NULL;
 	}
+
+	ret = iommu_domain_get_did(iommu, domain);
+	if (ret < 0) {
+		__pkvm_put_iommu_domain(domain);
+		return NULL;
+	}
+	*did = ret;
 
 	return domain;
 }
@@ -155,12 +218,14 @@ struct dmar_domain *pkvm_get_iommu_domain_noref(void *pgd, u16 did)
 	return __pkvm_get_iommu_domain_noref(pgd);
 }
 
-void pkvm_put_iommu_domain(struct dmar_domain *domain)
+void pkvm_put_iommu_domain(struct dmar_domain *domain,
+			   struct intel_iommu *iommu)
 {
 	if (domain == &pt_domain)
 		return;
 
-	WARN_ON_ONCE(atomic_dec_if_positive(&domain->refcount) <= 0);
+	iommu_domain_put_did(iommu, domain);
+	__pkvm_put_iommu_domain(domain);
 }
 
 static int refill_domain_memcache(struct dmar_domain *domain,
@@ -261,8 +326,8 @@ struct dmar_domain *pkvm_alloc_iommu_domain(struct alloc_domain_data *data,
 		return ERR_PTR(-EEXIST);
 	}
 
-	index = find_first_zero_bit(iommu_domains_bitmap, MAX_IOMMU_DOMAIN_NUM);
-	if (index < MAX_IOMMU_DOMAIN_NUM) {
+	index = find_first_zero_bit(iommu_domains_bitmap, PKVM_MAX_DOMAIN_NUM);
+	if (index < PKVM_MAX_DOMAIN_NUM) {
 		__set_bit(index, iommu_domains_bitmap);
 		domain = &iommu_domains[index];
 		INIT_LIST_HEAD(&domain->cache_tags);
@@ -347,7 +412,7 @@ static int iommu_domain_map(struct domain_map_data *data)
 out_unlock:
 	pkvm_spin_unlock(&domain->lock);
 out_put_domain:
-	pkvm_put_iommu_domain(domain);
+	__pkvm_put_iommu_domain(domain);
 
 	return ret;
 }
@@ -384,7 +449,7 @@ int pkvm_iommu_domain_unmap(u64 pgd_gpa, u64 start_pfn, u64 last_pfn)
 	pkvm_spin_unlock(&domain->lock);
 
 out_put_domain:
-	pkvm_put_iommu_domain(domain);
+	__pkvm_put_iommu_domain(domain);
 
 	return ret;
 }
@@ -417,12 +482,12 @@ int pkvm_iommu_domain_flush(u64 pgd_gpa, u64 start, u64 last, bool ih)
 	if (last > domain->max_addr && !(start == 0 && last == ULONG_MAX)) {
 		pkvm_err("%s: invalid flush range [%llx, %llx] for domain [pgd:%llx, max_addr:%llx]\n",
 			 __func__, start, last, pgd_gpa, domain->max_addr);
-		pkvm_put_iommu_domain(domain);
+		__pkvm_put_iommu_domain(domain);
 		return -EINVAL;
 	}
 
 	cache_tag_flush_range(domain, start, last, ih);
-	pkvm_put_iommu_domain(domain);
+	__pkvm_put_iommu_domain(domain);
 
 	return 0;
 }

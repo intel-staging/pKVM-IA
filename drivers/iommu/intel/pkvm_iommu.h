@@ -122,13 +122,13 @@ int __init pkvm_host_init_iommu(void);
 int pkvm_iec_flush(struct intel_iommu *iommu, bool global, int index, int mask);
 int pkvm_context_clear(u64 phys, u8 bus, u8 devfn, struct device_domain_info *info);
 int pkvm_context_mapping(struct intel_iommu *iommu, struct device_domain_info *info,
-			 u8 bus, u8 devfn, u64 pgd_gpa, u16 did);
+			 u8 bus, u8 devfn, u64 pgd_gpa);
 int pkvm_pasid_table_setup(struct intel_iommu *iommu, struct device_domain_info *info,
 			   u8 bus, u8 devfn);
 int pkvm_pasid_setup_fl(struct device_domain_info *info, phys_addr_t fsptptr,
-			u32 pasid, u16 did, int flags);
+			u32 pasid, int flags);
 int pkvm_pasid_setup_sl(struct device_domain_info *info, phys_addr_t ssptptr,
-			u32 pasid, u16 did);
+			u32 pasid);
 int pkvm_pasid_teardown(struct device_domain_info *info, u32 pasid);
 int pkvm_alloc_domain(struct device_domain_info *info, struct dmar_domain *domain);
 int pkvm_free_domain(struct dmar_domain *domain);
@@ -144,6 +144,11 @@ int pkvm_write_iommu_msi(struct intel_iommu *iommu, u32 offset, u32 data,
 			 u32 addr, u32 uaddr);
 
 #else /* __PKVM_HYP__ */
+/* Maximum number of IOMMUs (DMAR units) the hypervisor manages. */
+#define PKVM_MAX_IOMMU_NUM	32
+/* TODO: Make this a dynamic value. */
+#define PKVM_MAX_DOMAIN_NUM	128
+
 /*
  * dev_iommu_priv_get is called from quite a few places in code re-used by
  * hypervisor and is defined in include/linux/iommu.h. It takes struct device
@@ -187,10 +192,11 @@ bool pkvm_iommu_paging_structure_coherency(void);
 
 struct dmar_domain *pkvm_alloc_iommu_domain(struct alloc_domain_data *data,
 					    bool need_iotlb_sync_map);
-struct dmar_domain *pkvm_get_iommu_domain(void *pgd, u16 did,
-					  struct intel_iommu *iommu);
+struct dmar_domain *pkvm_get_iommu_domain(u64 pgd_gpa,
+					  struct intel_iommu *iommu, u16 *did);
 struct dmar_domain *pkvm_get_iommu_domain_noref(void *pgd, u16 did);
-void pkvm_put_iommu_domain(struct dmar_domain *domain);
+void pkvm_put_iommu_domain(struct dmar_domain *domain,
+			   struct intel_iommu *iommu);
 int pkvm_free_iommu_domain(u64 pgd_gpa, struct pkvm_memcache *teardown_mc);
 
 struct cache_tag *pkvm_alloc_cache_tag(void);
@@ -252,7 +258,7 @@ static inline int pkvm_context_clear(u64 phys, u8 bus, u8 devfn,
 }
 static inline int pkvm_context_mapping(struct intel_iommu *iommu,
 				       struct device_domain_info *info,
-				       u8 bus, u8 devfn, u64 pgd_gpa, u16 did)
+				       u8 bus, u8 devfn, u64 pgd_gpa)
 {
 	return -EOPNOTSUPP;
 }
@@ -264,13 +270,12 @@ static inline int pkvm_pasid_table_setup(struct intel_iommu *iommu,
 }
 static inline int pkvm_pasid_setup_fl(struct device_domain_info *info,
 				      phys_addr_t fsptptr, u32 pasid,
-				      u16 did, int flags)
+				      int flags)
 {
 	return -EOPNOTSUPP;
 }
 static inline int pkvm_pasid_setup_sl(struct device_domain_info *info,
-				      phys_addr_t ssptptr, u32 pasid,
-				      u16 did)
+				      phys_addr_t ssptptr, u32 pasid)
 {
 	return -EOPNOTSUPP;
 }

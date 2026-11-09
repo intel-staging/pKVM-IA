@@ -145,7 +145,7 @@ int pkvm_context_clear(u64 phys, u8 bus, u8 devfn, struct device_domain_info *in
 }
 
 int pkvm_context_mapping(struct intel_iommu *iommu, struct device_domain_info *info,
-			 u8 bus, u8 devfn, u64 pgd_gpa, u16 did)
+			 u8 bus, u8 devfn, u64 pgd_gpa)
 {
 	union pkvm_hc_data d = { 0 };
 	struct set_lm_ce_data *data = &d.iommu_set_lm_ce.in;
@@ -153,7 +153,6 @@ int pkvm_context_mapping(struct intel_iommu *iommu, struct device_domain_info *i
 
 	data->phys = iommu->reg_phys;
 	data->pgd_gpa = pgd_gpa;
-	data->did = did;
 	data->bus = bus;
 	data->devfn = devfn;
 	data->ats_qdep = info ? info->ats_qdep : 0;
@@ -224,7 +223,7 @@ int pkvm_pasid_table_setup(struct intel_iommu *iommu, struct device_domain_info 
 }
 
 int pkvm_pasid_setup_fl(struct device_domain_info *info, phys_addr_t fsptptr,
-		      u32 pasid, u16 did, int flags)
+			u32 pasid, int flags)
 {
 	union pkvm_hc_data d = { 0 };
 	struct pasid_setup_fl_data *data = &d.iommu_pasid_setup_fl.in;
@@ -235,7 +234,6 @@ int pkvm_pasid_setup_fl(struct device_domain_info *info, phys_addr_t fsptptr,
 	data->fsptptr_gpa = fsptptr;
 	data->pasid = pasid;
 	data->force_snoop = !!(flags & PASID_FLAG_PAGE_SNOOP);
-	data->did = did;
 	data->bus = info->bus;
 	data->devfn = info->devfn;
 	data->ats_qdep = info->ats_qdep;
@@ -262,7 +260,7 @@ int pkvm_pasid_setup_fl(struct device_domain_info *info, phys_addr_t fsptptr,
 }
 
 int pkvm_pasid_setup_sl(struct device_domain_info *info, phys_addr_t ssptptr,
-			u32 pasid, u16 did)
+			u32 pasid)
 {
 	union pkvm_hc_data d = { 0 };
 	struct pasid_setup_sl_data *data = &d.iommu_pasid_setup_sl.in;
@@ -272,7 +270,6 @@ int pkvm_pasid_setup_sl(struct device_domain_info *info, phys_addr_t ssptptr,
 	data->phys = iommu->reg_phys;
 	data->ssptptr_gpa = ssptptr;
 	data->pasid = pasid;
-	data->did = did;
 	data->bus = info->bus;
 	data->devfn = info->devfn;
 	data->ats_qdep = info->ats_qdep;
