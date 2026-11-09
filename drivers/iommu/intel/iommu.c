@@ -1555,6 +1555,10 @@ int domain_attach_iommu(struct dmar_domain *domain, struct intel_iommu *iommu)
 	if (domain->domain.type == IOMMU_DOMAIN_SVA)
 		return 0;
 
+	/* Under pKVM, the hypervisor owns domain ID allocation. */
+	if (pkvm_enabled())
+		return 0;
+
 	info = kzalloc(sizeof(*info), GFP_KERNEL);
 	if (!info)
 		return -ENOMEM;
@@ -1598,6 +1602,10 @@ void domain_detach_iommu(struct dmar_domain *domain, struct intel_iommu *iommu)
 	struct iommu_domain_info *info;
 
 	if (domain->domain.type == IOMMU_DOMAIN_SVA)
+		return;
+
+	/* Under pKVM, the hypervisor owns domain ID allocation. */
+	if (pkvm_enabled())
 		return;
 
 	guard(mutex)(&iommu->did_lock);
@@ -1694,7 +1702,7 @@ int domain_context_mapping_one(struct dmar_domain *domain,
 
 	if (pkvm_enabled()) {
 		ret = pkvm_context_mapping(iommu, info, bus, devfn,
-					   virt_to_phys(domain->pgd), did);
+					   virt_to_phys(domain->pgd));
 		if (ret)
 			pr_err("%s: iommu%d: pkvm_context_mapping failed(err=%d)\n",
 			       __func__, iommu->seq_id, ret);
@@ -1708,13 +1716,18 @@ int domain_context_mapping_one(struct dmar_domain *domain,
 	if (!context)
 		goto out_unlock;
 
-#ifndef __PKVM_HYP__
-	ret = 0;
+	if (context_present(context) && !context_copied(iommu, bus, devfn)) {
+#ifdef __PKVM_HYP__
+		/*
+		 * A present entry is only acceptable if DID in the context
+		 * entry is same as the @domain's DID.
+		 */
+		ret = context_domain_id(context) == did ? -EEXIST : -EBUSY;
 #else
-	ret = -EEXIST;
+		ret = 0;
 #endif
-	if (context_present(context) && !context_copied(iommu, bus, devfn))
 		goto out_unlock;
+	}
 
 #ifndef __PKVM_HYP__
 	copied_context_tear_down(iommu, context, bus, devfn);
@@ -4870,7 +4883,7 @@ static int context_setup_pass_through(struct device *dev, u8 bus, u8 devfn)
 	struct context_entry *context;
 
 	if (pkvm_enabled()) {
-		int ret = pkvm_context_mapping(iommu, info, bus, devfn, 0, FLPT_DEFAULT_DID);
+		int ret = pkvm_context_mapping(iommu, info, bus, devfn, 0);
 		if (ret) {
 			pr_err("%s: iommu%d: pkvm_context_mapping failed(err=%d)\n",
 			       __func__, iommu->seq_id, ret);

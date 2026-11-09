@@ -522,7 +522,7 @@ int intel_pasid_setup_first_level(struct intel_iommu *iommu,
 		if (!info || !info->pasid_table)
 			return -ENODEV;
 
-		ret = pkvm_pasid_setup_fl(info, fsptptr, pasid, did, flags);
+		ret = pkvm_pasid_setup_fl(info, fsptptr, pasid, flags);
 		if (ret)
 			pr_err("%s: iommu%d: pkvm_pasid_setup_fl failed(err=%d)\n",
 			       __func__, iommu->seq_id, ret);
@@ -623,7 +623,7 @@ int intel_pasid_setup_second_level(struct intel_iommu *iommu,
 		if (!info || !info->pasid_table)
 			return -ENODEV;
 
-		ret = pkvm_pasid_setup_sl(info, pgd_val, pasid, did);
+		ret = pkvm_pasid_setup_sl(info, pgd_val, pasid);
 		if (ret)
 			pr_err("%s: iommu%d: pkvm_pasid_setup_sl failed(err=%d)\n",
 			       __func__, iommu->seq_id, ret);
@@ -760,7 +760,7 @@ int intel_pasid_setup_pass_through(struct intel_iommu *iommu,
 		if (!info || !info->pasid_table)
 			return -ENODEV;
 
-		ret = pkvm_pasid_setup_sl(info, 0, pasid, did);
+		ret = pkvm_pasid_setup_sl(info, 0, pasid);
 		if (ret)
 			pr_err("%s: iommu%d: pkvm_pasid_setup_sl failed(err=%d)\n",
 			       __func__, iommu->seq_id, ret);
