@@ -47,6 +47,10 @@
 #include <asm/extable.h>
 
 extern char pkvm_sym(text_start)[], pkvm_sym(text_end)[];
+extern char pkvm_sym(rodata_start)[], pkvm_sym(rodata_end)[];
+extern char pkvm_sym(ro_after_init_start)[], pkvm_sym(ro_after_init_end)[];
+extern char pkvm_sym(data_start)[], pkvm_sym(data_end)[];
+extern char pkvm_sym(bss_start)[], pkvm_sym(bss_end)[];
 extern const struct exception_table_entry __start___ex_table[];
 extern const struct exception_table_entry __stop___ex_table[];
 
