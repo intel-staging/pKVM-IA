@@ -429,9 +429,10 @@ static void pgtable_free_child(struct pkvm_pgtable_visit_ctx *ctx)
 			BUG_ON(pgt_ops->pte_present(child) ||
 			       pgt_ops->pte_present(child + pgt_ops->pte_size(ctx->level)));
 		} else {
+			unsigned long size = pgt_ops->level_to_size(ctx->level);
+
 			/* Flush TLB before release the child table page */
-			pgt_ops->flush_tlb(ctx->pgt, ctx->addr,
-					   pgt_ops->level_to_size(ctx->level));
+			pgt_ops->flush_tlb(ctx->pgt, ALIGN_DOWN(ctx->addr, size), size);
 			mm_ops->put_page(child);
 		}
 		mm_ops->put_page(ptep);
