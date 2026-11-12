@@ -51,7 +51,7 @@ static const struct pkvm_pgtable_mm_ops hyp_mmu_mm_ops = {
 
 static bool hyp_mmu_pte_present(void *ptep)
 {
-	return pte_present(*(pte_t *)ptep);
+	return pte_flags(*(pte_t *)ptep) & _PAGE_PRESENT;
 }
 
 static bool hyp_mmu_pte_annotated(void *ptep)
