@@ -169,9 +169,11 @@ module_param(enable_mediated_pmu, bool, 0444);
 #define KVM_VM_CR4_ALWAYS_ON_UNRESTRICTED_GUEST X86_CR4_VMXE
 #define KVM_PMODE_VM_CR4_ALWAYS_ON (X86_CR4_PAE | X86_CR4_VMXE)
 #define KVM_RMODE_VM_CR4_ALWAYS_ON (X86_CR4_VME | X86_CR4_PAE | X86_CR4_VMXE)
+#endif /* !__PKVM_HYP__ */
 
 #define RMODE_GUEST_OWNED_EFLAGS_BITS (~(X86_EFLAGS_IOPL | X86_EFLAGS_VM))
 
+#ifndef __PKVM_HYP__
 #define MSR_IA32_RTIT_STATUS_MASK (~(RTIT_STATUS_FILTEREN | \
 	RTIT_STATUS_CONTEXTEN | RTIT_STATUS_TRIGGEREN | \
 	RTIT_STATUS_ERROR | RTIT_STATUS_STOPPED | \
@@ -534,6 +536,7 @@ static void vmx_update_fb_clear_dis(struct kvm_vcpu *vcpu, struct vcpu_vmx *vmx)
 static u32 vmx_segment_access_rights(struct kvm_segment *var);
 
 void vmx_vmexit(void);
+#endif /* !__PKVM_HYP__ */
 
 #define vmx_insn_failed(fmt...)		\
 do {					\
@@ -588,6 +591,7 @@ noinline void invept_error(unsigned long ext, u64 eptp)
 	vmx_insn_failed("invept failed: ext=0x%lx eptp=%llx\n", ext, eptp);
 }
 
+#ifndef __PKVM_HYP__
 DEFINE_PER_CPU(struct vmcs *, current_vmcs);
 /*
  * We maintain a per-CPU linked-list of VMCS loaded on that CPU. This is needed
@@ -1613,6 +1617,7 @@ bool vmx_emulation_required(struct kvm_vcpu *vcpu)
 {
 	return emulate_invalid_guest_state && !vmx_guest_state_valid(vcpu);
 }
+#endif /* !__PKVM_HYP__ */
 
 unsigned long vmx_get_rflags(struct kvm_vcpu *vcpu)
 {
@@ -1632,6 +1637,7 @@ unsigned long vmx_get_rflags(struct kvm_vcpu *vcpu)
 	return vmx->rflags;
 }
 
+#ifndef __PKVM_HYP__
 void vmx_set_rflags(struct kvm_vcpu *vcpu, unsigned long rflags)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
@@ -1665,6 +1671,7 @@ bool vmx_get_if_flag(struct kvm_vcpu *vcpu)
 {
 	return vmx_get_rflags(vcpu) & X86_EFLAGS_IF;
 }
+#endif /* !__PKVM_HYP__ */
 
 u32 vmx_get_interrupt_shadow(struct kvm_vcpu *vcpu)
 {
@@ -1695,6 +1702,7 @@ void vmx_set_interrupt_shadow(struct kvm_vcpu *vcpu, int mask)
 		vmcs_write32(GUEST_INTERRUPTIBILITY_INFO, interruptibility);
 }
 
+#ifndef __PKVM_HYP__
 static int vmx_rtit_ctl_check(struct kvm_vcpu *vcpu, u64 data)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
@@ -1895,6 +1903,7 @@ int vmx_skip_emulated_instruction(struct kvm_vcpu *vcpu)
 	vmx_update_emulated_instruction(vcpu);
 	return skip_emulated_instruction(vcpu);
 }
+#endif /* !__PKVM_HYP__ */
 
 static void vmx_clear_hlt(struct kvm_vcpu *vcpu)
 {
@@ -1950,6 +1959,7 @@ void vmx_inject_exception(struct kvm_vcpu *vcpu)
 		intr_info |= INTR_INFO_DELIVER_CODE_MASK;
 	}
 
+#ifndef __PKVM_HYP__
 	if (vmx->rmode.vm86_active) {
 		int inc_eip = 0;
 		if (kvm_exception_is_soft(ex->vector))
@@ -1957,6 +1967,7 @@ void vmx_inject_exception(struct kvm_vcpu *vcpu)
 		kvm_inject_realmode_interrupt(vcpu, ex->vector, inc_eip);
 		return;
 	}
+#endif
 
 	WARN_ON_ONCE(vmx->vt.emulation_required);
 
@@ -1972,6 +1983,7 @@ void vmx_inject_exception(struct kvm_vcpu *vcpu)
 	vmx_clear_hlt(vcpu);
 }
 
+#ifndef __PKVM_HYP__
 static void vmx_setup_uret_msr(struct vcpu_vmx *vmx, unsigned int msr,
 			       bool load_into_hardware)
 {
