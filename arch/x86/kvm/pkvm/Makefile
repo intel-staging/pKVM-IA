@@ -15,12 +15,23 @@ kernel-x86-lib			:= ../../lib
 pkvm-hyp-y			+= $(kernel-x86-lib)/memset_64.o
 
 kvm				:= ..
-pkvm-hyp-$(CONFIG_PKVM_INTEL)	+= $(kvm)/vmx/vmx.o vmx/host_vmx.o
+pkvm-hyp-$(CONFIG_PKVM_INTEL)	+= $(kvm)/vmx/vmx.o vmx/host_vmx.o \
+				   vmx/host_vmentry.o
+
+AFLAGS_vmx/host_vmentry.pkvm.o	+= -iquote $(srctree)/arch/x86/kvm
+AFLAGS_vmx/host_vmentry.pkvm.o	+= -iquote $(obj)
+$(obj)/vmx/host_vmentry.pkvm.o:	$(obj)/kvm-asm-offsets.h
+
+$(obj)/kvm-asm-offsets.s: $(src)/$(kvm)/kvm-asm-offsets.c FORCE
+	$(call if_changed_dep,cc_s_c)
+$(obj)/kvm-asm-offsets.h: $(obj)/kvm-asm-offsets.s FORCE
+	$(call filechk,offsets,__KVM_ASM_OFFSETS_H__)
 
 pkvm-obj 			:= $(patsubst %.o,%.pkvm.o,$(pkvm-hyp-y))
 obj-$(CONFIG_PKVM_X86)		+= pkvm.o
 
-targets += $(pkvm-obj) pkvm.tmp.o pkvm.lds
+targets += $(pkvm-obj) pkvm.tmp.o pkvm.lds kvm-asm-offsets.s
+clean-files += kvm-asm-offsets.h
 
 # When compiling with the $(objtool-enabled) is true, a single build-in object
 # will be processed by the objtool after all of these objects are linked as a
