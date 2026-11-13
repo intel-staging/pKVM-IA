@@ -173,6 +173,10 @@ PHDRS {
 	pkvm_sym(ro_after_init_end) = .;				\
 	}
 
+/*
+ * The PKVM_PERCPU requires to be put right after the PERCPU_SECTION to enlarge
+ * __per_cpu_end by pkvm_sym(__per_cpu_end).
+ */
 #define PKVM_PERCPU							\
 	PKVM_SECTION_NAME(.data..percpu) :				\
 		AT(ADDR(PKVM_SECTION_NAME(.data..percpu)) -		\
@@ -182,6 +186,7 @@ PHDRS {
 	*(PKVM_SECTION_NAME(.data..percpu))				\
 	. = ALIGN(PAGE_SIZE);						\
 	pkvm_sym(__per_cpu_end) = .;					\
+	__per_cpu_end = pkvm_sym(__per_cpu_end);			\
 	}
 
 #else
@@ -428,6 +433,10 @@ SECTIONS
 	}
 
 	PERCPU_SECTION(L1_CACHE_BYTES)
+	/*
+	 * The PKVM_PERCPU is defined with the assumption that it is put after
+	 * the PERCPU_SECTION.
+	 */
 	PKVM_PERCPU
 	ASSERT(__per_cpu_hot_end - __per_cpu_hot_start <= 64, "percpu cache hot data too large")
 
