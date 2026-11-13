@@ -73,12 +73,28 @@ SYM_FUNC_START(pkvm_host_vmexit_entry)
 	 */
 	UNTRAIN_RET
 
+	/* Restore pKVM's SPEC_CTRL value before executing hypervisor C code. */
+	ALTERNATIVE "jmp .Lspec_ctrl_host_done", "", X86_FEATURE_MSR_SPEC_CTRL
+	mov $KVM_ENTER_SAVE_SPEC_CTRL, %esi
+	RESTORE_HOST_SPEC_CTRL_BODY VMX_spec_ctrl(%_ASM_BX), %esi, \
+				    .Lspec_ctrl_host_done
+.Lspec_ctrl_host_done:
+
+	ALTERNATIVE_2 "", "lfence", X86_FEATURE_MSR_SPEC_CTRL, \
+		"", X86_FEATURE_KERNEL_IBRS
+
 	/* RDI: point to vcpu_vmx */
 	mov %_ASM_BX, %_ASM_DI
 
 	/* pKVM never enables interrupts */
 	call pkvm_host_vmexit_main
 
+	/* Restore host's SPEC_CTRL value before returning to host. */
+	ALTERNATIVE "jmp .Lspec_ctrl_guest_done", "", X86_FEATURE_MSR_SPEC_CTRL
+	RESTORE_GUEST_SPEC_CTRL_BODY VMX_spec_ctrl(%_ASM_BX), \
+				     .Lspec_ctrl_guest_done
+
+.Lspec_ctrl_guest_done:
 	/*
 	 * Restore registers to reflect the vm-exit handling/emulation result
 	 * before vmresume.

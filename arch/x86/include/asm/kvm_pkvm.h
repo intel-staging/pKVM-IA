@@ -126,6 +126,7 @@ PKVM_DECLARE(unsigned int, pkvm_per_cpu_nr_pages, (void));
 #define GEN(x, ...) PKVM_DECLARE(void, handle_exception_##x, (void));
 #include <asm/GEN-for-each-exc.h>
 #undef GEN
+PKVM_DECLARE(void, set_x86_spec_ctrl, (u64 spec_ctrl));
 
 #ifdef CONFIG_PKVM_INTEL
 unsigned long __init pkvm_vmx_reserve_pages(void);
