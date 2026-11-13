@@ -7,9 +7,6 @@
 
 bool __read_mostly enable_pkvm;
 
-static struct memblock_region pkvm_memory[PKVM_MEMBLOCK_REGIONS];
-static unsigned int pkvm_memblock_nr;
-
 phys_addr_t pkvm_mem_base;
 phys_addr_t pkvm_mem_size;
 
@@ -23,8 +20,8 @@ static int cmp_pkvm_memblock(const void *p1, const void *p2)
 
 static void __init sort_memblock_regions(void)
 {
-	sort(pkvm_memory,
-	     pkvm_memblock_nr,
+	sort(pkvm_sym(pkvm_memory),
+	     pkvm_sym(pkvm_memblock_nr),
 	     sizeof(struct memblock_region),
 	     cmp_pkvm_memblock,
 	     NULL);
@@ -32,15 +29,17 @@ static void __init sort_memblock_regions(void)
 
 static int __init register_memblock_regions(void)
 {
+	unsigned int memblock_nr = 0;
 	struct memblock_region *reg;
 
 	for_each_mem_region(reg) {
-		if (pkvm_memblock_nr >= PKVM_MEMBLOCK_REGIONS)
+		if (memblock_nr >= PKVM_MEMBLOCK_REGIONS)
 			return -ENOMEM;
 
-		pkvm_memory[pkvm_memblock_nr] = *reg;
-		pkvm_memblock_nr++;
+		pkvm_sym(pkvm_memory)[memblock_nr] = *reg;
+		memblock_nr++;
 	}
+	pkvm_sym(pkvm_memblock_nr) = memblock_nr;
 	sort_memblock_regions();
 
 	return 0;
