@@ -155,9 +155,14 @@ static int create_hyp_mmu(const struct pkvm_mem_info infos[], int nr_infos)
 	if (ret)
 		return ret;
 
+	/*
+	 * Load the hypervisor's MMU on this CPU before switching to the pKVM
+	 * buddy allocator, as the latter relies on the pKVM vmemmap mapped in
+	 * the hypervisor's MMU.
+	 */
 	pkvm_hyp_mmu_load();
 
-	return 0;
+	return pkvm_hyp_mmu_switch_to_buddy(hyp_pgt_base, nr_pages);
 }
 
 static int initialize_global(struct pkvm_mem_info infos[], int nr_infos)
