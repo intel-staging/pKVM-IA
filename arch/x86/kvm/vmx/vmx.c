@@ -83,6 +83,7 @@ MODULE_AUTHOR("Qumranet");
 MODULE_DESCRIPTION("KVM support for VMX (Intel VT-x) extensions");
 MODULE_LICENSE("GPL");
 
+#ifndef __PKVM_HYP__
 #ifdef MODULE
 static const struct x86_cpu_id vmx_cpu_id[] = {
 	X86_MATCH_FEATURE(X86_FEATURE_VMX, NULL),
@@ -172,9 +173,11 @@ module_param(enable_mediated_pmu, bool, 0444);
 #define KVM_VM_CR4_ALWAYS_ON_UNRESTRICTED_GUEST X86_CR4_VMXE
 #define KVM_PMODE_VM_CR4_ALWAYS_ON (X86_CR4_PAE | X86_CR4_VMXE)
 #define KVM_RMODE_VM_CR4_ALWAYS_ON (X86_CR4_VME | X86_CR4_PAE | X86_CR4_VMXE)
+#endif /* !__PKVM_HYP__ */
 
 #define RMODE_GUEST_OWNED_EFLAGS_BITS (~(X86_EFLAGS_IOPL | X86_EFLAGS_VM))
 
+#ifndef __PKVM_HYP__
 #define MSR_IA32_RTIT_STATUS_MASK (~(RTIT_STATUS_FILTEREN | \
 	RTIT_STATUS_CONTEXTEN | RTIT_STATUS_TRIGGEREN | \
 	RTIT_STATUS_ERROR | RTIT_STATUS_STOPPED | \
@@ -537,6 +540,7 @@ static void vmx_update_fb_clear_dis(struct kvm_vcpu *vcpu, struct vcpu_vmx *vmx)
 static u32 vmx_segment_access_rights(struct kvm_segment *var);
 
 void vmx_vmexit(void);
+#endif /* !__PKVM_HYP__ */
 
 #define vmx_insn_failed(fmt...)		\
 do {					\
@@ -591,6 +595,7 @@ noinline void invept_error(unsigned long ext, u64 eptp)
 	vmx_insn_failed("invept failed: ext=0x%lx eptp=%llx\n", ext, eptp);
 }
 
+#ifndef __PKVM_HYP__
 DEFINE_PER_CPU(struct vmcs *, current_vmcs);
 /*
  * We maintain a per-CPU linked-list of VMCS loaded on that CPU. This is needed
@@ -602,8 +607,10 @@ static DECLARE_BITMAP(vmx_vpid_bitmap, VMX_NR_VPIDS);
 static DEFINE_SPINLOCK(vmx_vpid_lock);
 
 struct vmcs_config vmcs_config __ro_after_init;
+#endif /* !__PKVM_HYP__ */
 struct vmx_capability vmx_capability __ro_after_init;
 
+#ifndef __PKVM_HYP__
 #define VMX_SEGMENT_FIELD(seg)					\
 	[VCPU_SREG_##seg] = {                                   \
 		.selector = GUEST_##seg##_SELECTOR,		\
@@ -632,7 +639,7 @@ static const struct kvm_vmx_segment_field {
 static unsigned long host_idt_base;
 
 #if IS_ENABLED(CONFIG_HYPERV)
-static bool __read_mostly enlightened_vmcs = true;
+static bool __read_mostly enlightened_vmcs = !IS_ENABLED(CONFIG_PKVM_INTEL);
 module_param(enlightened_vmcs, bool, 0444);
 
 static int hv_enable_l2_tlb_flush(struct kvm_vcpu *vcpu)
@@ -1626,6 +1633,7 @@ bool vmx_emulation_required(struct kvm_vcpu *vcpu)
 {
 	return emulate_invalid_guest_state && !vmx_guest_state_valid(vcpu);
 }
+#endif /* !__PKVM_HYP__ */
 
 unsigned long vmx_get_rflags(struct kvm_vcpu *vcpu)
 {
@@ -1645,6 +1653,7 @@ unsigned long vmx_get_rflags(struct kvm_vcpu *vcpu)
 	return vmx->rflags;
 }
 
+#ifndef __PKVM_HYP__
 void vmx_set_rflags(struct kvm_vcpu *vcpu, unsigned long rflags)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
@@ -1678,6 +1687,7 @@ bool vmx_get_if_flag(struct kvm_vcpu *vcpu)
 {
 	return vmx_get_rflags(vcpu) & X86_EFLAGS_IF;
 }
+#endif /* !__PKVM_HYP__ */
 
 u32 vmx_get_interrupt_shadow(struct kvm_vcpu *vcpu)
 {
@@ -1708,6 +1718,7 @@ void vmx_set_interrupt_shadow(struct kvm_vcpu *vcpu, int mask)
 		vmcs_write32(GUEST_INTERRUPTIBILITY_INFO, interruptibility);
 }
 
+#ifndef __PKVM_HYP__
 static int vmx_rtit_ctl_check(struct kvm_vcpu *vcpu, u64 data)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
@@ -1908,8 +1919,9 @@ int vmx_skip_emulated_instruction(struct kvm_vcpu *vcpu)
 	vmx_update_emulated_instruction(vcpu);
 	return skip_emulated_instruction(vcpu);
 }
+#endif /* !__PKVM_HYP__ */
 
-static void vmx_clear_hlt(struct kvm_vcpu *vcpu)
+void vmx_clear_hlt(struct kvm_vcpu *vcpu)
 {
 	/*
 	 * Ensure that we clear the HLT state in the VMCS.  We don't need to
@@ -1963,6 +1975,7 @@ void vmx_inject_exception(struct kvm_vcpu *vcpu)
 		intr_info |= INTR_INFO_DELIVER_CODE_MASK;
 	}
 
+#ifndef __PKVM_HYP__
 	if (vmx->rmode.vm86_active) {
 		int inc_eip = 0;
 		if (kvm_exception_is_soft(ex->vector))
@@ -1970,6 +1983,7 @@ void vmx_inject_exception(struct kvm_vcpu *vcpu)
 		kvm_inject_realmode_interrupt(vcpu, ex->vector, inc_eip);
 		return;
 	}
+#endif
 
 	WARN_ON_ONCE(vmx->vt.emulation_required);
 
@@ -1985,6 +1999,7 @@ void vmx_inject_exception(struct kvm_vcpu *vcpu)
 	vmx_clear_hlt(vcpu);
 }
 
+#ifndef __PKVM_HYP__
 static void vmx_setup_uret_msr(struct vcpu_vmx *vmx, unsigned int msr,
 			       bool load_into_hardware)
 {
@@ -2744,8 +2759,9 @@ static u64 adjust_vmx_controls64(u64 ctl_opt, u32 msr)
 	r;									\
 })
 
-static int setup_vmcs_config(struct vmcs_config *vmcs_conf,
-			     struct vmx_capability *vmx_cap)
+int setup_vmcs_config_common(struct vmcs_config *vmcs_conf,
+			     struct vmx_capability *vmx_cap,
+			     struct vmcs_config_setting *setting)
 {
 	u32 _pin_based_exec_control = 0;
 	u32 _cpu_based_exec_control = 0;
@@ -2776,14 +2792,14 @@ static int setup_vmcs_config(struct vmcs_config *vmcs_conf,
 
 	memset(vmcs_conf, 0, sizeof(*vmcs_conf));
 
-	if (adjust_vmx_controls(KVM_REQUIRED_VMX_CPU_BASED_VM_EXEC_CONTROL,
-				KVM_OPTIONAL_VMX_CPU_BASED_VM_EXEC_CONTROL,
+	if (adjust_vmx_controls(setting->cpu_based_vm_exec_ctrl_req,
+				setting->cpu_based_vm_exec_ctrl_opt,
 				MSR_IA32_VMX_PROCBASED_CTLS,
 				&_cpu_based_exec_control))
 		return -EIO;
 	if (_cpu_based_exec_control & CPU_BASED_ACTIVATE_SECONDARY_CONTROLS) {
-		if (adjust_vmx_controls(KVM_REQUIRED_VMX_SECONDARY_VM_EXEC_CONTROL,
-					KVM_OPTIONAL_VMX_SECONDARY_VM_EXEC_CONTROL,
+		if (adjust_vmx_controls(setting->secondary_vm_exec_ctrl_req,
+					setting->secondary_vm_exec_ctrl_opt,
 					MSR_IA32_VMX_PROCBASED_CTLS2,
 					&_cpu_based_2nd_exec_control))
 			return -EIO;
@@ -2845,17 +2861,17 @@ static int setup_vmcs_config(struct vmcs_config *vmcs_conf,
 
 	if (_cpu_based_exec_control & CPU_BASED_ACTIVATE_TERTIARY_CONTROLS)
 		_cpu_based_3rd_exec_control =
-			adjust_vmx_controls64(KVM_OPTIONAL_VMX_TERTIARY_VM_EXEC_CONTROL,
+			adjust_vmx_controls64(setting->tertiary_vm_exec_ctrl_opt,
 					      MSR_IA32_VMX_PROCBASED_CTLS3);
 
-	if (adjust_vmx_controls(KVM_REQUIRED_VMX_VM_EXIT_CONTROLS,
-				KVM_OPTIONAL_VMX_VM_EXIT_CONTROLS,
+	if (adjust_vmx_controls(setting->vmexit_ctrl_req,
+				setting->vmexit_ctrl_opt,
 				MSR_IA32_VMX_EXIT_CTLS,
 				&_vmexit_control))
 		return -EIO;
 
-	if (adjust_vmx_controls(KVM_REQUIRED_VMX_PIN_BASED_VM_EXEC_CONTROL,
-				KVM_OPTIONAL_VMX_PIN_BASED_VM_EXEC_CONTROL,
+	if (adjust_vmx_controls(setting->pin_based_vm_exec_ctrl_req,
+				setting->pin_based_vm_exec_ctrl_opt,
 				MSR_IA32_VMX_PINBASED_CTLS,
 				&_pin_based_exec_control))
 		return -EIO;
@@ -2866,8 +2882,8 @@ static int setup_vmcs_config(struct vmcs_config *vmcs_conf,
 		SECONDARY_EXEC_VIRTUAL_INTR_DELIVERY))
 		_pin_based_exec_control &= ~PIN_BASED_POSTED_INTR;
 
-	if (adjust_vmx_controls(KVM_REQUIRED_VMX_VM_ENTRY_CONTROLS,
-				KVM_OPTIONAL_VMX_VM_ENTRY_CONTROLS,
+	if (adjust_vmx_controls(setting->vmentry_ctrl_req,
+				setting->vmentry_ctrl_opt,
 				MSR_IA32_VMX_ENTRY_CTLS,
 				&_vmentry_control))
 		return -EIO;
@@ -2934,6 +2950,26 @@ static int setup_vmcs_config(struct vmcs_config *vmcs_conf,
 #endif
 
 	return 0;
+}
+
+static int setup_vmcs_config(struct vmcs_config *vmcs_conf,
+			     struct vmx_capability *vmx_cap)
+{
+	struct vmcs_config_setting setting = {
+		.cpu_based_vm_exec_ctrl_req = KVM_REQUIRED_VMX_CPU_BASED_VM_EXEC_CONTROL,
+		.cpu_based_vm_exec_ctrl_opt = KVM_OPTIONAL_VMX_CPU_BASED_VM_EXEC_CONTROL,
+		.secondary_vm_exec_ctrl_req = KVM_REQUIRED_VMX_SECONDARY_VM_EXEC_CONTROL,
+		.secondary_vm_exec_ctrl_opt = KVM_OPTIONAL_VMX_SECONDARY_VM_EXEC_CONTROL,
+		.tertiary_vm_exec_ctrl_opt = KVM_OPTIONAL_VMX_TERTIARY_VM_EXEC_CONTROL,
+		.pin_based_vm_exec_ctrl_req = KVM_REQUIRED_VMX_PIN_BASED_VM_EXEC_CONTROL,
+		.pin_based_vm_exec_ctrl_opt = KVM_OPTIONAL_VMX_PIN_BASED_VM_EXEC_CONTROL,
+		.vmexit_ctrl_req = KVM_REQUIRED_VMX_VM_EXIT_CONTROLS,
+		.vmexit_ctrl_opt = KVM_OPTIONAL_VMX_VM_EXIT_CONTROLS,
+		.vmentry_ctrl_req = KVM_REQUIRED_VMX_VM_ENTRY_CONTROLS,
+		.vmentry_ctrl_opt = KVM_OPTIONAL_VMX_VM_ENTRY_CONTROLS,
+	};
+
+	return setup_vmcs_config_common(vmcs_conf, vmx_cap, &setting);
 }
 
 static bool __kvm_is_vmx_supported(void)
@@ -5105,12 +5141,14 @@ void vmx_vcpu_reset(struct kvm_vcpu *vcpu, bool init_event)
 
 	vmx_update_fb_clear_dis(vcpu, vmx);
 }
+#endif /* !__PKVM_HYP__ */
 
 void vmx_enable_irq_window(struct kvm_vcpu *vcpu)
 {
 	exec_controls_setbit(to_vmx(vcpu), CPU_BASED_INTR_WINDOW_EXITING);
 }
 
+#ifndef __PKVM_HYP__
 void vmx_enable_nmi_window(struct kvm_vcpu *vcpu)
 {
 	if (!enable_vnmi ||
@@ -8867,6 +8905,24 @@ void vmx_exit(void)
 	kvm_x86_vendor_exit();
 }
 
+#ifdef CONFIG_PKVM_INTEL
+static void __init do_vmx_pkvm_init(void)
+{
+	int r;
+
+#if IS_ENABLED(CONFIG_HYPERV)
+	if (enlightened_vmcs && enable_pkvm) {
+		pr_warn("pKVM cannot be enabled due to conflict with enlightened_vmcs!\n");
+		enable_pkvm = false;
+		return;
+	}
+#endif
+	r = vmx_pkvm_init();
+	if (r)
+		pr_warn("pKVM init failed with error %d. Continue KVM init\n", r);
+}
+#endif
+
 int __init vmx_init(void)
 {
 	int r, cpu;
@@ -8881,6 +8937,10 @@ int __init vmx_init(void)
 	 * i.e. there's nothing to unwind if a later step fails.
 	 */
 	hv_init_evmcs();
+
+#ifdef CONFIG_PKVM_INTEL
+	do_vmx_pkvm_init();
+#endif
 
 	/*
 	 * Parse the VMCS config and VMX capabilities before anything else, so
@@ -8912,3 +8972,4 @@ err_l1d_flush:
 	kvm_x86_vendor_exit();
 	return r;
 }
+#endif /* !__PKVM_HYP__ */
