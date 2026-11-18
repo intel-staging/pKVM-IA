@@ -1843,6 +1843,18 @@ static inline void __init pkvm_reserve(void) {}
 	BUG_ON(!kvm_x86_ops.func);			\
 	(kvm_x86_ops.func);				\
 })
+
+/*
+ * pKVM doesn't support nested virtualization, so the hypervisor never sets
+ * the ops in kvm_nested_ops. kvm_nested_call() is still needed by sharing the
+ * KVM code without adding more #ifndef __PKVM_HYP__, but is not expected to be
+ * reached as the vCPUs never enter guest mode.
+ */
+#define kvm_nested_call(func)				\
+({							\
+	BUG_ON(!kvm_nested_ops.func);			\
+	(kvm_nested_ops.func);				\
+})
 #else /* __PKVM_HYP__ */
 #define kvm_x86_call(func) static_call(kvm_x86_##func)
 
@@ -1851,7 +1863,6 @@ static inline void __init pkvm_reserve(void) {}
 #define KVM_X86_OP_OPTIONAL KVM_X86_OP
 #define KVM_X86_OP_OPTIONAL_RET0 KVM_X86_OP
 #include <asm/kvm-x86-ops.h>
-#endif /* __PKVM_HYP__ */
 
 #define kvm_nested_call(func) static_call(kvm_x86_nested_##func)
 
@@ -1860,6 +1871,7 @@ static inline void __init pkvm_reserve(void) {}
 #define KVM_X86_NESTED_OP_OPTIONAL KVM_X86_NESTED_OP
 #define KVM_X86_NESTED_OP_OPTIONAL_RET0 KVM_X86_NESTED_OP
 #include <asm/kvm-x86-nested-ops.h>
+#endif /* __PKVM_HYP__ */
 
 #define __KVM_HAVE_ARCH_VM_ALLOC
 static inline struct kvm *kvm_arch_alloc_vm(void)
