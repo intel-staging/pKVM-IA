@@ -152,9 +152,9 @@ static DEFINE_MUTEX(vendor_module_lock);
 #endif /* !__PKVM_HYP__ */
 
 struct kvm_x86_ops kvm_x86_ops __read_mostly;
-#ifndef __PKVM_HYP__
 struct kvm_x86_nested_ops kvm_nested_ops __read_mostly;
 
+#ifndef __PKVM_HYP__
 #define KVM_X86_OP(func)					     \
 	DEFINE_STATIC_CALL_NULL(kvm_x86_##func,			     \
 				*(((struct kvm_x86_ops *)0)->func));
