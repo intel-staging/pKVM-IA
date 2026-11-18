@@ -244,10 +244,16 @@ static int check_host_mem_pgstate(unsigned long phys, unsigned long size,
 					   check_zero_refcnt);
 }
 
-static u64 host_mmu_pte_prot(bool write, bool mmio)
+static u64 host_mmu_pte_prot_rwx(bool mmio)
 {
-	return host_mmu.pgt_ops->calc_pte_perm(true, write, true) |
+	return host_mmu.pgt_ops->calc_pte_perm(true, true, true) |
 	       host_mmu.pgt_ops->calc_pte_memtype(mmio);
+}
+
+static u64 host_mmu_pte_prot_ro(void)
+{
+	return host_mmu.pgt_ops->calc_pte_perm(true, false, false) |
+	       host_mmu.pgt_ops->calc_pte_memtype(false);
 }
 
 static int verify_host_mmu_pgstate_walker(struct pkvm_pgtable_visit_ctx *ctx,
@@ -363,21 +369,19 @@ static int host_mmu_map(unsigned long phys, unsigned long size, bool mmio)
 {
 	/* The vaddr == phys for the host MMU */
 	return pkvm_pgtable_map(&host_mmu, phys, phys, size,
-				host_mmu_pte_prot(true, mmio), NULL);
+				host_mmu_pte_prot_rwx(mmio), NULL);
 }
 
 #ifndef CONFIG_PKVM_X86_DEBUG
 static int host_mmu_map_ro(unsigned long phys, unsigned long size)
 {
-	u64 prot = host_mmu.pgt_ops->calc_pte_perm(true, false, false) |
-		   host_mmu.pgt_ops->calc_pte_memtype(false);
-
 	BUG_ON(!is_memory_range(phys, size));
 
 	set_host_mem_pgstate(phys, size, PKVM_PAGE_SHARED_BORROWED, PKVM_ID_HYP);
 
 	/* The vaddr == phys for the host MMU */
-	return pkvm_pgtable_map(&host_mmu, phys, phys, size, prot, NULL);
+	return pkvm_pgtable_map(&host_mmu, phys, phys, size,
+				host_mmu_pte_prot_ro(), NULL);
 }
 #endif
 
@@ -549,7 +553,7 @@ static int host_reclaim_guest_walker(struct pkvm_pgtable_visit_ctx *ctx,
 		 * See also comment in pkvm_hyp_donate_host().
 		 */
 		BUG_ON(pkvm_pgtable_map(&host_mmu, phys, phys, size,
-					host_mmu_pte_prot(true, false), NULL));
+					host_mmu_pte_prot_rwx(false), NULL));
 
 		for_each_pkvm_page(page, phys, size) {
 			BUG_ON(page->host_share_hyp_count);
@@ -759,7 +763,7 @@ static int __guest_share_host(unsigned long gpa, unsigned long hpa,
 				&vcpu->arch.pkvm.guest_mmu_memcache));
 
 	BUG_ON(pkvm_pgtable_map(&host_mmu, hpa, hpa, size,
-				host_mmu_pte_prot(true, false), NULL));
+				host_mmu_pte_prot_rwx(false), NULL));
 	set_host_mem_pgstate(hpa, size, PKVM_PAGE_SHARED_BORROWED, PKVM_ID_GUEST);
 
 	return 0;
@@ -994,7 +998,7 @@ int pkvm_host_mmu_init(void *pool_base, unsigned long pool_pages,
 	 */
 	if (pkvm_ramoops_console_size) {
 		u64 prot = host_mmu.pgt_ops->pte_mk_pgstate(PKVM_PAGE_SHARED_BORROWED) |
-			   host_mmu_pte_prot(true, false);
+			   host_mmu_pte_prot_rwx(false);
 
 		ret = pkvm_pgtable_map(&host_mmu, pkvm_ramoops_console_pa,
 				       pkvm_ramoops_console_pa, pkvm_ramoops_console_size,
@@ -1284,7 +1288,7 @@ int pkvm_host_donate_hyp_share_ro(unsigned long phys, unsigned long size, bool c
 
 	/* The vaddr == phys for the host MMU. */
 	ret = pkvm_pgtable_map(&host_mmu, phys, phys, size,
-			       host_mmu_pte_prot(false, false), NULL);
+			       host_mmu_pte_prot_ro(), NULL);
 	BUG_ON(ret);
 
 	set_host_mem_pgstate(phys, size, PKVM_PAGE_SHARED_BORROWED, PKVM_ID_HYP);
@@ -1350,7 +1354,7 @@ void pkvm_hyp_donate_host(unsigned long phys, unsigned long size, bool clear)
 	 * behavior. So panic if it fails.
 	 */
 	BUG_ON(ret = pkvm_pgtable_map(&host_mmu, phys, phys, size,
-				      host_mmu_pte_prot(true, false), NULL));
+				      host_mmu_pte_prot_rwx(false), NULL));
 
 	set_host_mem_pgstate(phys, size, PKVM_PAGE_OWNED, PKVM_ID_HOST);
 unlock:
@@ -1961,7 +1965,7 @@ int pkvm_host_use_dma(unsigned long phys, unsigned long size)
 		}
 
 		prot = host_mmu.pgt_ops->pte_mk_pgstate(PKVM_PAGE_SHARED_BORROWED) |
-		       host_mmu_pte_prot(true, true);
+		       host_mmu_pte_prot_rwx(true);
 
 		ret = pkvm_pgtable_map(&host_mmu, phys, phys, size, prot, NULL);
 		WARN_ON_ONCE(ret && ret != -ENOMEM);
