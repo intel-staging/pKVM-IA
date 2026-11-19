@@ -1088,6 +1088,11 @@ static void pkvm_load_mmu_pgd(struct kvm_vcpu *vcpu, hpa_t root_hpa, int root_le
 	KVM_BUG_ON(pkvm_hypercall(load_mmu_pgd, root_hpa, root_level), vcpu->kvm);
 }
 
+static void pkvm_setup_mce(struct kvm_vcpu *vcpu)
+{
+	KVM_BUG_ON(pkvm_hypercall(setup_mce), vcpu->kvm);
+}
+
 static bool pkvm_apic_init_signal_blocked(struct kvm_vcpu *vcpu)
 {
 	/*
@@ -1191,6 +1196,8 @@ struct kvm_x86_ops pkvm_host_vt_x86_ops __initdata = {
 
 	.pi_update_irte = vmx_pi_update_irte,
 	.pi_start_bypass = vmx_pi_start_bypass,
+
+	.setup_mce = pkvm_setup_mce,
 
 	.apic_init_signal_blocked = pkvm_apic_init_signal_blocked,
 
