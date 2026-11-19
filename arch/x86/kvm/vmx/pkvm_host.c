@@ -235,6 +235,11 @@ static void pkvm_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
 	vmx_vcpu_pi_load(vcpu, cpu);
 }
 
+static void pkvm_vcpu_put(struct kvm_vcpu *vcpu)
+{
+	vmx_vcpu_pi_put(vcpu);
+}
+
 struct kvm_x86_ops pkvm_host_vt_x86_ops __initdata = {
 	.name = KBUILD_MODNAME,
 
@@ -255,6 +260,7 @@ struct kvm_x86_ops pkvm_host_vt_x86_ops __initdata = {
 	.vcpu_free = pkvm_vcpu_free,
 
 	.vcpu_load = pkvm_vcpu_load,
+	.vcpu_put = pkvm_vcpu_put,
 };
 
 static struct kvm_pmc *pkvm_intel_rdpmc_ecx_to_pmc(struct kvm_vcpu *vcpu,
@@ -355,3 +361,9 @@ struct kvm_x86_init_ops pkvm_host_vt_init_ops __initdata = {
 	.pmu_ops = &pkvm_host_vt_pmu_ops,
 	.nested_ops = &pkvm_nested_ops,
 };
+
+bool pkvm_interrupt_blocked(struct kvm_vcpu *vcpu)
+{
+	/* TODO: Check the interrupt state with the pKVM hypervisor. */
+	return false;
+}
