@@ -184,6 +184,8 @@ static int pkvm_vm_init(phys_addr_t host_kvm_pa, phys_addr_t pkvm_vm_pa)
 	/* As kvm_arch_init_vm(), allow the guest to read MSR_PLATFORM_INFO. */
 	kvm->arch.guest_can_read_msr_platform_info = true;
 
+	kvm->arch.apic_bus_cycle_ns = APIC_BUS_CYCLE_NS_DEFAULT;
+
 	ret = kvm_x86_call(vm_init)(kvm);
 	if (ret)
 		goto undonate;
@@ -431,6 +433,7 @@ static int postponed_per_vm_setup(struct kvm *kvm)
 	enum kvm_irqchip_mode irqchip_mode;
 	u32 max_vcpu_ids, bsp_vcpu_id;
 	u64 disabled_quirks = 0;
+	u64 apic_bus_cycle_ns;
 
 	if (pkvm_vm->postponed_setup_done)
 		return 0;
@@ -455,6 +458,10 @@ static int postponed_per_vm_setup(struct kvm *kvm)
 	if (bsp_vcpu_id >= max_vcpu_ids)
 		return -EINVAL;
 
+	apic_bus_cycle_ns = READ_ONCE(shared_kvm->arch.apic_bus_cycle_ns);
+	if (!apic_bus_cycle_ns)
+		return -EINVAL;
+
 	if (!pkvm_is_protected_vm(kvm)) {
 		disabled_quirks = READ_ONCE(shared_kvm->arch.disabled_quirks);
 		if (disabled_quirks & ~kvm_caps.supported_quirks)
@@ -475,6 +482,7 @@ static int postponed_per_vm_setup(struct kvm *kvm)
 	kvm->arch.irqchip_mode = irqchip_mode;
 	kvm->arch.max_vcpu_ids = max_vcpu_ids;
 	kvm->arch.bsp_vcpu_id = bsp_vcpu_id;
+	kvm->arch.apic_bus_cycle_ns = apic_bus_cycle_ns;
 	/*
 	 * The host VMM can disable quirks via KVM_CAP_DISABLE_QUIRKS(2) after a
 	 * VM is created, so take the npVM's disabled quirks here.
