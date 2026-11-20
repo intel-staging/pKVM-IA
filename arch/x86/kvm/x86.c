@@ -637,6 +637,16 @@ EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_require_dr);
 
 static void kvm_load_xfeatures(struct kvm_vcpu *vcpu, bool load_guest)
 {
+#ifndef __PKVM_HYP__
+	/*
+	 * When pKVM is enabled, the guest's XCR0/XSS are switched by the pKVM
+	 * hypervisor when it runs the guest. The host must not switch them, as
+	 * the pKVM hypervisor doesn't allow the host to modify XCR0 and XSS.
+	 */
+	if (enable_pkvm)
+		return;
+#endif
+
 	if (vcpu->arch.guest_state_protected)
 		return;
 
@@ -654,6 +664,18 @@ static void kvm_load_xfeatures(struct kvm_vcpu *vcpu, bool load_guest)
 
 static void kvm_load_guest_pkru(struct kvm_vcpu *vcpu)
 {
+#ifndef __PKVM_HYP__
+	/*
+	 * When pKVM is enabled, the guest's PKRU is switched by the pKVM
+	 * hypervisor when it runs the guest, and the guest's PKRU in hardware
+	 * is already replaced with the host's when returning to the host. The
+	 * host must not switch it, otherwise the host would save the host's
+	 * PKRU as the guest's PKRU in kvm_load_host_pkru().
+	 */
+	if (enable_pkvm)
+		return;
+#endif
+
 	if (vcpu->arch.guest_state_protected)
 		return;
 
@@ -666,6 +688,12 @@ static void kvm_load_guest_pkru(struct kvm_vcpu *vcpu)
 
 static void kvm_load_host_pkru(struct kvm_vcpu *vcpu)
 {
+#ifndef __PKVM_HYP__
+	/* See kvm_load_guest_pkru(). */
+	if (enable_pkvm)
+		return;
+#endif
+
 	if (vcpu->arch.guest_state_protected)
 		return;
 
