@@ -122,6 +122,7 @@ static int pkvm_vm_init(phys_addr_t host_kvm_pa, phys_addr_t pkvm_vm_pa)
 	pkvm_vm = __pkvm_va(pkvm_vm_pa);
 	pkvm_vm->size = size;
 	pkvm_vm->shared_kvm = __pkvm_va(host_kvm_pa);
+	pkvm_spin_lock_init(&pkvm_vm->lock);
 
 	vm_type = READ_ONCE(pkvm_vm->shared_kvm->arch.vm_type);
 	if (!kvm_is_vm_type_supported(vm_type)) {
