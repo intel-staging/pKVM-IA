@@ -258,6 +258,18 @@ static int setup_vcpu_lapic(struct kvm_vcpu *vcpu, struct kvm_lapic *shared_apic
 		return ret;
 
 	apic->apicv_active = !!READ_ONCE(*(u8 *)&shared_apic->apicv_active);
+	/*
+	 * APICv cannot be active if it is not enabled. And a protected vCPU
+	 * with APICv enabled will use protected APIC, which relies on active
+	 * APICv to access its protected registers, as pKVM has no software
+	 * emulation for them.
+	 */
+	if ((!enable_apicv && apic->apicv_active) ||
+	    (enable_apicv && !apic->apicv_active &&
+	     pkvm_is_protected_vcpu(vcpu))) {
+		ret = -EINVAL;
+		goto unshare_apic;
+	}
 
 	shared_apic_regs = kern_pkvm_va(READ_ONCE(shared_apic->regs));
 	if (!shared_apic_regs) {
