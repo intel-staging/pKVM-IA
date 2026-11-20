@@ -139,8 +139,11 @@ static int pkvm_vcpu_create(struct kvm_vcpu *vcpu)
 	vcpu_size = PKVM_VMX_VCPU_SIZE;
 	if (pkvm_is_protected_vcpu(vcpu))
 		vcpu_size += KVM_MCE_SIZE + KVM_MCI_CTL2_SIZE;
-	if (lapic_in_kernel(vcpu))
+	if (lapic_in_kernel(vcpu)) {
 		vcpu_size += sizeof(struct kvm_lapic);
+		if (pkvm_is_protected_vcpu(vcpu) && enable_apicv)
+			vcpu_size += PAGE_SIZE;
+	}
 
 	ret = -ENOMEM;
 	pkvm_vcpu = alloc_pages_exact(vcpu_size, GFP_KERNEL_ACCOUNT);

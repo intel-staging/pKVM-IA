@@ -241,9 +241,10 @@ static int attach_pkvm_vcpu_to_vm(struct pkvm_vm *pkvm_vm, struct pkvm_vcpu *pkv
 
 static int setup_vcpu_lapic(struct kvm_vcpu *vcpu, struct kvm_lapic *shared_apic)
 {
+	struct pkvm_vcpu *pkvm_vcpu = to_pkvm_vcpu(vcpu);
 	struct kvm_lapic *apic = vcpu->arch.apic;
 	size_t apic_size = sizeof(struct kvm_lapic);
-	void *apic_regs = NULL;
+	void *shared_apic_regs = NULL;
 	int ret;
 
 	if (!apic || WARN_ON(!shared_apic))
@@ -258,17 +259,39 @@ static int setup_vcpu_lapic(struct kvm_vcpu *vcpu, struct kvm_lapic *shared_apic
 
 	apic->apicv_active = !!READ_ONCE(*(u8 *)&shared_apic->apicv_active);
 
-	apic_regs = kern_pkvm_va(READ_ONCE(shared_apic->regs));
-	if (!apic_regs) {
+	shared_apic_regs = kern_pkvm_va(READ_ONCE(shared_apic->regs));
+	if (!shared_apic_regs) {
 		ret = -EINVAL;
 		goto unshare_apic;
 	}
 
-	ret = pkvm_host_share_hyp(__pkvm_pa(apic_regs), PAGE_SIZE);
+	ret = pkvm_host_share_hyp(__pkvm_pa(shared_apic_regs), PAGE_SIZE);
 	if (ret)
 		goto unshare_apic;
 
-	apic->regs = apic_regs;
+	pkvm_vcpu->shared_apic_regs = shared_apic_regs;
+	/*
+	 * For a protected vCPU with APICv enabled, the pKVM hypervisor will
+	 * donate the separate page for the vCPU's LAPIC registers to enforce
+	 * the protection. For other cases, the pKVM hypervisor can directly
+	 * use the host's apic page as the host will use PV interfaces which are
+	 * enforced the protection to inject interrupts.
+	 */
+	if (pkvm_is_protected_vcpu(vcpu) && enable_apicv) {
+		apic->regs = PTR_ALIGN((void *)apic + apic_size, PAGE_SIZE);
+		apic->guest_apic_protected = true;
+
+		/*
+		 * The separate page for the vCPU's LAPIC registers should be
+		 * within the donated memory range of pkvm_vcpu, which is
+		 * guaranteed by the pkvm_vcpu_create. Otherwise it is a code
+		 * bug.
+		 */
+		BUG_ON((apic->regs + PAGE_SIZE) > ((void *)pkvm_vcpu + pkvm_vcpu->size));
+	} else {
+		apic->regs = shared_apic_regs;
+	}
+
 	apic->nr_lvt_entries = kvm_apic_calc_nr_lvt_entries(vcpu);
 	apic->vcpu = vcpu;
 	/* No highest ISR is cached. */
@@ -283,12 +306,12 @@ unshare_apic:
 
 static void unsetup_vcpu_lapic(struct kvm_vcpu *vcpu)
 {
-	struct kvm_lapic *apic = vcpu->arch.apic;
+	void *regs = to_pkvm_vcpu(vcpu)->shared_apic_regs;
 
-	if (!apic)
+	if (!regs)
 		return;
 
-	pkvm_host_unshare_hyp(__pkvm_pa(apic->regs), PAGE_SIZE);
+	pkvm_host_unshare_hyp(__pkvm_pa(regs), PAGE_SIZE);
 }
 
 static int share_vcpu_mce_banks(struct kvm_vcpu *vcpu)
@@ -514,8 +537,11 @@ static int pkvm_vcpu_create(int vm_handle, phys_addr_t host_vcpu_pa,
 	if (pkvm_is_protected_vm(&pkvm_vm->kvm))
 		vcpu_size += KVM_MCE_SIZE + KVM_MCI_CTL2_SIZE;
 	shared_apic = kern_pkvm_va(READ_ONCE(shared_vcpu->arch.apic));
-	if (shared_apic)
+	if (shared_apic) {
 		vcpu_size += sizeof(struct kvm_lapic);
+		if (pkvm_is_protected_vm(&pkvm_vm->kvm) && enable_apicv)
+			vcpu_size += PAGE_SIZE;
+	}
 	vcpu_size = PAGE_ALIGN(vcpu_size);
 
 	ret = pkvm_host_donate_hyp(pkvm_vcpu_pa, vcpu_size, true);
