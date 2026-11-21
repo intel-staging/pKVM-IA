@@ -72,6 +72,36 @@ static int allocate_pkvm_vm_handle(struct pkvm_vm *pkvm_vm)
 	return idx;
 }
 
+static struct pkvm_vm *free_pkvm_vm_handle(int handle)
+{
+	struct pkvm_vm_ref *pkvm_vm_ref;
+	struct pkvm_vm *pkvm_vm;
+	int idx = handle;
+
+	if (idx < 0 || idx >= MAX_PKVM_VMS)
+		return ERR_PTR(-EINVAL);
+
+	pkvm_spin_lock(&pkvm_vms_lock);
+
+	idx = array_index_nospec(idx, MAX_PKVM_VMS);
+	pkvm_vm_ref = &pkvm_vms_ref[idx];
+	if (atomic_cmpxchg(&pkvm_vm_ref->refcount, 1, 0) != 1) {
+		pkvm_err("VM%d is busy, refcount %d\n", handle,
+			 atomic_read(&pkvm_vm_ref->refcount));
+		pkvm_spin_unlock(&pkvm_vms_lock);
+		return ERR_PTR(-EBUSY);
+	}
+
+	pkvm_vm = pkvm_vm_ref->pkvm_vm;
+	BUG_ON(!pkvm_vm);
+	pkvm_vm_ref->pkvm_vm = NULL;
+
+	__clear_bit(idx, pkvm_vms_bitmap);
+
+	pkvm_spin_unlock(&pkvm_vms_lock);
+	return pkvm_vm;
+}
+
 static int pkvm_vm_init(phys_addr_t host_kvm_pa, phys_addr_t pkvm_vm_pa)
 {
 	struct pkvm_vm *pkvm_vm;
@@ -123,16 +153,56 @@ static int pkvm_vm_init(phys_addr_t host_kvm_pa, phys_addr_t pkvm_vm_pa)
 	handle = allocate_pkvm_vm_handle(pkvm_vm);
 	if (handle < 0) {
 		ret = handle;
-		goto undonate;
+		goto destroy_vm;
 	}
 
 	return handle;
 
+destroy_vm:
+	kvm_x86_call(vm_destroy)(kvm);
 undonate:
 	pkvm_hyp_donate_host(__pkvm_pa(pkvm_vm), size, false);
 unshare:
 	pkvm_host_unshare_hyp(host_kvm_pa, kvm_x86_ops.vm_size);
 	return ret;
+}
+
+static void teardown_donated_memory(struct pkvm_memcache *mc, void *addr, size_t size)
+{
+	BUG_ON(!PAGE_ALIGNED(addr) || !PAGE_ALIGNED(size));
+
+	pkvm_clear_memory(addr, size);
+
+	push_pkvm_memcache(mc, addr, size, pkvm_virt_to_host_gpa);
+
+	/*
+	 * Sensitive data in this memory range has been already cleared
+	 * by pkvm_clear_memory(). Now this memory is used to store the
+	 * information about the memory pages for the host to free by
+	 * push_pkvm_memcache(), so undonate without clearing.
+	 */
+	pkvm_hyp_donate_host(__pkvm_pa(addr), size, false);
+}
+
+static int pkvm_vm_destroy(int vm_handle, struct pkvm_memcache *mc)
+{
+	struct pkvm_vm *pkvm_vm = free_pkvm_vm_handle(vm_handle);
+	unsigned long shared_kvm_pa;
+
+	if (IS_ERR(pkvm_vm))
+		return PTR_ERR(pkvm_vm);
+
+	memset(mc, 0, sizeof(*mc));
+
+	shared_kvm_pa = __pkvm_pa(pkvm_vm->shared_kvm);
+
+	kvm_x86_call(vm_destroy)(&pkvm_vm->kvm);
+
+	teardown_donated_memory(mc, (void *)pkvm_vm, pkvm_vm->size);
+
+	pkvm_host_unshare_hyp(shared_kvm_pa, kvm_x86_ops.vm_size);
+
+	return 0;
 }
 
 void pkvm_handle_host_hypercall(struct kvm_vcpu *vcpu)
@@ -160,6 +230,9 @@ void pkvm_handle_host_hypercall(struct kvm_vcpu *vcpu)
 	case __pkvm__vm_init:
 		ret = pkvm_vm_init(pkvm_host_gpa_to_phys(pkvm_hc_input1(vcpu)),
 				   pkvm_host_gpa_to_phys(pkvm_hc_input2(vcpu)));
+		break;
+	case __pkvm__vm_destroy:
+		ret = pkvm_vm_destroy(pkvm_hc_input1(vcpu), &out.vm_destroy.memcache);
 		break;
 	default:
 		ret = -EINVAL;
