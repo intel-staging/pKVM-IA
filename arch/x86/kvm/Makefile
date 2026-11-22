@@ -45,16 +45,19 @@ $(obj)/vmx/vmenter.o: $(obj)/kvm-asm-offsets.h
 $(obj)/kvm-asm-offsets.h: $(obj)/kvm-asm-offsets.s FORCE
 	$(call filechk,offsets,__KVM_ASM_OFFSETS_H__)
 
-obj-$(CONFIG_PKVM_X86)	+= pkvm.o pkvm/
+obj-$(CONFIG_PKVM_X86)	+= pkvm.o pkvm_debugfs.o pkvm/
 
-pkvm-intel-y		+= vmx/pkvm_init.o
+pkvm-intel-y		+= vmx/pkvm_init.o vmx/pkvm_host.o
 
 $(obj)/pkvm.o: $(obj)/pkvm_constants.h
+$(obj)/vmx/pkvm_host.o: $(obj)/pkvm_constants.h
+
 $(obj)/pkvm-constants.s: $(src)/pkvm/pkvm_constants.c FORCE
 	$(call if_changed_dep,cc_s_c)
 $(obj)/pkvm_constants.h: $(obj)/pkvm-constants.s FORCE
 	$(call filechk,offsets,__PKVM_CONSTANTS_H__)
 CFLAGS_vmx/pkvm_init.o    := -iquote $(obj)
+CFLAGS_vmx/pkvm_host.o    := -iquote $(obj)
 
 obj-$(CONFIG_PKVM_INTEL) += pkvm-intel.o
 

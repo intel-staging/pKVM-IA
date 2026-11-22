@@ -7,6 +7,27 @@
 #include "vmcs12.h"
 #include "vmx.h"
 
+#ifdef __PKVM_HYP__
+static inline void vmx_leave_nested(struct kvm_vcpu *vcpu) {}
+static inline void nested_vmx_setup_ctls_msrs(struct vmcs_config *vmcs_conf, u32 ept_caps) {}
+static inline void nested_vmx_free_vcpu(struct kvm_vcpu *vcpu) {}
+static inline void nested_vmx_set_vmcs_shadowing_bitmap(void) {}
+static inline bool nested_vmx_reflect_vmexit(struct kvm_vcpu *vcpu) { return false; }
+static inline void nested_vmx_vmexit(struct kvm_vcpu *vcpu, u32 vm_exit_reason,
+				     u32 exit_intr_info, unsigned long exit_qualification) {}
+static inline void nested_sync_vmcs12_to_shadow(struct kvm_vcpu *vcpu) {}
+static inline void nested_mark_vmcs12_pages_dirty(struct kvm_vcpu *vcpu) {}
+static inline int vmx_set_vmx_msr(struct kvm_vcpu *vcpu, u32 msr_index, u64 data) { return 1; }
+static inline int vmx_get_vmx_msr(struct nested_vmx_msrs *msrs, u32 msr_index, u64 *pdata)
+{
+	return 1;
+}
+
+static inline struct vmcs12 *get_vmcs12(struct kvm_vcpu *vcpu)
+{
+	return to_vmx(vcpu)->nested.cached_vmcs12;
+}
+#else /* !__PKVM_HYP__ */
 /*
  * Status returned by nested_vmx_enter_non_root_mode():
  */
@@ -68,6 +89,7 @@ static inline struct vmcs12 *get_shadow_vmcs12(struct kvm_vcpu *vcpu)
 
 	return to_vmx(vcpu)->nested.cached_shadow_vmcs12;
 }
+#endif /* __PKVM_HYP__ */
 
 /*
  * Note: the same condition is checked against the state provided by userspace

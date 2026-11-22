@@ -40,6 +40,7 @@ struct fpu_state_config	fpu_kernel_cfg __ro_after_init;
 struct fpu_state_config fpu_user_cfg __ro_after_init;
 struct vcpu_fpu_config guest_default_cfg __ro_after_init;
 
+#ifndef __PKVM_HYP__
 /*
  * Represents the initial FPU state. It's mostly (but not completely) zeroes,
  * depending on the FPU hardware format:
@@ -123,6 +124,7 @@ static void update_avx_timestamp(struct fpu *fpu)
 	if (fpu->fpstate->regs.xsave.header.xfeatures & AVX512_TRACKING_MASK)
 		fpu->avx512_timestamp = jiffies;
 }
+#endif /* !__PKVM_HYP__ */
 
 /*
  * Save the FPU register state in fpu->fpstate->regs. The register state is
@@ -142,7 +144,9 @@ void save_fpregs_to_fpstate(struct fpu *fpu)
 {
 	if (likely(use_xsave())) {
 		os_xsave(fpu->fpstate);
+#ifndef __PKVM_HYP__
 		update_avx_timestamp(fpu);
+#endif
 		return;
 	}
 
@@ -213,12 +217,15 @@ void restore_fpregs_from_fpstate(struct fpstate *fpstate, u64 mask)
 	}
 }
 
+#ifndef __PKVM_HYP__
 void fpu_reset_from_exception_fixup(void)
 {
 	restore_fpregs_from_fpstate(&init_fpstate, XFEATURE_MASK_FPSTATE);
 }
+#endif /* !__PKVM_HYP__ */
 
 #if IS_ENABLED(CONFIG_KVM)
+#ifndef __PKVM_HYP__
 static void __fpstate_reset(struct fpstate *fpstate);
 
 static void fpu_lock_guest_permissions(void)
@@ -293,6 +300,7 @@ void fpu_free_guest_fpstate(struct fpu_guest *gfpu)
 	vfree(fpstate);
 }
 EXPORT_SYMBOL_FOR_KVM(fpu_free_guest_fpstate);
+#endif /* !__PKVM_HYP__ */
 
 /**
  * fpu_enable_guest_xfd_features - Check xfeatures against guest perm and enable
@@ -321,7 +329,9 @@ void fpu_update_guest_xfd(struct fpu_guest *guest_fpu, u64 xfd)
 {
 	struct fpstate *fpstate = guest_fpu->fpstate;
 
+#ifndef __PKVM_HYP__
 	fpregs_lock();
+#endif
 
 	/*
 	 * KVM's guest ABI is that setting XFD[i]=1 *can* immediately revert the
@@ -342,7 +352,9 @@ void fpu_update_guest_xfd(struct fpu_guest *guest_fpu, u64 xfd)
 	if (fpstate->in_use)
 		xfd_update_state(fpstate);
 
+#ifndef __PKVM_HYP__
 	fpregs_unlock();
+#endif
 }
 EXPORT_SYMBOL_FOR_KVM(fpu_update_guest_xfd);
 
@@ -377,9 +389,35 @@ int fpu_swap_kvm_fpstate(struct fpu_guest *guest_fpu, bool enter_guest)
 	struct fpu *fpu = x86_task_fpu(current);
 	struct fpstate *cur_fps = fpu->fpstate;
 
+#ifndef __PKVM_HYP__
 	fpregs_lock();
 	if (!cur_fps->is_confidential && !test_thread_flag(TIF_NEED_FPU_LOAD))
 		save_fpregs_to_fpstate(fpu);
+#else
+#ifdef CONFIG_X86_64
+	if (fpu_state_size_dynamic() && enter_guest) {
+		/*
+		 * Refresh the xfd_state percpu cache before guest vmenter so
+		 * that the xfd can be restored after guest vmexit.
+		 */
+		rdmsrq(MSR_IA32_XFD, cur_fps->xfd);
+		__this_cpu_write(xfd_state, cur_fps->xfd);
+	}
+#endif
+	/*
+	 * If entering the npVM, the FPU are already loaded with the npVM fpu
+	 * state by the host. If exiting from the npVM, the fpu registers will be
+	 * saved by the host. So no need to save FPU for the npVM.
+	 *
+	 * If entering the pVM, the FPU are loaded with the host fpu state, which
+	 * is already saved by the host itself before switching to the pkvm
+	 * hypervisor. If exiting from the pVM, then the fpu state should be saved
+	 * by the pkvm hypervisor as the host is not allowed to do this for
+	 * isolation purpose.
+	 */
+	if (guest_fps->is_confidential && !enter_guest)
+		save_fpregs_to_fpstate(fpu);
+#endif
 
 	/* Swap fpstate */
 	if (enter_guest) {
@@ -394,6 +432,7 @@ int fpu_swap_kvm_fpstate(struct fpu_guest *guest_fpu, bool enter_guest)
 
 	cur_fps = fpu->fpstate;
 
+#ifndef __PKVM_HYP__
 	if (!cur_fps->is_confidential) {
 		/* Includes XFD update */
 		restore_fpregs_from_fpstate(cur_fps, XFEATURE_MASK_FPSTATE);
@@ -408,10 +447,26 @@ int fpu_swap_kvm_fpstate(struct fpu_guest *guest_fpu, bool enter_guest)
 
 	fpregs_mark_activate();
 	fpregs_unlock();
+#else
+	/*
+	 * Similarly to the FPU saving case, no need to restore FPU for the npVM
+	 * as this will be handled by the host.
+	 *
+	 * If entering the pVM, restore the FPU with the pVM fpu state. If
+	 * exiting the pVM, wipe the FPU by restoring FPU with an initial fpu
+	 * state.
+	 */
+	if (guest_fps->is_confidential) {
+		/* Includes XFD update */
+		restore_fpregs_from_fpstate(cur_fps, XFEATURE_MASK_FPSTATE);
+	}
+#endif
+
 	return 0;
 }
 EXPORT_SYMBOL_FOR_KVM(fpu_swap_kvm_fpstate);
 
+#ifndef __PKVM_HYP__
 void fpu_copy_guest_fpstate_to_uabi(struct fpu_guest *gfpu, void *buf,
 				    unsigned int size, u64 xfeatures, u32 pkru)
 {
@@ -467,8 +522,10 @@ int fpu_copy_uabi_to_guest_fpstate(struct fpu_guest *gfpu, const void *buf,
 	return copy_uabi_from_kernel_to_xstate(kstate, ustate, vpkru);
 }
 EXPORT_SYMBOL_FOR_KVM(fpu_copy_uabi_to_guest_fpstate);
+#endif /* !__PKVM_HYP__ */
 #endif /* CONFIG_KVM */
 
+#ifndef __PKVM_HYP__
 void kernel_fpu_begin_mask(unsigned int kfpu_mask)
 {
 	if (!irqs_disabled())
@@ -533,6 +590,7 @@ static inline unsigned int init_fpstate_copy_size(void)
 	/* XSAVE(S) just needs the legacy and the xstate header part */
 	return sizeof(init_fpstate.regs.xsave);
 }
+#endif /* !__PKVM_HYP__ */
 
 static inline void fpstate_init_fxstate(struct fpstate *fpstate)
 {
@@ -566,6 +624,7 @@ void fpstate_init_user(struct fpstate *fpstate)
 		fpstate_init_fstate(fpstate);
 }
 
+#ifndef __PKVM_HYP__
 static void __fpstate_reset(struct fpstate *fpstate)
 {
 	/*
@@ -1008,3 +1067,4 @@ noinstr void fpu_idle_fpregs(void)
 		__this_cpu_write(fpu_fpregs_owner_ctx, NULL);
 	}
 }
+#endif /* !__PKVM_HYP__ */

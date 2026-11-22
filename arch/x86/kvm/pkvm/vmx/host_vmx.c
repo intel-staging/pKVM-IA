@@ -2,12 +2,15 @@
 #include <linux/kvm_types.h>
 #include <linux/memblock.h>
 #include <asm/cpuid/api.h>
+#include <asm/fpu/xcr.h>
 #include <kvm_emulate.h>
 #include <vmx/x86_ops.h>
 #include "debug.h"
 #include "ept.h"
 #include "host_vmx.h"
 #include "pkvm/init.h"
+#include "pkvm/lapic.h"
+#include "pkvm/trace.h"
 #include "pkvm.h"
 
 #define CR4			4
@@ -29,6 +32,7 @@ static const struct pkvm_init_ops vmx_init_ops = {
 	.hyp_mmu_finalize = vmx_hyp_mmu_finalize,
 	.host_mmu_init = pkvm_host_ept_init,
 	.host_mmu_finalize = pkvm_host_ept_finalize,
+	.hyp_global_init = pkvm_vmx_init,
 };
 
 const struct pkvm_init_ops *const pkvm_vmx_init_ops = &vmx_init_ops;
@@ -198,6 +202,53 @@ static int handle_write_msr(struct kvm_vcpu *vcpu)
 		}
 		break;
 	}
+	case MSR_SYSCALL_MASK:
+	case MSR_LSTAR:
+	case MSR_CSTAR:
+	case MSR_TSC_AUX:
+	case MSR_STAR:
+	case MSR_IA32_TSX_CTRL: {
+		int slot;
+		u64 cur;
+
+		BUG_ON(!pkvm_cpu_initialized(vcpu->cpu));
+
+		slot = kvm_find_user_return_msr(msr);
+		if (slot >= 0) {
+			cur = kvm_get_user_return_msr(slot);
+			if (val != cur) {
+				pkvm_warn("Host attempt to modify user-return MSR 0x%x: 0x%llx (expected 0x%llx)\n",
+					  msr, val, cur);
+				ret = X86EMUL_UNHANDLEABLE;
+				break;
+			}
+		}
+
+		if (wrmsr_safe(msr, low, high)) {
+			ret = X86EMUL_UNHANDLEABLE;
+			break;
+		}
+		break;
+	}
+	case MSR_IA32_XSS:
+		BUG_ON(!pkvm_cpu_initialized(vcpu->cpu));
+
+		if (val != kvm_host.xss) {
+			pkvm_warn("Host attempt to modify MSR_IA32_XSS: 0x%llx (expected 0x%llx)\n",
+				  val, kvm_host.xss);
+			ret = X86EMUL_UNHANDLEABLE;
+			break;
+		}
+		if (wrmsr_safe(msr, low, high)) {
+			ret = X86EMUL_UNHANDLEABLE;
+			break;
+		}
+		break;
+	case MSR_IA32_APICBASE:
+	case APIC_BASE_MSR ... APIC_BASE_MSR + 0xff:
+		if (pkvm_lapic_msr_write(msr, val))
+			ret = X86EMUL_UNHANDLEABLE;
+		break;
 	default:
 		/*
 		 * The MSRs intercepted by the writing bitmap should be
@@ -228,6 +279,18 @@ static int handle_xsetbv(struct kvm_vcpu *vcpu)
 	u32 eax = (u32)(vcpu->arch.regs[VCPU_REGS_RAX] & -1u);
 	u32 edx = (u32)(vcpu->arch.regs[VCPU_REGS_RDX] & -1u);
 	u32 ecx = (u32)(vcpu->arch.regs[VCPU_REGS_RCX] & -1u);
+
+	BUG_ON(!pkvm_cpu_initialized(vcpu->cpu));
+
+	if (ecx == XCR_XFEATURE_ENABLED_MASK) {
+		u64 xcr0 = (u64)eax | ((u64)edx << 32);
+
+		if (xcr0 != kvm_host.xcr0) {
+			pkvm_warn("Host attempt to modify XCR0: 0x%llx (expected 0x%llx)\n",
+				  xcr0, kvm_host.xcr0);
+			goto fault;
+		}
+	}
 
 	asm goto("1: xsetbv\n\t"
 		 _ASM_EXTABLE(1b, %l[fault])
@@ -328,6 +391,9 @@ static void handle_pending_events(struct kvm_vcpu *vcpu, bool *req_immediate_exi
 				*req_immediate_exit = true;
 		}
 	}
+
+	if (kvm_check_request(KVM_REQ_TLB_FLUSH_CURRENT, vcpu))
+		pkvm_flush_host_ept();
 }
 
 static void fixup_host_vmx(struct vcpu_vmx *vmx)
@@ -356,6 +422,10 @@ void pkvm_host_vmexit_main(struct vcpu_vmx *vmx)
 	struct vcpu_vt *vt = &vmx->vt;
 	bool skip_instruction = false;
 
+	pkvm_trace_vmexit_start(vcpu);
+
+	pkvm_set_vcpu_outside_guest(vcpu);
+
 	vcpu->arch.cr2 = native_read_cr2();
 	vcpu->arch.exception.injected = false;
 
@@ -374,6 +444,13 @@ void pkvm_host_vmexit_main(struct vcpu_vmx *vmx)
 	       vt->exit_reason.smi_from_vmx_root);
 
 	switch (vt->exit_reason.basic) {
+	case EXIT_REASON_INIT_SIGNAL:
+		/*
+		 * INIT is used as kick when making a request.
+		 * So just break the vmexits and go to pending
+		 * events handling.
+		 */
+		break;
 	case EXIT_REASON_INTERRUPT_WINDOW:
 		handle_irq_window(vcpu);
 		break;
@@ -426,11 +503,25 @@ void pkvm_host_vmexit_main(struct vcpu_vmx *vmx)
 	if (skip_instruction)
 		skip_emulated_instruction(vcpu);
 
+handle_events:
 	handle_pending_events(vcpu, &req_immediate_exit);
+
+	pkvm_set_vcpu_in_guest(vcpu);
 
 	if (req_immediate_exit) {
 		kvm_make_request(KVM_REQ_EVENT, vcpu);
 		request_host_immediate_exit(vmx);
+	} else if (READ_ONCE(vcpu->mode) == EXITING_GUEST_MODE ||
+		   kvm_request_pending(vcpu)) {
+		pkvm_set_vcpu_outside_guest(vcpu);
+		/*
+		 * Some vcpu requests may be set after handle_pending_events()
+		 * but before set vcpu mode to IN_GUEST_MODE. In this case the
+		 * init signal will not be send to kick the vcpu. To guarantee
+		 * such vcpu requests can be handled timely, try to handle
+		 * pending event again.
+		 */
+		goto handle_events;
 	}
 
 	if (vcpu->arch.cr2 != native_read_cr2())
@@ -438,4 +529,6 @@ void pkvm_host_vmexit_main(struct vcpu_vmx *vmx)
 
 	if (unlikely(this_cpu_read(host_vcpu_fixup)))
 		fixup_host_vmx(vmx);
+
+	pkvm_trace_vmexit_end(vcpu, vt->exit_reason.basic);
 }

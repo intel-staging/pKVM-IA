@@ -196,6 +196,7 @@ enum {
 	VCPU_SREG_GS,
 	VCPU_SREG_TR,
 	VCPU_SREG_LDTR,
+	NR_VCPU_SEGMENTS,
 };
 
 enum exit_fastpath_completion {
@@ -715,6 +716,24 @@ enum kvm_only_cpuid_leafs {
 	NKVMCAPINTS = NR_KVM_CPU_CAPS - NCAPINTS,
 };
 
+#ifdef CONFIG_PKVM_X86
+struct pkvm_memcache {
+	struct pkvm_page_range {
+		phys_addr_t addr;
+		u64 nr_pages;
+	} head;
+	unsigned long count;
+};
+
+struct kvm_pkvm_vm {
+	int handle;
+};
+
+struct kvm_pkvm_vcpu {
+	int handle;
+};
+#endif /* CONFIG_PKVM_X86 */
+
 struct kvm_vcpu_arch {
 	/*
 	 * rip and regs accesses must go through
@@ -1028,6 +1047,10 @@ struct kvm_vcpu_arch {
 
 #if IS_ENABLED(CONFIG_HYPERV)
 	hpa_t hv_root_tdp;
+#endif
+
+#ifdef CONFIG_PKVM_X86
+	struct kvm_pkvm_vcpu pkvm;
 #endif
 };
 
@@ -1413,6 +1436,10 @@ struct kvm_arch {
 	 * current VM.
 	 */
 	int cpu_dirty_log_size;
+
+#ifdef CONFIG_PKVM_X86
+	struct kvm_pkvm_vm pkvm;
+#endif
 };
 
 struct kvm_vm_stat {
@@ -1527,6 +1554,7 @@ struct kvm_x86_ops {
 	void (*vcpu_reset)(struct kvm_vcpu *vcpu, bool init_event);
 
 	void (*prepare_switch_to_guest)(struct kvm_vcpu *vcpu);
+	void (*prepare_switch_to_host)(struct kvm_vcpu *vcpu);
 	void (*vcpu_load)(struct kvm_vcpu *vcpu, int cpu);
 	void (*vcpu_put)(struct kvm_vcpu *vcpu);
 
@@ -1797,11 +1825,41 @@ extern bool __read_mostly enable_pkvm;	/* kernel command-line flag */
 extern phys_addr_t pkvm_mem_base;
 extern phys_addr_t pkvm_mem_size;
 void __init pkvm_reserve(void);
+void pkvm_init_debugfs(void);
+void pkvm_create_vm_debugfs(struct kvm *kvm);
+void kvm_free_pkvm_memcache(struct pkvm_memcache *mc);
 #else
 #define enable_pkvm		false
 static inline void __init pkvm_reserve(void) {}
+static inline void pkvm_create_vm_debugfs(struct kvm *kvm) {}
 #endif
 
+#ifdef __PKVM_HYP__
+/*
+ * TODO: Enable the static call mechanism in the pKVM hypervisor.
+ *
+ * Until the static call mechanism is available, just use indirect
+ * calls. In particular, assume that any ops that are used by pKVM
+ * hypervisor code are non-NULL.
+ */
+#define kvm_x86_call(func)				\
+({							\
+	BUG_ON(!kvm_x86_ops.func);			\
+	(kvm_x86_ops.func);				\
+})
+
+/*
+ * pKVM doesn't support nested virtualization, so the hypervisor never sets
+ * the ops in kvm_nested_ops. kvm_nested_call() is still needed by sharing the
+ * KVM code without adding more #ifndef __PKVM_HYP__, but is not expected to be
+ * reached as the vCPUs never enter guest mode.
+ */
+#define kvm_nested_call(func)				\
+({							\
+	BUG_ON(!kvm_nested_ops.func);			\
+	(kvm_nested_ops.func);				\
+})
+#else /* __PKVM_HYP__ */
 #define kvm_x86_call(func) static_call(kvm_x86_##func)
 
 #define KVM_X86_OP(func) \
@@ -1817,10 +1875,13 @@ static inline void __init pkvm_reserve(void) {}
 #define KVM_X86_NESTED_OP_OPTIONAL KVM_X86_NESTED_OP
 #define KVM_X86_NESTED_OP_OPTIONAL_RET0 KVM_X86_NESTED_OP
 #include <asm/kvm-x86-nested-ops.h>
+#endif /* __PKVM_HYP__ */
 
 #define __KVM_HAVE_ARCH_VM_ALLOC
 static inline struct kvm *kvm_arch_alloc_vm(void)
 {
+	if (enable_pkvm)
+		return kzalloc(kvm_x86_ops.vm_size, GFP_KERNEL_ACCOUNT);
 	return kvzalloc(kvm_x86_ops.vm_size, GFP_KERNEL_ACCOUNT);
 }
 

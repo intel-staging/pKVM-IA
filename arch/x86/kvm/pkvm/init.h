@@ -9,6 +9,7 @@ typedef int (*hyp_mmu_finalize_fn_t)(struct pkvm_pgtable *pgt);
 typedef int (*host_mmu_init_fn_t)(struct pkvm_pgtable *pgt, void *pool_base,
 				  unsigned long pool_pages);
 typedef int (*host_mmu_finalize_fn_t)(struct pkvm_pgtable *pgt);
+typedef int (*hyp_global_init_fn_t)(void);
 
 /**
  * pkvm_init_ops - The platform vendor specific pKVM init operations used by the
@@ -18,13 +19,31 @@ typedef int (*host_mmu_finalize_fn_t)(struct pkvm_pgtable *pgt);
  * @hyp_mmu_finalize:	Finalize the hypervisor mmu.
  * @host_mmu_init:	Initialize the host mmu.
  * @host_mmu_finalize:	Finalize the host mmu.
+ * @hyp_global_init:	Initialize the hypervisor globally.
  */
 struct pkvm_init_ops {
 	hyp_mmu_finalize_fn_t		hyp_mmu_finalize;
 	host_mmu_init_fn_t		host_mmu_init;
 	host_mmu_finalize_fn_t		host_mmu_finalize;
+	hyp_global_init_fn_t		hyp_global_init;
 };
 
 int pkvm_init(struct pkvm_mem_info infos[], int nr_info);
+bool pkvm_cpu_initialized(int cpu);
+
+/**
+ * for_each_pkvm_initialized_cpu - iterate over initialized pKVM host vCPUs
+ * @i: iterator variable for vCPU index
+ * @vcpu: struct kvm_vcpu pointer to host vCPU, assigned by macro.
+ *
+ * Iterates over all host vCPUs, skipping the ones whose corresponding CPU is
+ * not initialized by pkvm_init() yet.
+ */
+#define for_each_pkvm_initialized_cpu(i, vcpu)					\
+	for ((i) = 0; (i) < pkvm_hyp->num_cpus &&				\
+		      ({ (vcpu) = pkvm_hyp->host_vcpus[(i)]; true; }); (i)++)	\
+		if (!pkvm_cpu_initialized((vcpu)->cpu))				\
+			continue;						\
+		else
 
 #endif /* __PKVM_X86_INIT_H */

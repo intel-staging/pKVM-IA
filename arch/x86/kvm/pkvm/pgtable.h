@@ -3,6 +3,8 @@
 #define __PKVM_X86_PGTABLE_H
 
 #include <linux/types.h>
+#include <linux/bitfield.h>
+#include "mem_protect.h"
 
 struct pkvm_pgtable;
 
@@ -26,8 +28,8 @@ struct pkvm_pgtable_mm_ops {
  * @pte_huge:		Check if a pte is huge.
  * @pte_mkhuge:		Set huge for the given pte.
  * @pte_to_phys:	Decode the physical address from pte.
- * @pte_to_prot:	Decode the property bits from pte, excluding hugepage
- * 			bit.
+ * @pte_to_prot:	Decode the property bits from pte, including the page
+ * 			state bits, excluding hugepage bit.
  * @calc_pte_perm:	Calculate the pte permission bits according to the
  *			read/write/exec permissions.
  * @calc_pte_memtype:	Calculate the pte memory type bits for either memory or
@@ -44,6 +46,9 @@ struct pkvm_pgtable_mm_ops {
  * @pte_set:		Set a pte to a given raw value.
  * @pte_get:		Get the raw value stored in the pte.
  * @flush_tlb:		Flush the TLB for a virtual address range.
+ * @pte_mk_pgstate:	Make a pte value with the given the page state.
+ * @pte_pgstate:	Get the page state from the pte.
+ * @pgstate_mask:	Get the page state bits mask.
  */
 struct pkvm_pgtable_ops {
 	bool (*pte_present)(void *ptep);
@@ -63,6 +68,9 @@ struct pkvm_pgtable_ops {
 	u64 (*pte_get)(void *ptep);
 	void (*flush_tlb)(struct pkvm_pgtable *pgt,
 			  unsigned long vaddr, unsigned long size);
+	u64 (*pte_mk_pgstate)(enum pkvm_page_state state);
+	enum pkvm_page_state (*pte_pgstate)(void *ptep);
+	u64 (*pgstate_mask)(void);
 };
 
 struct pkvm_pgtable_cap {
@@ -78,6 +86,7 @@ struct pkvm_pgtable_cap {
 	 * hyp_mmu.
 	 */
 	bool coalesce_on_map;
+	bool flush_tlb_lazy;
 };
 
 struct pkvm_pgtable {
@@ -94,6 +103,7 @@ struct pkvm_pgtable_visit_ctx {
 	unsigned long addr;
 	int level;
 	void *ptep;
+	bool flush_tlb;
 };
 
 typedef int (*pgtable_visit_fn_t)(struct pkvm_pgtable_visit_ctx *ctx,
@@ -147,6 +157,60 @@ int pkvm_pgtable_lookup(struct pkvm_pgtable *pgt, unsigned long vaddr,
 static inline unsigned long pkvm_pgtable_max_size(struct pkvm_pgtable *pgt)
 {
 	return pgt->pgt_ops->level_to_size(pgt->cap.level + 1);
+}
+
+static inline u64 pkvm_pgt_pgstate_mask(struct pkvm_pgtable *pgt)
+{
+	if (!pgt->pgt_ops->pgstate_mask)
+		return 0;
+
+	return pgt->pgt_ops->pgstate_mask();
+}
+
+static inline u64 pkvm_pte_mk_pgstate(struct pkvm_pgtable *pgt,
+				      enum pkvm_page_state state)
+{
+	if (!pgt->pgt_ops->pte_mk_pgstate)
+		return 0;
+
+	return pgt->pgt_ops->pte_mk_pgstate(state);
+}
+
+static inline enum pkvm_page_state pkvm_pte_pgstate(struct pkvm_pgtable *pgt, void *ptep)
+{
+	if (!pgt->pgt_ops->pte_pgstate)
+		return PKVM_PAGE_NONE;
+
+	return pgt->pgt_ops->pte_pgstate(ptep);
+}
+
+/*
+ * Use bit31 ~ bi12 as owner ID bits to avoid conflicting w/ low 12 property
+ * bits for all kinds of page table.
+ */
+#define PKVM_INVALID_PTE_OWNER_SHIFT		12
+#define PKVM_INVALID_PTE_OWNER_BITS		20
+#define PKVM_INVALID_PTE_OWNER_MASK		GENMASK(PKVM_INVALID_PTE_OWNER_BITS +		\
+							PKVM_INVALID_PTE_OWNER_SHIFT - 1,	\
+							PKVM_INVALID_PTE_OWNER_SHIFT)
+
+static inline u64 pkvm_pte_mk_owner_id(enum pkvm_owner_id owner)
+{
+	/*
+	 * As 20 bits in the PTE are used to store pKVM owner ID, the number of
+	 * pKVM owner ID bits should not be larger than this.
+	 */
+	BUILD_BUG_ON_MSG(PKVM_OWNER_ID_BITS > PKVM_INVALID_PTE_OWNER_BITS,
+			"PTE doesn't have enough bits to store pkvm owner ID");
+
+	BUG_ON(owner >= PKVM_MAX_ID);
+
+	return FIELD_PREP(PKVM_INVALID_PTE_OWNER_MASK, owner);
+}
+
+static inline enum pkvm_owner_id pkvm_pte_owner_id(struct pkvm_pgtable *pgt, void *ptep)
+{
+	return FIELD_GET(PKVM_INVALID_PTE_OWNER_MASK, pgt->pgt_ops->pte_get(ptep));
 }
 
 #endif /* __PKVM_X86_PGTABLE_H */
