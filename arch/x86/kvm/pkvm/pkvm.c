@@ -493,6 +493,8 @@ static void __vcpu_post_create(struct kvm_vcpu *vcpu)
 	/* Load guest vCPU to reset it. */
 	guard(switch_vcpu)(vcpu);
 
+	kvm_vcpu_after_set_cpuid(vcpu);
+
 	kvm_vcpu_reset(vcpu, false);
 
 	/*
