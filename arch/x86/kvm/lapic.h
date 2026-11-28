@@ -5,11 +5,16 @@
 #include <kvm/iodev.h>
 
 #include <asm/apic.h>
+#include <asm/mce.h>
 
 #include <linux/kvm_host.h>
 
 #include "hyperv.h"
 #include "smm.h"
+
+#ifdef __PKVM_HYP__
+#include "pkvm/pkvm.h"
+#endif
 
 #define KVM_APIC_INIT		0
 #define KVM_APIC_SIPI		1
@@ -194,6 +199,9 @@ int kvm_lapic_set_pv_eoi(struct kvm_vcpu *vcpu, u64 data, unsigned long len);
 void kvm_lapic_exit(void);
 
 u64 kvm_x2apic_disable_read_intercept_reg_mask(struct kvm_vcpu *vcpu);
+#ifdef __PKVM_HYP__
+u64 pkvm_protected_lapic_readable_reg_mask(struct kvm_lapic *apic);
+#endif
 
 static inline void kvm_lapic_set_irr(int vec, struct kvm_lapic *apic)
 {
@@ -214,27 +222,41 @@ DECLARE_STATIC_KEY_FALSE(kvm_has_noapic_vcpu);
 
 static inline bool lapic_in_kernel(struct kvm_vcpu *vcpu)
 {
+#ifndef __PKVM_HYP__
 	if (static_branch_unlikely(&kvm_has_noapic_vcpu))
 		return vcpu->arch.apic;
 	return true;
+#else
+	return vcpu->arch.apic;
+#endif
 }
 
 extern struct static_key_false_deferred apic_hw_disabled;
 
 static inline bool kvm_apic_hw_enabled(struct kvm_lapic *apic)
 {
+#ifndef __PKVM_HYP__
 	if (static_branch_unlikely(&apic_hw_disabled.key))
 		return apic->vcpu->arch.apic_base & MSR_IA32_APICBASE_ENABLE;
 	return true;
+#else
+	return apic->vcpu->arch.apic_base & MSR_IA32_APICBASE_ENABLE;
+#endif
 }
 
 extern struct static_key_false_deferred apic_sw_disabled;
 
 static inline bool kvm_apic_sw_enabled(struct kvm_lapic *apic)
 {
+#ifndef __PKVM_HYP__
 	if (static_branch_unlikely(&apic_sw_disabled.key))
 		return apic->sw_enabled;
 	return true;
+#else
+	void *regs = to_pkvm_vcpu(apic->vcpu)->shared_apic_regs;
+
+	return apic_get_reg(regs, APIC_SPIV) & APIC_SPIV_APIC_ENABLED;
+#endif
 }
 
 static inline bool kvm_apic_present(struct kvm_vcpu *vcpu)
@@ -308,6 +330,11 @@ static inline enum lapic_mode kvm_get_apic_mode(struct kvm_vcpu *vcpu)
 static inline u8 kvm_xapic_id(struct kvm_lapic *apic)
 {
 	return kvm_lapic_get_reg(apic, APIC_ID) >> 24;
+}
+
+static inline int kvm_apic_calc_nr_lvt_entries(struct kvm_vcpu *vcpu)
+{
+	return KVM_APIC_MAX_NR_LVT_ENTRIES - !(vcpu->arch.mcg_cap & MCG_CMCI_P);
 }
 
 #endif

@@ -108,3 +108,27 @@ disable:
 	pkvm_mem_size = 0;
 	enable_pkvm = false;
 }
+
+static void *kvm_host_va(phys_addr_t phys)
+{
+	return __va(phys);
+}
+
+static void kvm_free_pkvm_page_range(struct pkvm_page_range range)
+{
+	void *vaddr = __va(range.addr);
+	u64 nr_pages = range.nr_pages;
+
+	if (WARN_ON_ONCE(!nr_pages))
+		return;
+
+	if (nr_pages > 1)
+		free_pages_exact(vaddr, nr_pages << PAGE_SHIFT);
+	else
+		free_page((unsigned long)vaddr);
+}
+
+void kvm_free_pkvm_memcache(struct pkvm_memcache *mc)
+{
+	free_pkvm_memcache(mc, kvm_free_pkvm_page_range, kvm_host_va);
+}

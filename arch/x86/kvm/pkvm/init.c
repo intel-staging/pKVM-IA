@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <linux/kvm_host.h>
+#include <asm/fpu/xstate.h>
 #include <asm/kvm_pkvm.h>
+#include "../cpuid.h"
+#include "../x86.h"
 #include "early_alloc.h"
+#include "fpu.h"
 #include "init.h"
 #include "lapic.h"
 #include "memory.h"
@@ -188,6 +192,7 @@ static int create_hyp_mmu(const struct pkvm_mem_info infos[], int nr_infos)
 static int initialize_global(struct pkvm_mem_info infos[], int nr_infos)
 {
 	host_mmu_init_fn_t host_mmu_init_fn = init_ops ? init_ops->host_mmu_init : NULL;
+	hyp_global_init_fn_t hyp_global_init = init_ops ? init_ops->hyp_global_init : NULL;
 	struct pkvm_mem_info tmp_infos[TMP_NR_INFOS];
 	phys_addr_t mem_base = INVALID_PAGE;
 	unsigned long mem_size = 0;
@@ -224,8 +229,20 @@ static int initialize_global(struct pkvm_mem_info infos[], int nr_infos)
 	if (ret)
 		return ret;
 
-	return pkvm_host_mmu_init(host_pgt_base, pkvm_host_pgtable_pages(),
-				  tmp_infos, nr_infos, host_mmu_init_fn);
+	ret = pkvm_host_mmu_init(host_pgt_base, pkvm_host_pgtable_pages(),
+				 tmp_infos, nr_infos, host_mmu_init_fn);
+	if (ret)
+		return ret;
+
+	pkvm_setup_xstate_cache();
+
+	/*
+	 * Initialize KVM cpuid_xstate_sizes to support CPUID emulation for the
+	 * guest VMs.
+	 */
+	kvm_init_xstate_sizes();
+
+	return hyp_global_init ? hyp_global_init() : 0;
 }
 
 int pkvm_init(struct pkvm_mem_info infos[], int nr_infos)
@@ -267,7 +284,21 @@ int pkvm_init(struct pkvm_mem_info infos[], int nr_infos)
 	if (ret)
 		return ret;
 
+	ret = pkvm_init_percpu_fpu();
+	if (ret)
+		return ret;
+
+	/*
+	 * Must be called after fpu initialization, as the latter affects
+	 * the fpu related bits in the supported cpuid leaves.
+	 */
+	ret = pkvm_init_cpuid();
+	if (ret)
+		return ret;
+
 	pkvm_vcpu_perf_init(this_cpu_read(host_vcpu));
+
+	kvm_user_return_msr_cpu_online();
 
 	this_cpu_write(cpu_initialized, true);
 	return 0;

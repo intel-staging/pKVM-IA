@@ -133,6 +133,26 @@ static inline bool is_mmio_range(unsigned long phys, unsigned long size)
 	return range_contains(&range, &target);
 }
 
+/*
+ * Convert a linux host kernel virtual address to a pKVM direct mapping
+ * virtual address.
+ *
+ * The input address can be either a direct mapping VA (i.e. below
+ * __START_KERNEL_map) or a kernel text/data/bss VA (i.e. above
+ * __START_KERNEL_map). In the former case the output address is the same
+ * as the input one, since pKVM currently uses the same VA offset for its
+ * direct mapping as the host kernel. In the latter case the output address
+ * is the direct mapping VA representing the same physical address as the
+ * input VA.
+ *
+ * Thereby pKVM can safely rely on __pkvm_va(__pkvm_pa(addr)) == addr
+ * being true for any address returned by kern_pkvm_va().
+ */
+static inline void *kern_pkvm_va(void *va)
+{
+	return __pkvm_va(__pkvm_pa(va));
+}
+
 void clflush_cache_range(void *vaddr, unsigned int size);
 
 static inline void pkvm_clear_memory(void *va, size_t size)
@@ -158,6 +178,16 @@ static inline gpa_t pkvm_phys_to_host_gpa(unsigned long phys)
 {
 	/* See comments in pkvm_host_gpa_to_phys */
 	return phys;
+}
+
+static inline void *pkvm_host_gpa_to_virt(gpa_t gpa)
+{
+	return __pkvm_va(pkvm_host_gpa_to_phys(gpa));
+}
+
+static inline gpa_t pkvm_virt_to_host_gpa(void *addr)
+{
+	return pkvm_phys_to_host_gpa(__pkvm_pa(addr));
 }
 
 #endif /* __PKVM_X86_MEMORY_H */

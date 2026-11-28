@@ -14,7 +14,12 @@ cmd_deps			:= $(src)/compiling_cmds.sh
 pkvm-hyp-y			:= early_alloc.o memory.o cpu.o \
 				   idt.o entry.o kern_stub.o pkvm.o \
 				   init.o pgtable.o mmu.o page_alloc.o \
-				   lapic.o trace.o
+				   lapic.o trace.o fpu.o
+
+CFLAGS_fpu.pkvm.o		+= -iquote $(srctree)/arch/x86/kernel/fpu
+
+fpu				:= ../../kernel/fpu
+pkvm-hyp-y			+= $(fpu)/core.o $(fpu)/xstate.o
 
 pkvm-lib			:= lib
 pkvm-hyp-y			+= $(pkvm-lib)/find_bit.o
@@ -33,17 +38,25 @@ quiet_cmd_patch_retpoline = PATCH_RETPOLINE $@
       cmd_patch_retpoline = $(BASH) $(src)/compiling_cmds.sh patch_retpoline $< $@
 
 kernel-lib			:= ../../../../lib
+pkvm-hyp-y			+= $(kernel-lib)/string.o $(kernel-lib)/ctype.o \
+				   $(kernel-lib)/sort.o
 pkvm-hyp-$(CONFIG_LIST_HARDENED) += $(kernel-lib)/list_debug.o
 
 kvm				:= ..
-pkvm-hyp-y			+= $(kvm)/x86.o
+pkvm-hyp-y			+= $(kvm)/x86.o $(kvm)/msrs.o $(kvm)/cpuid.o \
+				   $(kvm)/mtrr.o $(kvm)/lapic.o $(kvm)/regs.o
 
 pkvm-hyp-$(CONFIG_PKVM_INTEL)	+= $(kvm)/vmx/vmx.o vmx/host_vmx.o \
-				   vmx/host_vmentry.o vmx/idt.o vmx/ept.o
+				   vmx/host_vmentry.o vmx/idt.o vmx/ept.o \
+				   $(kvm)/vmx/main.o $(kvm)/vmx/vmenter.o
 
 AFLAGS_vmx/host_vmentry.pkvm.o	+= -iquote $(srctree)/arch/x86/kvm
 AFLAGS_vmx/host_vmentry.pkvm.o	+= -iquote $(obj)
 $(obj)/vmx/host_vmentry.pkvm.o:	$(obj)/kvm-asm-offsets.h
+
+AFLAGS_$(kvm)/vmx/vmenter.pkvm.o += -iquote $(srctree)/arch/x86/kvm
+AFLAGS_$(kvm)/vmx/vmenter.pkvm.o += -iquote $(obj)
+$(obj)/$(kvm)/vmx/vmenter.pkvm.o: $(obj)/kvm-asm-offsets.h
 
 $(obj)/kvm-asm-offsets.s: $(src)/$(kvm)/kvm-asm-offsets.c FORCE
 	$(call if_changed_dep,cc_s_c)

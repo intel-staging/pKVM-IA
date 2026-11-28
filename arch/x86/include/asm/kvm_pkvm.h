@@ -9,6 +9,7 @@
 #include <asm/desc.h>
 #include <asm/kvm_para.h>
 #include <asm/pkvm_image.h>
+#include <asm/pkvm_redef.h>
 
 #define PKVM_MEMBLOCK_REGIONS		128
 #define PKVM_STACK_SIZE			SZ_16K
@@ -61,22 +62,185 @@ enum pkvm_hc {
 	MAX_PKVM_HYPERCALLS,
 };
 
+#define PKVM_HC_DATA_MAX_NUM		4
+
+union pkvm_hc_data {
+	struct {
+		struct pkvm_memcache memcache;
+	} vm_destroy;
+	struct {
+		struct pkvm_memcache memcache;
+	} vcpu_free;
+	struct {
+		u64 data;
+	} get_msr;
+	union {
+		unsigned long rsp;
+		unsigned long rip;
+		unsigned long cr0;
+		unsigned long cr3;
+		unsigned long cr4;
+		u64 pdptrs[4];
+	} cache_reg;
+	struct {
+		unsigned long data;
+	} get_rflags;
+	struct {
+		struct kvm_segment seg_val;
+		int seg;
+	} set_segment;
+	struct {
+		struct kvm_segment seg_val;
+	} get_segment;
+	struct {
+		u64 data;
+	} get_segment_base;
+	struct {
+		struct desc_ptr desc;
+	} set_idt;
+	struct {
+		struct desc_ptr desc;
+	} get_idt;
+	struct {
+		struct desc_ptr desc;
+	} set_gdt;
+	struct {
+		struct desc_ptr desc;
+	} get_gdt;
+	struct {
+		bool full;
+	} flush_tlb_gva;
+	struct {
+		u32 data;
+	} get_interrupt_shadow;
+	struct {
+		bool data;
+	} get_nmi_mask;
+	struct {
+		bool has_intr;
+	} protected_apic_has_interrupt;
+	struct {
+		struct pkvm_memcache memcache;
+	} vcpu_after_set_cpuid;
+	struct {
+		struct pkvm_memcache memcache;
+	} vcpu_add_fpstate;
+	struct {
+		unsigned long reqs_to_host;
+#define HOST_HANDLE_EXIT			0
+	} vcpu_run;
+	struct {
+		u64 data[PKVM_HC_DATA_MAX_NUM];
+	} raw;
+};
+
+/*
+ * The union pkvm_hc_data is passed in hypercalls via the registers used for
+ * hypercall arguments, and PKVM_HC_DATA_MAX_NUM represents the number of those
+ * registers. So the size of the union cannot be larger than that.
+ */
+static_assert(sizeof(union pkvm_hc_data) == PKVM_HC_DATA_MAX_NUM * sizeof(u64));
+
+#define PKVM_HC_DATA_NUM(f)		\
+	(ALIGN(sizeof(((union pkvm_hc_data *)0)->f), sizeof(u64)) / sizeof(u64))
+
+#define PKVM_HC_OUTPUT_NUM(f)	f##_output_num
+#define PKVM_HC_INPUT_NUM(f)	f##_input_num
+
+enum {
+	#define PKVM_HC(f)	PKVM_HC_OUTPUT_NUM(f) = 0,
+	#define PKVM_HC_OUT(f)	PKVM_HC_OUTPUT_NUM(f) = PKVM_HC_DATA_NUM(f),
+	#include <asm/pkvm_hypercalls.h>
+
+	#define PKVM_HC(f)	PKVM_HC_INPUT_NUM(f) = 0,
+	#define PKVM_HC_IN(f)	PKVM_HC_INPUT_NUM(f) = PKVM_HC_DATA_NUM(f),
+	#include <asm/pkvm_hypercalls.h>
+};
+
+static inline int pkvm_hc_output_num(enum pkvm_hc hc)
+{
+	switch (hc) {
+	#define PKVM_HC(f) case TO_PKVM_HC(f): return PKVM_HC_OUTPUT_NUM(f);
+	#include <asm/pkvm_hypercalls.h>
+	default:
+		return 0;
+	}
+}
+
+static inline int pkvm_hc_input_num(enum pkvm_hc hc)
+{
+	switch (hc) {
+	#define PKVM_HC(f) case TO_PKVM_HC(f): return PKVM_HC_INPUT_NUM(f);
+	#include <asm/pkvm_hypercalls.h>
+	default:
+		return 0;
+	}
+}
+
 #define PKVM_HC_IN_0()
 #define PKVM_HC_IN_1(a1)		, "b"((unsigned long)a1)
 #define PKVM_HC_IN_2(a1, a2)		PKVM_HC_IN_1(a1), "c"((unsigned long)a2)
 #define PKVM_HC_IN_3(a1, a2, a3)	PKVM_HC_IN_2(a1, a2), "d"((unsigned long)a3)
 #define PKVM_HC_IN_4(a1, a2, a3, a4)	PKVM_HC_IN_3(a1, a2, a3), "S"((unsigned long)a4)
 
-#define pkvm_hypercall(f, ...)								\
+#define PKVM_HC_OUT_0(o)
+#define PKVM_HC_OUT_1(o)		, "=b"((o)->raw.data[0])
+#define PKVM_HC_OUT_2(o)		PKVM_HC_OUT_1(o), "=c"((o)->raw.data[1])
+#define PKVM_HC_OUT_3(o)		PKVM_HC_OUT_2(o), "=d"((o)->raw.data[2])
+#define PKVM_HC_OUT_4(o)		PKVM_HC_OUT_3(o), "=S"((o)->raw.data[3])
+
+#define __pkvm_hypercall(f, o, n, ...)							\
 ({											\
 	int ret;									\
 	asm volatile(KVM_HYPERCALL							\
-		     : "=a"(ret)							\
+		     : "=a"(ret) CONCATENATE(PKVM_HC_OUT_, n)(o)			\
 		     : "a"(TO_PKVM_HC(f))						\
 		       CONCATENATE(PKVM_HC_IN_, COUNT_ARGS(__VA_ARGS__))(__VA_ARGS__)	\
 		     : "memory");							\
 	ret;										\
 })
+
+#define PKVM_HC_UNREACHABLE(f)								\
+({											\
+	BUILD_BUG_ON_MSG(1, #f " requires unsupported number of data");			\
+	-EINVAL;									\
+})
+
+#define pkvm_hypercall(f, ...)								\
+({											\
+	BUILD_BUG_ON(PKVM_HC_OUTPUT_NUM(f));						\
+	__pkvm_hypercall(f, NULL, 0, ##__VA_ARGS__);					\
+})
+
+#define pkvm_hypercall_out(f, o, ...)							\
+	__builtin_choose_expr(PKVM_HC_OUTPUT_NUM(f) == 0,				\
+			      __pkvm_hypercall(f, NULL, 0, ##__VA_ARGS__),		\
+	__builtin_choose_expr(PKVM_HC_OUTPUT_NUM(f) == 1,				\
+			      __pkvm_hypercall(f, o, 1, ##__VA_ARGS__),			\
+	__builtin_choose_expr(PKVM_HC_OUTPUT_NUM(f) == 2,				\
+			      __pkvm_hypercall(f, o, 2, ##__VA_ARGS__),			\
+	__builtin_choose_expr(PKVM_HC_OUTPUT_NUM(f) == 3,				\
+			      __pkvm_hypercall(f, o, 3, ##__VA_ARGS__),			\
+	__builtin_choose_expr(PKVM_HC_OUTPUT_NUM(f) == 4,				\
+			      __pkvm_hypercall(f, o, 4, ##__VA_ARGS__),			\
+	PKVM_HC_UNREACHABLE(f))))))
+
+#define pkvm_hypercall_in(f, i)								\
+	__builtin_choose_expr(PKVM_HC_INPUT_NUM(f) == 1,				\
+			      __pkvm_hypercall(f, NULL, 0, (i)->raw.data[0]),		\
+	__builtin_choose_expr(PKVM_HC_INPUT_NUM(f) == 2,				\
+			      __pkvm_hypercall(f, NULL, 0, (i)->raw.data[0],		\
+					       (i)->raw.data[1]),			\
+	__builtin_choose_expr(PKVM_HC_INPUT_NUM(f) == 3,				\
+			      __pkvm_hypercall(f, NULL, 0, (i)->raw.data[0],		\
+					       (i)->raw.data[1],			\
+					       (i)->raw.data[2]),			\
+	__builtin_choose_expr(PKVM_HC_INPUT_NUM(f) == 4,				\
+			      __pkvm_hypercall(f, NULL, 0, (i)->raw.data[0],		\
+					       (i)->raw.data[1],			\
+					       (i)->raw.data[2],			\
+					       (i)->raw.data[3]),			\
+	PKVM_HC_UNREACHABLE(f)))))
 
 static inline unsigned long pkvm_hc(struct kvm_vcpu *vcpu)
 {
@@ -87,6 +251,11 @@ static inline unsigned long pkvm_hc(struct kvm_vcpu *vcpu)
 static inline unsigned long pkvm_hc_input##n(struct kvm_vcpu *vcpu)			\
 {											\
 	return vcpu->arch.regs[VCPU_REGS_##reg];					\
+}											\
+static inline void pkvm_hc_get_input##n(struct kvm_vcpu *vcpu, union pkvm_hc_data *p)	\
+{											\
+	BUILD_BUG_ON(n == 0 || n > PKVM_HC_DATA_MAX_NUM);				\
+	p->raw.data[n - 1] = vcpu->arch.regs[VCPU_REGS_##reg];				\
 }
 
 DEFINE_PKVM_HC_INPUT(1, RBX)
@@ -94,9 +263,67 @@ DEFINE_PKVM_HC_INPUT(2, RCX)
 DEFINE_PKVM_HC_INPUT(3, RDX)
 DEFINE_PKVM_HC_INPUT(4, RSI)
 
+static inline void pkvm_hc_get_input(struct kvm_vcpu *vcpu, enum pkvm_hc hc,
+				     union pkvm_hc_data *in)
+{
+	switch (pkvm_hc_input_num(hc)) {
+	case 4:
+		pkvm_hc_get_input4(vcpu, in);
+		fallthrough;
+	case 3:
+		pkvm_hc_get_input3(vcpu, in);
+		fallthrough;
+	case 2:
+		pkvm_hc_get_input2(vcpu, in);
+		fallthrough;
+	case 1:
+		pkvm_hc_get_input1(vcpu, in);
+		fallthrough;
+	case 0:
+		break;
+	default:
+		BUG();
+	}
+}
+
 static inline void pkvm_hc_set_ret(struct kvm_vcpu *vcpu, int ret)
 {
 	vcpu->arch.regs[VCPU_REGS_RAX] = ret;
+}
+
+#define DEFINE_PKVM_HC_OUTPUT(n, reg)							\
+static inline void pkvm_hc_set_output##n(struct kvm_vcpu *vcpu, union pkvm_hc_data *p)	\
+{											\
+	BUILD_BUG_ON(n == 0 || n > PKVM_HC_DATA_MAX_NUM);				\
+	vcpu->arch.regs[VCPU_REGS_##reg] = p->raw.data[n - 1];				\
+}
+
+DEFINE_PKVM_HC_OUTPUT(1, RBX)
+DEFINE_PKVM_HC_OUTPUT(2, RCX)
+DEFINE_PKVM_HC_OUTPUT(3, RDX)
+DEFINE_PKVM_HC_OUTPUT(4, RSI)
+
+static inline void pkvm_hc_set_output(struct kvm_vcpu *vcpu, enum pkvm_hc hc,
+				      union pkvm_hc_data *out)
+{
+	switch (pkvm_hc_output_num(hc)) {
+	case 4:
+		pkvm_hc_set_output4(vcpu, out);
+		fallthrough;
+	case 3:
+		pkvm_hc_set_output3(vcpu, out);
+		fallthrough;
+	case 2:
+		pkvm_hc_set_output2(vcpu, out);
+		fallthrough;
+	case 1:
+		pkvm_hc_set_output1(vcpu, out);
+		fallthrough;
+	case 0:
+		break;
+	default:
+		BUG();
+	}
 }
 
 extern unsigned long pkvm_sym(page_offset_base);
@@ -119,6 +346,9 @@ extern struct cpumask pkvm_sym(__cpu_possible_mask);
 extern unsigned int pkvm_sym(nr_cpu_ids);
 DECLARE_STATIC_KEY_FALSE(pkvm_sym(switch_vcpu_ibpb));
 extern unsigned int pkvm_sym(tsc_khz);
+extern struct fpu_state_config pkvm_sym(fpu_kernel_cfg);
+extern struct fpu_state_config pkvm_sym(fpu_user_cfg);
+DECLARE_STATIC_KEY_FALSE(pkvm_sym(__fpu_state_size_dynamic));
 
 PKVM_DECLARE(void *, pkvm_early_alloc_page, (void));
 PKVM_DECLARE(void *, pkvm_early_alloc_contig, (unsigned int nr_pages));
@@ -240,6 +470,88 @@ static inline unsigned long pkvm_host_pgtable_pages(void)
 	return __pkvm_pgtable_total_pages() +
 	       __pkvm_pgtable_max_pages(SZ_2G >> PAGE_SHIFT);
 }
+
+static inline bool pkvm_is_protected_vm(struct kvm *kvm)
+{
+	return kvm->arch.vm_type == KVM_X86_PKVM_PROTECTED_VM;
+}
+
+static inline bool pkvm_is_protected_vcpu(struct kvm_vcpu *vcpu)
+{
+	return pkvm_is_protected_vm(vcpu->kvm);
+}
+
+static inline size_t pkvm_guest_initial_fpstate_size(struct kvm *kvm)
+{
+	/*
+	 * The pkvm hypervisor requires to have at least the size of struct
+	 * fpstate for both pVM (to switch FPU and emulate XFD MSR) and npVM
+	 * (to emulate XFD MSR only).
+	 */
+	size_t size = ALIGN(offsetof(struct fpstate, regs), 64);
+
+	/*
+	 * The pkvm hypervisor switches the FPU registers for pVM thus the size
+	 * should be extended with fpu_user_cfg.default_size to satisfy the
+	 * default features (w/o dynamic features).
+	 */
+	if (pkvm_is_protected_vm(kvm))
+		size += fpu_user_cfg.default_size;
+
+	return PAGE_ALIGN(size);
+}
+
+static inline void push_pkvm_memcache(struct pkvm_memcache *mc,
+				      void *addr, size_t size,
+				      phys_addr_t (*to_pa)(void *virt))
+{
+	struct pkvm_page_range *head = addr;
+
+	if (WARN_ON_ONCE(!PAGE_ALIGNED(addr) || !size || !PAGE_ALIGNED(size)))
+		return;
+
+	*head = mc->head;
+	mc->head.addr = to_pa(addr);
+	mc->head.nr_pages = size >> PAGE_SHIFT;
+
+	mc->count++;
+}
+
+static inline struct pkvm_page_range
+pop_pkvm_memcache(struct pkvm_memcache *mc, void *(*to_va)(phys_addr_t phys))
+{
+	struct pkvm_page_range head = { 0 };
+
+	if (!mc->count)
+		return head;
+
+	/*
+	 * The popped memory should be at least one page which contains the
+	 * next head.
+	 */
+	if (WARN_ON_ONCE(!mc->head.nr_pages))
+		return head;
+
+	head = mc->head;
+	mc->head = *(struct pkvm_page_range *)to_va(head.addr);
+
+	mc->count--;
+
+	return head;
+}
+
+static inline void free_pkvm_memcache(struct pkvm_memcache *mc,
+				      void (*free)(struct pkvm_page_range range),
+				      void *(*to_va)(phys_addr_t phys))
+{
+	while (mc->count)
+		free(pop_pkvm_memcache(mc, to_va));
+}
+
+#else /* !CONFIG_PKVM_X86 */
+
+static inline bool pkvm_is_protected_vm(struct kvm *kvm) { return false; }
+static inline bool pkvm_is_protected_vcpu(struct kvm_vcpu *vcpu) { return false; }
 
 #endif /* CONFIG_PKVM_X86 */
 

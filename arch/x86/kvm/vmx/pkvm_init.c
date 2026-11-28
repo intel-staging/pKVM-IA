@@ -46,6 +46,14 @@ static unsigned int intercept_w_msrs[] = {
 	MSR_CORE_PERF_GLOBAL_CTRL,
 	MSR_IA32_APICBASE,
 	X2APIC_MSR(APIC_ID),
+	/* User-return MSRs (except MSR_EFER which is isolated via VMCS): */
+	MSR_SYSCALL_MASK,
+	MSR_LSTAR,
+	MSR_CSTAR,
+	MSR_TSC_AUX,
+	MSR_STAR,
+	MSR_IA32_TSX_CTRL,
+	MSR_IA32_XSS,
 };
 
 unsigned long __init pkvm_vmx_reserve_pages(void)
@@ -87,6 +95,11 @@ static __init void pkvm_setup_syms(void)
 	pkvm_sym(nr_cpu_ids) = nr_cpu_ids;
 
 	pkvm_sym(tsc_khz) = tsc_khz;
+
+	pkvm_sym(fpu_kernel_cfg) = fpu_kernel_cfg;
+	pkvm_sym(fpu_user_cfg) = fpu_user_cfg;
+	if (static_branch_unlikely(&__fpu_state_size_dynamic))
+		static_branch_enable(&pkvm_sym(__fpu_state_size_dynamic));
 }
 
 static __init int pkvm_setup_host_vmcs_config(void)

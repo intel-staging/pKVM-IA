@@ -51,6 +51,7 @@ void kvm_set_rflags(struct kvm_vcpu *vcpu, unsigned long rflags)
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_set_rflags);
 
+#ifndef __PKVM_HYP__
 static void __get_regs(struct kvm_vcpu *vcpu, struct kvm_regs *regs)
 {
 	if (vcpu->arch.emulate_regs_need_sync_to_vcpu) {
@@ -439,6 +440,7 @@ int kvm_set_cr4(struct kvm_vcpu *vcpu, unsigned long cr4)
 	return 0;
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_set_cr4);
+#endif /* !__PKVM_HYP__ */
 
 int kvm_set_cr8(struct kvm_vcpu *vcpu, unsigned long cr8)
 {
@@ -452,6 +454,7 @@ int kvm_set_cr8(struct kvm_vcpu *vcpu, unsigned long cr8)
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_set_cr8);
 
+#ifndef __PKVM_HYP__
 unsigned long kvm_get_cr8(struct kvm_vcpu *vcpu)
 {
 	if (lapic_in_kernel(vcpu))
@@ -740,6 +743,7 @@ int kvm_run_sync_regs_from_user(struct kvm_vcpu *vcpu)
 
 	return 0;
 }
+#endif /* !__PKVM_HYP__ */
 
 void kvm_update_dr0123(struct kvm_vcpu *vcpu)
 {
@@ -766,6 +770,7 @@ void kvm_update_dr7(struct kvm_vcpu *vcpu)
 }
 EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_update_dr7);
 
+#ifndef __PKVM_HYP__
 static u64 kvm_dr6_fixed(struct kvm_vcpu *vcpu)
 {
 	u64 fixed = DR6_FIXED_1;
@@ -873,3 +878,4 @@ int kvm_vcpu_ioctl_x86_set_debugregs(struct kvm_vcpu *vcpu,
 
 	return 0;
 }
+#endif /* !__PKVM_HYP__ */
