@@ -3,8 +3,11 @@
 #include <asm/kvm_pkvm.h>
 #include "early_alloc.h"
 #include "init.h"
+#include "lapic.h"
 #include "memory.h"
 #include "mmu.h"
+#include "pkvm.h"
+#include "trace.h"
 
 /*
  * Set by the host before deprivilege and used through the initialization
@@ -252,6 +255,10 @@ int pkvm_init(struct pkvm_mem_info infos[], int nr_infos)
 		pkvm_hyp_mmu_load();
 	}
 
+	ret = pkvm_lapic_init();
+	if (ret)
+		return ret;
+
 	ret = pkvm_hyp_mmu_finalize(hyp_mmu_finalize_fn);
 	if (ret)
 		return ret;
@@ -260,6 +267,12 @@ int pkvm_init(struct pkvm_mem_info infos[], int nr_infos)
 	if (ret)
 		return ret;
 
+	pkvm_vcpu_perf_init(this_cpu_read(host_vcpu));
+
 	this_cpu_write(cpu_initialized, true);
 	return 0;
+}
+bool pkvm_cpu_initialized(int cpu)
+{
+	return READ_ONCE(per_cpu(cpu_initialized, cpu));
 }

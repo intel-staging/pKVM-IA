@@ -57,6 +57,8 @@ struct pkvm_mem_info {
 enum pkvm_hc {
 	#define PKVM_HC(f)	TO_PKVM_HC(f),
 	#include <asm/pkvm_hypercalls.h>
+
+	MAX_PKVM_HYPERCALLS,
 };
 
 #define PKVM_HC_IN_0()
@@ -116,6 +118,7 @@ extern const struct pkvm_init_ops *pkvm_sym(init_ops);
 extern struct cpumask pkvm_sym(__cpu_possible_mask);
 extern unsigned int pkvm_sym(nr_cpu_ids);
 DECLARE_STATIC_KEY_FALSE(pkvm_sym(switch_vcpu_ibpb));
+extern unsigned int pkvm_sym(tsc_khz);
 
 PKVM_DECLARE(void *, pkvm_early_alloc_page, (void));
 PKVM_DECLARE(void *, pkvm_early_alloc_contig, (unsigned int nr_pages));

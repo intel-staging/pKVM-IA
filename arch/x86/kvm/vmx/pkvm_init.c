@@ -44,6 +44,8 @@ static struct gdt_page pkvm_gdt_page = {
 
 static unsigned int intercept_w_msrs[] = {
 	MSR_CORE_PERF_GLOBAL_CTRL,
+	MSR_IA32_APICBASE,
+	X2APIC_MSR(APIC_ID),
 };
 
 unsigned long __init pkvm_vmx_reserve_pages(void)
@@ -83,6 +85,8 @@ static __init void pkvm_setup_syms(void)
 
 	cpumask_copy(&pkvm_sym(__cpu_possible_mask), cpu_possible_mask);
 	pkvm_sym(nr_cpu_ids) = nr_cpu_ids;
+
+	pkvm_sym(tsc_khz) = tsc_khz;
 }
 
 static __init int pkvm_setup_host_vmcs_config(void)
@@ -1344,6 +1348,8 @@ int __init vmx_pkvm_init(void)
 	ret = pkvm_hyp_init();
 	if (ret)
 		panic("pkvm failed to initialize hypervisor, error %d\n", ret);
+
+	pkvm_init_debugfs();
 
 	pr_info("Hypervisor is up and running!\n");
 	return 0;

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <linux/kvm_host.h>
+#include <linux/bitfield.h>
 #include <asm/vmx.h>
 #include <vmx/capabilities.h>
 #include <mmu/spte.h>
@@ -8,6 +9,12 @@
 #include "gfp.h"
 #include "pkvm/mmu.h"
 #include "pkvm.h"
+
+/* The ignored bit56 ~ bit52 in EPT present leaf are used to store page state */
+#define EPT_PAGE_STATE_SHIFT			52
+#define EPT_PAGE_STATE_MAX_BITS			5
+#define EPT_PAGE_STATE_MASK								\
+	GENMASK(EPT_PAGE_STATE_SHIFT + PKVM_PAGE_STATE_BITS - 1, EPT_PAGE_STATE_SHIFT)
 
 static struct pkvm_pgtable *host_ept;
 static struct pkvm_pool host_ept_pool;
@@ -131,7 +138,51 @@ static u64 ept_pte_get(void *ptep)
 static void host_ept_flush_tlb(struct pkvm_pgtable *pgt,
 			       unsigned long vaddr, unsigned long size)
 {
-	/* TODO: Flush TLB for the host EPT */
+	struct kvm_vcpu *vcpu;
+	int i;
+
+	/*
+	 * During pKVM initialization phase, the host EPT will unmap the
+	 * pKVM's memory pages which can trigger TLB flushing on each
+	 * CPU. During this phase, a CPU may not be initialized yet to
+	 * respond to this request. In fact, it is also not necessary to
+	 * trigger TLB flushing for that CPU as the EPT will be flushed
+	 * eventually on that CPU when the CPU initialization is done.
+	 */
+	for_each_pkvm_initialized_cpu(i, vcpu) {
+		kvm_make_request(KVM_REQ_TLB_FLUSH_CURRENT, vcpu);
+		pkvm_kick_vcpu(vcpu);
+	}
+
+	/*
+	 * Start to wait for all vCPUs once all vCPUs are kicked to make the
+	 * waiting overhead overlapping a bit with the kicking.
+	 */
+	for_each_pkvm_initialized_cpu(i, vcpu)
+		pkvm_wait_vcpu_kicked_out(vcpu);
+}
+
+static u64 ept_pgstate_mask(void)
+{
+	return EPT_PAGE_STATE_MASK;
+}
+
+static u64 ept_pte_mk_pgstate(enum pkvm_page_state state)
+{
+	/*
+	 * As the ignored bit56 ~ bit52 in the EPT present leaf are used to
+	 * store page state, the number of page state bits should not be larger
+	 * than this.
+	 */
+	BUILD_BUG_ON_MSG(EPT_PAGE_STATE_MAX_BITS < PKVM_PAGE_STATE_BITS,
+			"EPT doesn't have enough bits to store page state");
+
+	return FIELD_PREP(EPT_PAGE_STATE_MASK, state);
+}
+
+static enum pkvm_page_state ept_pte_pgstate(void *ptep)
+{
+	return (ept_pte_get(ptep) & EPT_PAGE_STATE_MASK) >> EPT_PAGE_STATE_SHIFT;
 }
 
 static const struct pkvm_pgtable_ops host_ept_pgt_ops = {
@@ -151,6 +202,9 @@ static const struct pkvm_pgtable_ops host_ept_pgt_ops = {
 	.pte_set = ept_pte_set,
 	.pte_get = ept_pte_get,
 	.flush_tlb = host_ept_flush_tlb,
+	.pte_mk_pgstate = ept_pte_mk_pgstate,
+	.pte_pgstate = ept_pte_pgstate,
+	.pgstate_mask = ept_pgstate_mask,
 };
 
 static inline u64 construct_host_eptp(struct pkvm_pgtable *pgt)
@@ -171,6 +225,7 @@ int pkvm_host_ept_init(struct pkvm_pgtable *pgt, void *pool_base,
 		.allowed_pgsz = 1 << PG_LEVEL_4K,
 		.table_prot = VMX_EPT_RWX_MASK,
 		.coalesce_on_map = true,
+		.flush_tlb_lazy = true,
 	};
 	int ret;
 
@@ -231,6 +286,12 @@ int pkvm_host_ept_finalize(struct pkvm_pgtable *pgt)
 	}
 
 	ept_sync_global();
+	/*
+	 * Clear the pending TLB flush request left after updating host EPT
+	 * mappings in initialize_global(), as EPT has just been flushed with
+	 * global context anyway.
+	 */
+	kvm_clear_request(KVM_REQ_TLB_FLUSH_CURRENT, hvcpu);
 
 	/*
 	 * Re-enable the SECONDARY_EXEC_PT_USE_GPA bit if support Intel PT
@@ -296,4 +357,12 @@ void pkvm_handle_host_ept_violation(struct kvm_vcpu *vcpu)
 
 	if (unlikely(pkvm_host_mmu_handle_fault(gpa)))
 		handle_host_ept_violation_failure(vcpu);
+}
+
+void pkvm_flush_host_ept(void)
+{
+	if (WARN_ON(!host_ept))
+		return;
+
+	ept_sync_context(construct_host_eptp(host_ept));
 }

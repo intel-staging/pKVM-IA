@@ -121,7 +121,7 @@ config KVM_INTEL_PROVE_VE
 
 config PKVM_X86
 	bool "pKVM for x86 support"
-	depends on X86_64 && KVM_X86=y
+	depends on X86_64 && KVM_X86=y && X86_X2APIC
 	help
 	  Vendor-independent pKVM infrastructure for x86. To actually enable
 	  pKVM on a given processor type, you need to enable corresponding

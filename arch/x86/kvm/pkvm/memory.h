@@ -4,10 +4,12 @@
 
 #include <linux/types.h>
 #include <linux/range.h>
+#include <linux/kvm_types.h>
 #include <linux/mm.h>
 #include <vdso/limits.h>
 #include <asm/page.h>
 #include <asm/pkvm_image.h>
+#include "mem_protect.h"
 
 #define __pkvm_pa_symbol	__pa_symbol
 #define __pkvm_pa		__pa
@@ -16,7 +18,23 @@
 struct pkvm_page {
 	unsigned short refcount;
 	u8 order;
+
+	/* Store host memory page state. */
+	enum pkvm_page_state host_state: 4;
+	/* Store page owner id. */
+	enum pkvm_owner_id owner: 4;
+
+	/* Tracks how many times the page is shared with pKVM. */
+	u16 host_share_hyp_count;
 };
+
+/*
+ * Make sure pkvm_page->host_state is large enough to store enum
+ * pkvm_page_state, and pkvm_page->owner is large enough to store
+ * enum pkvm_owner_id.
+ */
+static_assert(PKVM_PAGE_STATE_BITS <= 4);
+static_assert(PKVM_OWNER_ID_BITS <= 4);
 
 extern u64 __pkvm_vmemmap;
 #define pkvm_vmemmap ((struct pkvm_page *)__pkvm_vmemmap)
@@ -31,6 +49,12 @@ extern u64 __pkvm_vmemmap;
 #define pkvm_page_to_phys(page)  pkvm_pfn_to_phys((pkvm_page_to_pfn(page)))
 #define pkvm_page_to_virt(page)	__pkvm_va(pkvm_page_to_phys(page))
 #define pkvm_page_to_pool(page)	(((struct pkvm_page *)page)->pool)
+
+/* Caution: __st is evaluated twice. */
+#define for_each_pkvm_page(__p, __st, __sz)						\
+	for (struct pkvm_page *__p = pkvm_phys_to_page(PAGE_ALIGN_DOWN(__st)),		\
+			      *__e = pkvm_phys_to_page(PAGE_ALIGN((__st) + (__sz)));	\
+	     __p < __e; __p++)
 
 /*
  * Refcounting for 'struct pkvm_page'.
@@ -89,6 +113,51 @@ static inline bool is_pkvm_text_range(unsigned long phys, unsigned long size)
 	unsigned long end = __pkvm_pa_symbol(pkvm_sym(text_end));
 
 	return phys >= start && phys + size <= end;
+}
+
+/*
+ * !is_memory_range doesn't mean the range is mmio as it is possible to overlap
+ * with memory, e.g., a memory-mmio mixed range.
+ */
+static inline bool is_mmio_range(unsigned long phys, unsigned long size)
+{
+	struct range target = {
+		.start = PAGE_ALIGN_DOWN(phys),
+		.end = PAGE_ALIGN(phys + size) - 1,
+	};
+	struct range range;
+
+	if (pkvm_find_addr_range(phys, &range))
+		return false;
+
+	return range_contains(&range, &target);
+}
+
+void clflush_cache_range(void *vaddr, unsigned int size);
+
+static inline void pkvm_clear_memory(void *va, size_t size)
+{
+	memset(va, 0, size);
+	/*
+	 * Flush CPU cache to ensure clearing the memory range in RAM, so that
+	 * the previous contents cannot be read via non-coherent DMA.
+	 */
+	clflush_cache_range(va, size);
+}
+
+static inline phys_addr_t pkvm_host_gpa_to_phys(gpa_t gpa)
+{
+	/*
+	 * Host VM's GPA is identify-mapped in the host mmu, thus GPA equals
+	 * physical address.
+	 */
+	return gpa;
+}
+
+static inline gpa_t pkvm_phys_to_host_gpa(unsigned long phys)
+{
+	/* See comments in pkvm_host_gpa_to_phys */
+	return phys;
 }
 
 #endif /* __PKVM_X86_MEMORY_H */

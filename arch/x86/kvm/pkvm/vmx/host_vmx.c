@@ -8,6 +8,8 @@
 #include "ept.h"
 #include "host_vmx.h"
 #include "pkvm/init.h"
+#include "pkvm/lapic.h"
+#include "pkvm/trace.h"
 #include "pkvm.h"
 
 #define CR4			4
@@ -198,6 +200,11 @@ static int handle_write_msr(struct kvm_vcpu *vcpu)
 		}
 		break;
 	}
+	case MSR_IA32_APICBASE:
+	case APIC_BASE_MSR ... APIC_BASE_MSR + 0xff:
+		if (pkvm_lapic_msr_write(msr, val))
+			ret = X86EMUL_UNHANDLEABLE;
+		break;
 	default:
 		/*
 		 * The MSRs intercepted by the writing bitmap should be
@@ -328,6 +335,9 @@ static void handle_pending_events(struct kvm_vcpu *vcpu, bool *req_immediate_exi
 				*req_immediate_exit = true;
 		}
 	}
+
+	if (kvm_check_request(KVM_REQ_TLB_FLUSH_CURRENT, vcpu))
+		pkvm_flush_host_ept();
 }
 
 static void fixup_host_vmx(struct vcpu_vmx *vmx)
@@ -356,6 +366,10 @@ void pkvm_host_vmexit_main(struct vcpu_vmx *vmx)
 	struct vcpu_vt *vt = &vmx->vt;
 	bool skip_instruction = false;
 
+	pkvm_trace_vmexit_start(vcpu);
+
+	pkvm_set_vcpu_outside_guest(vcpu);
+
 	vcpu->arch.cr2 = native_read_cr2();
 	vcpu->arch.exception.injected = false;
 
@@ -374,6 +388,13 @@ void pkvm_host_vmexit_main(struct vcpu_vmx *vmx)
 	       vt->exit_reason.smi_from_vmx_root);
 
 	switch (vt->exit_reason.basic) {
+	case EXIT_REASON_INIT_SIGNAL:
+		/*
+		 * INIT is used as kick when making a request.
+		 * So just break the vmexits and go to pending
+		 * events handling.
+		 */
+		break;
 	case EXIT_REASON_INTERRUPT_WINDOW:
 		handle_irq_window(vcpu);
 		break;
@@ -426,11 +447,25 @@ void pkvm_host_vmexit_main(struct vcpu_vmx *vmx)
 	if (skip_instruction)
 		skip_emulated_instruction(vcpu);
 
+handle_events:
 	handle_pending_events(vcpu, &req_immediate_exit);
+
+	pkvm_set_vcpu_in_guest(vcpu);
 
 	if (req_immediate_exit) {
 		kvm_make_request(KVM_REQ_EVENT, vcpu);
 		request_host_immediate_exit(vmx);
+	} else if (READ_ONCE(vcpu->mode) == EXITING_GUEST_MODE ||
+		   kvm_request_pending(vcpu)) {
+		pkvm_set_vcpu_outside_guest(vcpu);
+		/*
+		 * Some vcpu requests may be set after handle_pending_events()
+		 * but before set vcpu mode to IN_GUEST_MODE. In this case the
+		 * init signal will not be send to kick the vcpu. To guarantee
+		 * such vcpu requests can be handled timely, try to handle
+		 * pending event again.
+		 */
+		goto handle_events;
 	}
 
 	if (vcpu->arch.cr2 != native_read_cr2())
@@ -438,4 +473,6 @@ void pkvm_host_vmexit_main(struct vcpu_vmx *vmx)
 
 	if (unlikely(this_cpu_read(host_vcpu_fixup)))
 		fixup_host_vmx(vmx);
+
+	pkvm_trace_vmexit_end(vcpu, vt->exit_reason.basic);
 }

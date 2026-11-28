@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <linux/types.h>
 #include "init.h"
+#include "lapic.h"
+#include "memory.h"
 #include "pkvm.h"
+#include "trace.h"
 
 struct pkvm_hyp *pkvm_hyp;
 DEFINE_PER_CPU(struct pkvm_pcpu *, phys_cpu);
@@ -25,10 +28,51 @@ void pkvm_handle_host_hypercall(struct kvm_vcpu *vcpu)
 		ret = pkvm_init((struct pkvm_mem_info *)pkvm_hc_input1(vcpu),
 				pkvm_hc_input2(vcpu));
 		break;
+	case __pkvm__enable_vmexit_trace:
+		pkvm_enable_vmexit_trace(pkvm_hc_input1(vcpu));
+		break;
+	case __pkvm__dump_vmexit_trace:
+		ret = pkvm_dump_vmexit_trace(pkvm_host_gpa_to_phys(pkvm_hc_input1(vcpu)),
+					     pkvm_hc_input2(vcpu));
+		break;
 	default:
 		ret = -EINVAL;
 		break;
 	}
 
 	pkvm_hc_set_ret(vcpu, ret);
+}
+
+void pkvm_kick_vcpu(struct kvm_vcpu *vcpu)
+{
+	/* No need to kick if a vcpu is already out of guest mode */
+	if (kvm_vcpu_exiting_guest_mode(vcpu) != IN_GUEST_MODE)
+		return;
+
+	pkvm_lapic_send_init(READ_ONCE(vcpu->cpu));
+}
+
+void pkvm_wait_vcpu_kicked_out(struct kvm_vcpu *vcpu)
+{
+	int relax_iters = 0;
+	u64 start;
+
+	if (READ_ONCE(vcpu->mode) != EXITING_GUEST_MODE)
+		return;
+
+	start = rdtsc();
+	do {
+		cpu_relax();
+		if (++relax_iters == 1000) {
+			/*
+			 * Bug the system if waiting for the remote CPU to ack
+			 * the kick is taking longer than 1s. It may take
+			 * microseconds, sometimes up to milliseconds (if the
+			 * CPU needs to wake from a deeper low-power state) but
+			 * should not take as long as a second.
+			 */
+			BUG_ON(tsc_khz && (((rdtsc() - start) / tsc_khz) > 1000));
+			relax_iters = 0;
+		}
+	} while (READ_ONCE(vcpu->mode) == EXITING_GUEST_MODE);
 }

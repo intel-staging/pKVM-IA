@@ -126,8 +126,14 @@ static int pgtable_try_map_leaf(struct pkvm_pgtable_visit_ctx *ctx,
 	 * Need to flush TLB when the previous mapping was present and the new
 	 * mapping changes either physical address or property bits. Otherwise
 	 * no need to flush TLB.
+	 *
+	 * No need to consider for the page state as it sits on the pte ignored
+	 * bits, which doesn't impact the TLB.
 	 */
-	flush_tlb = was_present && new != old;
+	if (pgt_ops->pte_present(ptep))
+		flush_tlb = (new ^ old) & ~pkvm_pgt_pgstate_mask(ctx->pgt);
+	else
+		flush_tlb = false;
 
 	if (ctx->level != PG_LEVEL_4K)
 		pgt_ops->pte_mkhuge(&new);
@@ -147,9 +153,13 @@ static int pgtable_try_map_leaf(struct pkvm_pgtable_visit_ctx *ctx,
 	else if (!is_present && was_present)
 		mm_ops->put_page(ptep);
 
-	if (flush_tlb)
-		pgt_ops->flush_tlb(ctx->pgt, ctx->addr,
-				   pgt_ops->level_to_size(ctx->level));
+	if (flush_tlb) {
+		if (ctx->pgt->cap.flush_tlb_lazy)
+			ctx->flush_tlb |= true;
+		else
+			pgt_ops->flush_tlb(ctx->pgt, ctx->addr,
+					   pgt_ops->level_to_size(ctx->level));
+	}
 
 	return 0;
 }
@@ -246,8 +256,11 @@ static void pgtable_try_coalesce_leaf(struct pkvm_pgtable_visit_ctx *ctx,
 
 	/*
 	 * Flush TLB and paging-structure caches across the full coalesced
-	 * hugepage range while @child still contains valid PTEs, before
-	 * releasing @child back to the page-table pool.
+	 * hugepage range while @child still contains valid PTEs. This must be
+	 * done before releasing @child back to the page-table pool, so flush
+	 * immediately even if flush_tlb_lazy is enabled. Coalescing rarely
+	 * occurs more than once per walk, so deferring the flush until after
+	 * the walk wouldn't reduce the number of flushes anyway.
 	 */
 	base_addr = ALIGN_DOWN(ctx->addr, level_size);
 	pgt_ops->flush_tlb(ctx->pgt, base_addr, level_size);
@@ -317,8 +330,12 @@ static int pgtable_try_unmap_leaf(struct pkvm_pgtable_visit_ctx *ctx,
 	 * Flush TLB if a present entry is changed to
 	 * non-present.
 	 */
-	if (was_present)
-		pgt_ops->flush_tlb(ctx->pgt, ctx->addr, size);
+	if (was_present) {
+		if (ctx->pgt->cap.flush_tlb_lazy)
+			ctx->flush_tlb |= true;
+		else
+			pgt_ops->flush_tlb(ctx->pgt, ctx->addr, size);
+	}
 
 	return 0;
 }
@@ -339,7 +356,13 @@ static void pgtable_free_child(struct pkvm_pgtable_visit_ctx *ctx)
 
 		pgt_ops->pte_set(ptep, 0);
 
-		/* Flush TLB before release the child table page */
+		/*
+		 * Must flush TLB and paging-structure caches before releasing
+		 * @child back to the page-table pool, so flush immediately
+		 * even if flush_tlb_lazy is enabled. We rarely free more than
+		 * one page per walk, so deferring the flush until after the
+		 * walk wouldn't reduce the number of flushes anyway.
+		 */
 		pgt_ops->flush_tlb(ctx->pgt, ALIGN_DOWN(ctx->addr, size), size);
 
 		mm_ops->put_page(child);
@@ -406,6 +429,7 @@ struct pgt_walk_data {
 	const unsigned long start;
 	const unsigned long end;
 	struct pkvm_pgtable_walker *walker;
+	bool flush_tlb;
 };
 
 static int _pgtable_walk(struct pgt_walk_data *data, void *ptep, int level);
@@ -422,6 +446,7 @@ static int pgtable_visit(struct pgt_walk_data *data, void *ptep, int level)
 		.addr = data->addr,
 		.level = level,
 		.ptep = ptep,
+		.flush_tlb = false,
 	};
 	void *child_ptep;
 	int ret = 0;
@@ -439,24 +464,25 @@ static int pgtable_visit(struct pgt_walk_data *data, void *ptep, int level)
 	}
 
 	if (ret)
-		return ret;
+		goto out;
 
 	if (leaf) {
 		unsigned long size = pgt_ops->level_to_size(level);
 
 		data->addr = ALIGN_DOWN(data->addr, size);
 		data->addr += size;
-		return ret;
+		goto out;
 	}
 
 	child_ptep = __pkvm_va(pgt_ops->pte_to_phys(ptep));
 	ret = _pgtable_walk(data, child_ptep, level - 1);
 	if (ret)
-		return ret;
+		goto out;
 
 	if (walk_flags & PKVM_PGTABLE_WALK_TABLE_POST)
 		ret = walker->cb(&ctx, PKVM_PGTABLE_WALK_TABLE_POST, walker->arg);
-
+out:
+	data->flush_tlb |= ctx.flush_tlb;
 	return ret;
 }
 
@@ -545,13 +571,20 @@ int pkvm_pgtable_walk(struct pkvm_pgtable *pgt, unsigned long vaddr,
 		.start = ALIGN_DOWN(vaddr, PAGE_SIZE),
 		.end = ALIGN(vaddr + size, PAGE_SIZE),
 		.walker = walker,
+		.flush_tlb = false,
 	};
+	int ret;
 
 	if (!pgt->root_pa || vaddr + size <= vaddr || data.end <= data.start ||
 	    data.end > pkvm_pgtable_max_size(pgt))
 		return -EINVAL;
 
-	return _pgtable_walk(&data, __pkvm_va(pgt->root_pa), pgt->cap.level);
+	ret = _pgtable_walk(&data, __pkvm_va(pgt->root_pa), pgt->cap.level);
+
+	if (data.flush_tlb)
+		pgt->pgt_ops->flush_tlb(pgt, data.start, data.end - data.start);
+
+	return ret;
 }
 
 /**
